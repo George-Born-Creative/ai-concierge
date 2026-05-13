@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 const stats = [
   { label: 'Commands', value: 'Contact' },
@@ -13,19 +13,15 @@ const permissions = [
   'Speech-to-text can be connected to the mic action next.',
 ];
 
+const securityItems = [
+  'Microphone access is requested only when recording starts.',
+  'Contact permissions stay limited to assistant contact commands.',
+  'Voice recordings are sent only after you release the mic.',
+];
+
 export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.kicker}>Profile</Text>
-          <Text style={styles.headerTitle}>Assistant settings</Text>
-        </View>
-        <View style={styles.smallAvatar}>
-          <Text style={styles.smallAvatarText}>D</Text>
-        </View>
-      </View>
-
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
@@ -67,6 +63,52 @@ export default function ProfileScreen() {
             </View>
           ))}
         </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Security</Text>
+          <View style={styles.securityCard}>
+            <View style={styles.securityIcon}>
+              <MaterialIcons name="security" size={28} color="#1A73E8" />
+            </View>
+            <View style={styles.securityCopy}>
+              <Text style={styles.securityTitle}>Privacy first assistant</Text>
+              {securityItems.map((item) => (
+                <View key={item} style={styles.securityItem}>
+                  <MaterialIcons name="verified-user" size={18} color="#34A853" />
+                  <Text style={styles.securityText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.actionsSection}>
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => Alert.alert('Settings', 'Settings screen can be connected here.')}>
+            <View style={styles.actionIcon}>
+              <MaterialIcons name="settings" size={22} color="#1A73E8" />
+            </View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionTitle}>Settings</Text>
+              <Text style={styles.actionDescription}>Manage assistant preferences</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+          </Pressable>
+
+          <Pressable
+            style={[styles.actionButton, styles.logoutButton]}
+            onPress={() => Alert.alert('Logout', 'Logout action can be connected here.')}>
+            <View style={[styles.actionIcon, styles.logoutIcon]}>
+              <MaterialIcons name="logout" size={22} color="#EA4335" />
+            </View>
+            <View style={styles.actionCopy}>
+              <Text style={[styles.actionTitle, styles.logoutTitle]}>Logout</Text>
+              <Text style={styles.actionDescription}>Sign out of AI-Concierge</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#F6AEA9" />
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -79,45 +121,8 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 24,
-    paddingBottom: 36,
-  },
-  header: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E8EAED',
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingBottom: 18,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-  },
-  kicker: {
-    color: '#1A73E8',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-  },
-  headerTitle: {
-    color: '#202124',
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -0.8,
-    marginTop: 3,
-  },
-  smallAvatar: {
-    alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 22,
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  smallAvatarText: {
-    color: '#1A73E8',
-    fontSize: 18,
-    fontWeight: '900',
+    paddingBottom: 120,
+    paddingTop: 30,
   },
   profileCard: {
     alignItems: 'center',
@@ -223,5 +228,88 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     lineHeight: 20,
+  },
+  securityCard: {
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E8EAED',
+    borderRadius: 26,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 14,
+    padding: 18,
+  },
+  securityIcon: {
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    borderRadius: 22,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  securityCopy: {
+    flex: 1,
+  },
+  securityTitle: {
+    color: '#202124',
+    fontSize: 17,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+  securityItem: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 9,
+    marginBottom: 10,
+  },
+  securityText: {
+    color: '#5F6368',
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  actionsSection: {
+    gap: 12,
+    marginTop: 30,
+  },
+  actionButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E8EAED',
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 14,
+    padding: 16,
+  },
+  logoutButton: {
+    borderColor: '#FAD2CF',
+  },
+  actionIcon: {
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    borderRadius: 20,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  logoutIcon: {
+    backgroundColor: '#FCE8E6',
+  },
+  actionCopy: {
+    flex: 1,
+  },
+  actionTitle: {
+    color: '#202124',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  logoutTitle: {
+    color: '#EA4335',
+  },
+  actionDescription: {
+    color: '#5F6368',
+    fontSize: 13,
+    marginTop: 3,
   },
 });

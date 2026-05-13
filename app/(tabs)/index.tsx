@@ -1,85 +1,25 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import {
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  useAudioRecorder,
-} from 'expo-audio';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+
+const featureCards = [
+  {
+    icon: 'record-voice-over',
+    title: 'Voice commands',
+    description: 'Hold the mic and ask AI-Concierge to handle contact tasks hands free.',
+  },
+  {
+    icon: 'contacts',
+    title: 'Contact actions',
+    description: 'List, identify, create, fetch, and delete contacts from one assistant flow.',
+  },
+  {
+    icon: 'history',
+    title: 'Activity history',
+    description: 'Review previous commands and responses whenever you need context.',
+  },
+] as const;
 
 export default function AssistantHomeScreen() {
-  const router = useRouter();
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isBusy, setIsBusy] = useState(false);
-
-  async function handleVoicePress() {
-    if (isBusy) {
-      return;
-    }
-
-    if (isRecording) {
-      await stopRecordingAndOpenChat();
-      return;
-    }
-
-    await startRecording();
-  }
-
-  async function startRecording() {
-    setIsBusy(true);
-
-    try {
-      const permission = await requestRecordingPermissionsAsync();
-
-      if (!permission.granted) {
-        Alert.alert('Microphone permission', 'Please allow microphone access to record a voice command.');
-        return;
-      }
-
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setIsRecording(true);
-    } catch {
-      Alert.alert('Recording failed', 'I could not start recording. Please try again.');
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function stopRecordingAndOpenChat() {
-    setIsBusy(true);
-
-    try {
-      await recorder.stop();
-      await setAudioModeAsync({ allowsRecording: false });
-
-      if (!recorder.uri) {
-        Alert.alert('Recording failed', 'I could not save the voice message. Please try again.');
-        return;
-      }
-
-      setIsRecording(false);
-      router.push({
-        pathname: '/chat',
-        params: {
-          source: 'voice',
-          voiceUri: recorder.uri,
-        },
-      });
-    } catch {
-      Alert.alert('Recording failed', 'I could not send the voice message. Please try again.');
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.content}>
@@ -90,18 +30,25 @@ export default function AssistantHomeScreen() {
           <View style={[styles.logoDot, styles.greenDot]} />
         </View>
 
-        <Pressable
-          style={[styles.voiceButton, isRecording && styles.recordingButton]}
-          onPress={handleVoicePress}
-          disabled={isBusy}>
-          <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={36} color="#FFFFFF" />
-        </Pressable>
-
-        <Text style={styles.greeting}>{isRecording ? 'Listening...' : 'How can I help?'}</Text>
+        <Text style={styles.greeting}>How can I help?</Text>
         <Text style={styles.subtitle}>
           Start a chat by speaking or typing. The assistant will convert the command to text,
           execute it, and show the response.
         </Text>
+
+        <View style={styles.cardsGrid}>
+          {featureCards.map((card) => (
+            <View key={card.title} style={styles.featureCard}>
+              <View style={styles.cardIcon}>
+                <MaterialIcons name={card.icon} size={24} color="#1A73E8" />
+              </View>
+              <View style={styles.cardCopy}>
+                <Text style={styles.cardTitle}>{card.title}</Text>
+                <Text style={styles.cardDescription}>{card.description}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -115,9 +62,10 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 30,
-    transform: [{ translateY: 18 }],
+    paddingBottom: 138,
+    paddingTop: 62,
   },
   logoMark: {
     alignItems: 'center',
@@ -157,24 +105,6 @@ const styles = StyleSheet.create({
     left: 24,
     width: 24,
   },
-  voiceButton: {
-    alignItems: 'center',
-    backgroundColor: '#1A73E8',
-    borderRadius: 36,
-    elevation: 5,
-    height: 72,
-    justifyContent: 'center',
-    marginBottom: 28,
-    shadowColor: '#1A73E8',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.25,
-    shadowRadius: 24,
-    width: 72,
-  },
-  recordingButton: {
-    backgroundColor: '#EA4335',
-    shadowColor: '#EA4335',
-  },
   greeting: {
     color: '#202124',
     fontSize: 36,
@@ -189,5 +119,47 @@ const styles = StyleSheet.create({
     marginTop: 12,
     maxWidth: 330,
     textAlign: 'center',
+  },
+  cardsGrid: {
+    gap: 14,
+    marginTop: 34,
+    width: '100%',
+  },
+  featureCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E8F0FE',
+    borderRadius: 24,
+    borderWidth: 1,
+    elevation: 4,
+    flexDirection: 'row',
+    gap: 14,
+    padding: 16,
+    shadowColor: '#174EA6',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+  },
+  cardIcon: {
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    borderRadius: 22,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  cardCopy: {
+    flex: 1,
+  },
+  cardTitle: {
+    color: '#202124',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  cardDescription: {
+    color: '#5F6368',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
   },
 });
