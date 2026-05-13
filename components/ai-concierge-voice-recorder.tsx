@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Audio } from 'expo-av';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
 type AIConciergeVoiceRecorderProps = {
@@ -26,19 +26,8 @@ export function AIConciergeVoiceRecorder({
   const pendingStopRef = useRef(false);
   const glowAnim = useRef(new Animated.Value(0)).current;
   const waveAnim = useRef(new Animated.Value(0)).current;
-  const [durationMs, setDurationMs] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
-
-  const timerLabel = useMemo(() => {
-    const totalSeconds = Math.floor(durationMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60)
-      .toString()
-      .padStart(2, '0');
-    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-
-    return `${minutes}:${seconds}`;
-  }, [durationMs]);
 
   const glowScale = glowAnim.interpolate({
     inputRange: [0, 1],
@@ -97,18 +86,6 @@ export function AIConciergeVoiceRecorder({
   }, [glowAnim, isRecording, waveAnim]);
 
   useEffect(() => {
-    if (!isRecording) {
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setDurationMs((currentDuration) => currentDuration + 250);
-    }, 250);
-
-    return () => clearInterval(timer);
-  }, [isRecording]);
-
-  useEffect(() => {
     return () => {
       if (recordingRef.current) {
         recordingRef.current.stopAndUnloadAsync().catch(() => undefined);
@@ -124,7 +101,6 @@ export function AIConciergeVoiceRecorder({
     hasStoppedRef.current = false;
     isStartingRef.current = true;
     pendingStopRef.current = false;
-    setDurationMs(0);
 
     try {
       const permission = await Audio.requestPermissionsAsync();
@@ -248,8 +224,6 @@ export function AIConciergeVoiceRecorder({
             <Text style={styles.statusText}>{isSending ? 'Sending audio' : 'Listening now'}</Text>
           </View>
 
-          <Text style={styles.timer}>{timerLabel}</Text>
-
           <View style={styles.waveform} accessibilityElementsHidden>
             {waveHeights.map((height, index) => {
               const animatedHeight = waveAnim.interpolate({
@@ -321,7 +295,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#D2E3FC',
-    borderRadius: 30,
+    borderRadius: 16,
     borderWidth: 1,
     elevation: 14,
     minWidth: 294,
@@ -355,7 +329,7 @@ const styles = StyleSheet.create({
   statusText: {
     color: '#174EA6',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
@@ -395,21 +369,13 @@ const styles = StyleSheet.create({
   pressedButton: {
     transform: [{ scale: 0.96 }],
   },
-  timer: {
-    color: '#202124',
-    fontSize: 34,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '800',
-    letterSpacing: -0.8,
-    marginTop: -4,
-  },
   waveform: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 7,
-    height: 78,
+    height: 86,
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 16,
   },
   waveBar: {
     backgroundColor: '#1A73E8',
@@ -419,7 +385,7 @@ const styles = StyleSheet.create({
   helperText: {
     color: '#5F6368',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 4,
     textAlign: 'center',
   },

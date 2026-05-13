@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   name: {
     color: '#202124',
     fontSize: 30,
-    fontWeight: '800',
+    fontWeight: '600',
     letterSpacing: -0.7,
     marginTop: 22,
   },

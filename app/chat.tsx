@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     paddingBottom: 16,
-    paddingHorizontal: 18,
+    paddingHorizontal: 12,
     paddingTop: 26,
   },
   backButton: {
@@ -212,14 +212,14 @@ const styles = StyleSheet.create({
   eyebrow: {
     color: '#5F6368',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
   title: {
     color: '#202124',
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '600',
     marginTop: 2,
   },
   avatar: {
@@ -233,18 +233,19 @@ const styles = StyleSheet.create({
   avatarText: {
     color: '#1A73E8',
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   chatContent: {
     gap: 18,
-    padding: 20,
+    paddingHorizontal: 12,
+    paddingTop: 20,
     paddingBottom: 12,
   },
   heroCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 30,
+    borderRadius: 16,
     borderWidth: 1,
     padding: 24,
   },
@@ -289,7 +290,7 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: '#202124',
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: '600',
     textAlign: 'center',
   },
   heroText: {
@@ -305,7 +306,7 @@ const styles = StyleSheet.create({
   userBubble: {
     alignSelf: 'flex-end',
     backgroundColor: '#1A73E8',
-    borderRadius: 22,
+    borderRadius: 14,
     maxWidth: '86%',
     padding: 14,
   },
@@ -313,7 +314,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 22,
+    borderRadius: 14,
     borderWidth: 1,
     maxWidth: '92%',
     padding: 14,
@@ -325,7 +326,7 @@ const styles = StyleSheet.create({
   bubbleLabel: {
     color: '#80868B',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '600',
     letterSpacing: 0.7,
     marginBottom: 5,
     textTransform: 'uppercase',
@@ -338,7 +339,7 @@ const styles = StyleSheet.create({
   voiceAttachment: {
     color: '#D2E3FC',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     marginTop: 8,
     textTransform: 'uppercase',
   },
@@ -348,13 +349,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   suggestionRow: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   suggestionChip: {
     backgroundColor: '#FFFFFF',
     borderColor: '#DADCE0',
-    borderRadius: 22,
+    borderRadius: 14,
     borderWidth: 1,
     marginRight: 10,
     paddingHorizontal: 15,
@@ -363,7 +364,7 @@ const styles = StyleSheet.create({
   suggestionText: {
     color: '#202124',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   composer: {
     alignItems: 'center',
@@ -372,12 +373,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: 10,
-    padding: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
   },
   micButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 24,
+    borderRadius: 14,
     height: 48,
     justifyContent: 'center',
     width: 48,
