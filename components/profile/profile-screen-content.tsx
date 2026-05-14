@@ -89,6 +89,32 @@ export function ProfileScreenContent() {
         </View>
 
         <View style={styles.actionsSection}>
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => router.push('/openai-key')}>
+            <View style={styles.actionIcon}>
+              <MaterialIcons name="vpn-key" size={22} color="#1A73E8" />
+            </View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionTitle}>Rotate OpenAI key</Text>
+              <Text style={styles.actionDescription}>Replace your saved API key</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+          </Pressable>
+
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => show('CRM switching will be available once Stripe is wired.', 'info')}>
+            <View style={styles.actionIcon}>
+              <MaterialIcons name="swap-horiz" size={22} color="#1A73E8" />
+            </View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionTitle}>Switch CRM</Text>
+              <Text style={styles.actionDescription}>Change between GoHighLevel and HubSpot</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+          </Pressable>
+
           <Pressable style={styles.actionButton} onPress={() => router.push('/signup')}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="person-add" size={22} color="#1A73E8" />

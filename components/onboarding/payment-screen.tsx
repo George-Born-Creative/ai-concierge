@@ -11,18 +11,30 @@ import {
   View,
 } from 'react-native';
 
+type PlanParam = 'ghl-pro' | 'hubspot-pro';
+type ProviderParam = 'ghl' | 'hubspot';
+
+const PLAN_LABELS: Record<PlanParam, { label: string; provider: ProviderParam }> = {
+  'ghl-pro': { label: 'GoHighLevel plan', provider: 'ghl' },
+  'hubspot-pro': { label: 'HubSpot plan', provider: 'hubspot' },
+};
+
 export function PaymentScreen() {
   const router = useRouter();
-  const { plan } = useLocalSearchParams<{ plan?: string }>();
+  const { plan, provider } = useLocalSearchParams<{ plan?: string; provider?: string }>();
   const [isPaying, setIsPaying] = useState(false);
-  const selectedPlan = plan === 'starter' ? 'Starter' : 'Pro';
+
+  const planKey: PlanParam = plan === 'hubspot-pro' ? 'hubspot-pro' : 'ghl-pro';
+  const meta = PLAN_LABELS[planKey];
+  const providerForConnect: ProviderParam =
+    provider === 'hubspot' || provider === 'ghl' ? (provider as ProviderParam) : meta.provider;
 
   async function completePayment() {
     setIsPaying(true);
 
     setTimeout(() => {
       setIsPaying(false);
-      router.replace('/connect');
+      router.replace({ pathname: '/connect', params: { provider: providerForConnect } });
     }, 350);
   }
 
@@ -34,13 +46,13 @@ export function PaymentScreen() {
         </View>
         <Text style={styles.title}>Secure checkout</Text>
         <Text style={styles.subtitle}>
-          Finish setup for the {selectedPlan} plan using Stripe checkout. Card details are collected
-          securely by Stripe.
+          Finish setup for the {meta.label} using Stripe. Card details are collected securely by
+          Stripe.
         </Text>
 
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Selected plan</Text>
-          <Text style={styles.summaryPlan}>{selectedPlan}</Text>
+          <Text style={styles.summaryPlan}>{meta.label}</Text>
         </View>
 
         <View style={styles.formCard}>

@@ -21,17 +21,24 @@ export type User = {
   name: string;
   email: string;
   plan?: PlanId;
-  ghlLocationId?: string;
+  provider?: CrmProvider;
+  hasIntegration?: boolean;
   hasOpenAIKey?: boolean;
+  openAIKeyLast4?: string;
 };
+
+// ─── CRM provider ────────────────────────────────────────────────────────────
+
+export type CrmProvider = 'ghl' | 'hubspot';
 
 // ─── Plan ─────────────────────────────────────────────────────────────────────
 
-export type PlanId = 'starter' | 'pro';
+export type PlanId = 'ghl-pro' | 'hubspot-pro';
 
 export type Plan = {
   id: PlanId;
   name: string;
+  provider: CrmProvider;
   price: number;
   currency: string;
   features: string[];
@@ -43,6 +50,7 @@ export type SelectPlanRequest = {
 
 export type SelectPlanResponse = {
   planId: PlanId;
+  provider: CrmProvider;
   activatedAt: string;
 };
 
@@ -58,10 +66,17 @@ export type CreatePaymentSessionResponse = {
   paymentIntentClientSecret: string;
 };
 
-// ─── GHL ──────────────────────────────────────────────────────────────────────
+// ─── Integration OAuth ────────────────────────────────────────────────────────
 
-export type GHLOAuthStartResponse = {
+export type OAuthStartResponse = {
   authUrl: string;
+};
+
+export type IntegrationStatus = {
+  connected: boolean;
+  provider: CrmProvider;
+  connectedAt?: string;
+  scopes?: string[];
 };
 
 export type GHLConnectRequest = {
@@ -75,19 +90,63 @@ export type GHLConnectResponse = {
   connectedAt: string;
 };
 
-export type GHLContact = {
+export type HubSpotConnectRequest = {
+  code: string;
+};
+
+export type HubSpotConnectResponse = {
+  portalId: string;
+  portalName: string;
+  connectedAt: string;
+};
+
+// ─── Unified CRM actions (backend resolves provider) ──────────────────────────
+
+export type NormalizedLead = {
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+  intent?: string;
+  notes?: string;
+  budget?: string;
+  timeline?: string;
+  nextAction?: string;
+};
+
+export type Contact = {
   id: string;
   firstName?: string;
   lastName?: string;
   email?: string;
   phone?: string;
   tags?: string[];
-  dateAdded?: string;
+  createdAt?: string;
 };
 
-export type GHLContactsResponse = {
-  contacts: GHLContact[];
+export type ContactsResponse = {
+  contacts: Contact[];
   total: number;
+};
+
+export type DealInput = {
+  contactId?: string;
+  name: string;
+  amount?: number;
+  stage?: string;
+};
+
+export type TaskInput = {
+  contactId?: string;
+  title: string;
+  dueAt?: string;
+  notes?: string;
+};
+
+export type OpportunityPatch = {
+  stage?: string;
+  amount?: number;
+  notes?: string;
 };
 
 // ─── OpenAI ───────────────────────────────────────────────────────────────────
@@ -99,4 +158,11 @@ export type SaveOpenAIKeyRequest = {
 export type SaveOpenAIKeyResponse = {
   valid: boolean;
   savedAt: string;
+  last4: string;
+};
+
+export type OpenAIKeyStatus = {
+  hasKey: boolean;
+  last4?: string;
+  savedAt?: string;
 };

@@ -3,26 +3,59 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-const plans = [
+import type { CrmProvider, PlanId } from '@/lib/api';
+
+type PlanCard = {
+  id: PlanId;
+  provider: CrmProvider;
+  name: string;
+  price: string;
+  description: string;
+  features: string[];
+  icon: keyof typeof MaterialIcons.glyphMap;
+};
+
+const PLANS: PlanCard[] = [
   {
-    id: 'starter',
-    name: 'Starter',
-    price: '$0',
-    description: 'Try AI-Concierge with basic assistant access.',
-    features: ['Text commands', 'Recent activity', 'Profile tools'],
+    id: 'ghl-pro',
+    provider: 'ghl',
+    name: 'GoHighLevel plan',
+    price: '$29',
+    description: 'Voice AI that drives your GoHighLevel CRM.',
+    features: [
+      'GHL contacts, deals, notes, tasks',
+      'Trigger GHL workflows by voice',
+      'Per-location access',
+    ],
+    icon: 'hub',
   },
   {
-    id: 'pro',
-    name: 'Pro',
-    price: '$9',
-    description: 'Unlock the full voice concierge experience.',
-    features: ['Voice commands', 'Contact automation', 'Priority updates'],
+    id: 'hubspot-pro',
+    provider: 'hubspot',
+    name: 'HubSpot plan',
+    price: '$29',
+    description: 'Voice AI that drives your HubSpot CRM.',
+    features: [
+      'HubSpot contacts and deals',
+      'Add notes and create tasks by voice',
+      'Per-portal access',
+    ],
+    icon: 'cloud',
   },
-] as const;
+];
 
 export function PlanSelectionScreen() {
   const router = useRouter();
-  const [selectedPlan, setSelectedPlan] = useState<(typeof plans)[number]['id']>('pro');
+  const [selectedPlan, setSelectedPlan] = useState<PlanId>('ghl-pro');
+
+  const active = PLANS.find((plan) => plan.id === selectedPlan) ?? PLANS[0];
+
+  function continueToPayment() {
+    router.push({
+      pathname: '/payment',
+      params: { plan: active.id, provider: active.provider },
+    });
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -34,13 +67,13 @@ export function PlanSelectionScreen() {
         <View style={styles.headerIcon}>
           <MaterialIcons name="workspace-premium" size={34} color="#1A73E8" />
         </View>
-        <Text style={styles.title}>Choose your plan</Text>
+        <Text style={styles.title}>Choose your CRM plan</Text>
         <Text style={styles.subtitle}>
-          Select how you want to use AI-Concierge. You can connect real billing later.
+          One subscription = one CRM integration. Pick the CRM you want your voice AI to drive.
         </Text>
 
         <View style={styles.planList}>
-          {plans.map((plan) => {
+          {PLANS.map((plan) => {
             const isSelected = selectedPlan === plan.id;
 
             return (
@@ -49,13 +82,18 @@ export function PlanSelectionScreen() {
                 style={[styles.planCard, isSelected && styles.selectedPlanCard]}
                 onPress={() => setSelectedPlan(plan.id)}>
                 <View style={styles.planHeader}>
-                  <View>
-                    <Text style={styles.planName}>{plan.name}</Text>
-                    <Text style={styles.planDescription}>{plan.description}</Text>
+                  <View style={styles.planTitleRow}>
+                    <View style={styles.planIcon}>
+                      <MaterialIcons name={plan.icon} size={22} color="#1A73E8" />
+                    </View>
+                    <View style={styles.planTitleCopy}>
+                      <Text style={styles.planName}>{plan.name}</Text>
+                      <Text style={styles.planDescription}>{plan.description}</Text>
+                    </View>
                   </View>
                   <View style={styles.pricePill}>
                     <Text style={styles.price}>{plan.price}</Text>
-                    <Text style={styles.priceMeta}>{plan.id === 'starter' ? 'now' : '/mo'}</Text>
+                    <Text style={styles.priceMeta}>/mo</Text>
                   </View>
                 </View>
 
@@ -76,9 +114,7 @@ export function PlanSelectionScreen() {
           })}
         </View>
 
-        <Pressable
-          style={styles.primaryButton}
-          onPress={() => router.push({ pathname: '/payment', params: { plan: selectedPlan } })}>
+        <Pressable style={styles.primaryButton} onPress={continueToPayment}>
           <Text style={styles.primaryButtonText}>Continue to payment</Text>
           <MaterialIcons name="arrow-forward" size={22} color="#FFFFFF" />
         </Pressable>
@@ -153,17 +189,33 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: 'space-between',
   },
+  planTitleRow: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  planIcon: {
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    borderRadius: 12,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  planTitleCopy: {
+    flex: 1,
+  },
   planName: {
     color: '#202124',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '600',
   },
   planDescription: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 5,
-    maxWidth: 190,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
   },
   pricePill: {
     alignItems: 'center',
