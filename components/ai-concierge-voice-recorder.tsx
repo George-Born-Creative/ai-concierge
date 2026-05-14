@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Audio } from 'expo-av';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
 type AIConciergeVoiceRecorderProps = {
   apiEndpoint?: string;
@@ -207,12 +207,7 @@ export function AIConciergeVoiceRecorder({
   }
 
   function notifyError(message: string) {
-    if (onError) {
-      onError(message);
-      return;
-    }
-
-    Alert.alert('Voice recording', message);
+    onError?.(message);
   }
 
   return (

@@ -2,7 +2,6 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,6 +13,8 @@ import {
   View,
 } from 'react-native';
 
+import { useToast } from '@/lib/toast';
+
 type AuthMode = 'signin' | 'signup';
 
 type AuthScreenProps = {
@@ -22,6 +23,7 @@ type AuthScreenProps = {
 
 export function AuthScreen({ mode }: AuthScreenProps) {
   const router = useRouter();
+  const { show } = useToast();
   const isSignup = mode === 'signup';
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,12 +31,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
   function submitAuthForm() {
     if (isSignup && !name.trim()) {
-      Alert.alert('Missing name', 'Enter your full name to create an account.');
+      show('Enter your full name to create an account.', 'error');
       return;
     }
 
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Missing details', 'Enter your email and password to continue.');
+      show('Enter your email and password to continue.', 'error');
       return;
     }
 
@@ -43,9 +45,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       return;
     }
 
-    Alert.alert('Signed in', 'Sign in is ready for backend authentication.', [
-      { text: 'Continue', onPress: () => router.replace('/(tabs)') },
-    ]);
+    show('Signed in successfully.', 'success');
+    router.replace('/(tabs)');
   }
 
   return (

@@ -1,9 +1,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
+
+import { useToast } from '@/lib/toast';
 import {
-  Alert,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, 
   Platform,
   Pressable,
   SafeAreaView,
@@ -16,18 +17,17 @@ import {
 
 export function OpenAIApiKeyScreen() {
   const router = useRouter();
+  const { show } = useToast();
   const { crm } = useLocalSearchParams<{ crm?: string }>();
   const [apiKey, setApiKey] = useState('');
 
   function saveKey() {
     if (!apiKey.trim()) {
-      Alert.alert('Missing key', 'Enter your OpenAI API key to continue.');
+      show('Enter your OpenAI API key to continue.', 'error');
       return;
     }
 
-    Alert.alert('Key saved', 'Your AI-Concierge setup is ready.', [
-      { text: 'Open app', onPress: () => router.replace('/(tabs)') },
-    ]);
+    router.replace('/(tabs)');
   }
 
   return (

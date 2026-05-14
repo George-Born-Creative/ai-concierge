@@ -1,17 +1,23 @@
 import { useRouter } from 'expo-router';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AIConciergeVoiceRecorder } from '@/components/ai-concierge-voice-recorder';
+import { useAssistantHistory } from '@/lib/assistant-history';
+import { useToast } from '@/lib/toast';
 
 export function VoiceAssistantTabButton() {
   const router = useRouter();
+  const { show } = useToast();
+  const { activeChatId, createChat } = useAssistantHistory();
 
   function sendAudio(voiceUri: string) {
+    const conversationId = activeChatId ?? createChat();
     router.push({
       pathname: '/chat',
       params: {
         source: 'voice',
         voiceUri,
+        conversationId,
       },
     });
   }
@@ -19,9 +25,8 @@ export function VoiceAssistantTabButton() {
   return (
     <View style={styles.voiceTabButton}>
       <AIConciergeVoiceRecorder
-        apiEndpoint={process.env.EXPO_PUBLIC_VOICE_API_ENDPOINT}
         onAudioRecorded={sendAudio}
-        onError={(message) => Alert.alert('Voice recording', message)}
+        onError={(message) => show(message, 'error')}
       />
     </View>
   );
