@@ -3,7 +3,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
+import { useToast } from '@/lib/toast';
 
 const suggestions = [
   'List latest contacts',
@@ -27,16 +27,25 @@ const suggestions = [
 
 export default function ChatScreen() {
   const router = useRouter();
+  const { show } = useToast();
   const params = useLocalSearchParams<{
     command?: string;
     source?: AssistantHistoryEntry['source'];
     voiceUri?: string;
+    conversationId?: string;
   }>();
-  const { addVoiceMessage, history, runCommand } = useAssistantHistory();
+  const { activeMessages, addVoiceMessage, openChat, runCommand } = useAssistantHistory();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
-  const handledInitialCommand = useRef(false);
-  const handledVoiceMessage = useRef(false);
+  const commandHandledKey = useRef<string | null>(null);
+  const voiceHandledKey = useRef<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
 
   const submitCommand = useCallback(
     async (command: string, source: AssistantHistoryEntry['source'] = 'text') => {
@@ -59,28 +68,55 @@ export default function ChatScreen() {
   );
 
   useEffect(() => {
-    if (!params.command || handledInitialCommand.current) {
-      return;
+    const convId = paramOne(params.conversationId);
+    if (convId) {
+      openChat(convId);
     }
-
-    handledInitialCommand.current = true;
-    void submitCommand(params.command, params.source ?? 'text');
-  }, [params.command, params.source, submitCommand]);
+  }, [params.conversationId, openChat]);
 
   useEffect(() => {
-    if (!params.voiceUri || handledVoiceMessage.current) {
+    const command = paramOne(params.command);
+    if (!command) {
       return;
     }
+    const convId = paramOne(params.conversationId);
+    const key = `${convId ?? ''}::${command}`;
+    if (commandHandledKey.current === key) {
+      return;
+    }
+    commandHandledKey.current = key;
+    if (convId) {
+      openChat(convId);
+    }
+    const source = (paramOne(params.source) as AssistantHistoryEntry['source'] | undefined) ?? 'text';
+    void submitCommand(command, source);
+  }, [params.command, params.conversationId, params.source, openChat, submitCommand]);
 
-    handledVoiceMessage.current = true;
-    addVoiceMessage(params.voiceUri);
-  }, [addVoiceMessage, params.voiceUri]);
+  useEffect(() => {
+    const voiceUri = paramOne(params.voiceUri);
+    if (!voiceUri) {
+      return;
+    }
+    const convId = paramOne(params.conversationId);
+    const key = `${convId ?? ''}::${voiceUri}`;
+    if (voiceHandledKey.current === key) {
+      return;
+    }
+    voiceHandledKey.current = key;
+    if (convId) {
+      openChat(convId);
+    }
+    addVoiceMessage(voiceUri);
+  }, [params.voiceUri, params.conversationId, openChat, addVoiceMessage]);
+
+  useEffect(() => {
+    if (activeMessages.length > 0) {
+      scrollToBottom();
+    }
+  }, [activeMessages, scrollToBottom]);
 
   function startVoiceCommand() {
-    Alert.alert(
-      'Voice command',
-      'Speech-to-text UI is ready here. Add a speech recognition package next, then send the transcript to this chat.'
-    );
+    show('Speech-to-text UI is ready. Add a speech recognition package to send transcripts here.', 'info');
   }
 
   return (
@@ -101,8 +137,14 @@ export default function ChatScreen() {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.chatContent} showsVerticalScrollIndicator={false}>
-          {history.length === 0 ? (
+        <ScrollView
+          ref={scrollRef}
+          style={styles.chatScroll}
+          contentContainerStyle={styles.chatContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={scrollToBottom}>
+          {activeMessages.length === 0 ? (
             <View style={styles.heroCard}>
               <View style={styles.assistantMark}>
                 <View style={[styles.dot, styles.blueDot]} />
@@ -117,7 +159,7 @@ export default function ChatScreen() {
               </Text>
             </View>
           ) : (
-            history.map((entry) => <CommandBubble key={entry.id} entry={entry} />)
+            activeMessages.map((entry) => <CommandBubble key={entry.id} entry={entry} />)
           )}
         </ScrollView>
 
@@ -161,6 +203,13 @@ export default function ChatScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+function paramOne(value: string | string[] | undefined): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function CommandBubble({ entry }: { entry: AssistantHistoryEntry }) {
@@ -235,11 +284,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
+  chatScroll: {
+    flex: 1,
+  },
   chatContent: {
+    flexGrow: 1,
     gap: 18,
     paddingHorizontal: 12,
     paddingTop: 20,
-    paddingBottom: 12,
+    paddingBottom: 16,
   },
   heroCard: {
     alignItems: 'center',

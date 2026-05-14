@@ -1,6 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import { useToast } from '@/lib/toast';
 
 const stats = [
   { label: 'Commands', value: 'Contact' },
@@ -22,6 +24,7 @@ const securityItems = [
 
 export function ProfileScreenContent() {
   const router = useRouter();
+  const { show } = useToast();
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -99,7 +102,7 @@ export function ProfileScreenContent() {
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => Alert.alert('Settings', 'Settings screen can be connected here.')}>
+            onPress={() => show('Settings screen coming soon.', 'info')}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="settings" size={22} color="#1A73E8" />
             </View>
@@ -112,7 +115,7 @@ export function ProfileScreenContent() {
 
           <Pressable
             style={[styles.actionButton, styles.logoutButton]}
-            onPress={() => Alert.alert('Logout', 'Logout action can be connected here.')}>
+            onPress={() => show('Logout will be connected to your auth backend.', 'warning')}>
             <View style={[styles.actionIcon, styles.logoutIcon]}>
               <MaterialIcons name="logout" size={22} color="#EA4335" />
             </View>

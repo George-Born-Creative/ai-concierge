@@ -1,10 +1,26 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useRouter } from 'expo-router';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { useAssistantHistory } from '@/lib/assistant-history';
+import { AssistantChat, useAssistantHistory } from '@/lib/assistant-history';
 
 export function HistoryScreenContent() {
-  const { clearHistory, history } = useAssistantHistory();
+  const router = useRouter();
+  const { chats, clearAllChats, createChat, openChat } = useAssistantHistory();
+
+  const sortedChats = [...chats].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+
+  function startNewChat() {
+    const id = createChat();
+    router.push({ pathname: '/chat', params: { conversationId: id } });
+  }
+
+  function openConversation(chat: AssistantChat) {
+    openChat(chat.id);
+    router.push({ pathname: '/chat', params: { conversationId: chat.id } });
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -12,60 +28,81 @@ export function HistoryScreenContent() {
         <View style={styles.headerRow}>
           <View style={styles.headerCopy}>
             <Text style={styles.kicker}>History</Text>
-            <Text style={styles.title}>Commands and responses</Text>
+            <Text style={styles.title}>Your chats</Text>
           </View>
           <View style={styles.historyCount}>
-            <Text style={styles.historyCountText}>{history.length}</Text>
+            <Text style={styles.historyCountText}>{chats.length}</Text>
           </View>
         </View>
         <Text style={styles.subtitle}>
-          Review every command, the transcribed text, and the response returned by the assistant.
+          Each block is one conversation. Open a chat to see all messages, or start a new one.
         </Text>
+        <Pressable style={styles.newChatButton} onPress={startNewChat}>
+          <MaterialIcons name="add-comment" size={22} color="#FFFFFF" />
+          <Text style={styles.newChatButtonText}>New chat</Text>
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent activity</Text>
-          <Pressable disabled={history.length === 0} onPress={clearHistory}>
-            <Text style={[styles.sectionAction, history.length === 0 && styles.disabledAction]}>
-              Clear
+          <Text style={styles.sectionTitle}>Conversations</Text>
+          <Pressable disabled={chats.length === 0} onPress={clearAllChats}>
+            <Text style={[styles.sectionAction, chats.length === 0 && styles.disabledAction]}>
+              Clear all
             </Text>
           </Pressable>
         </View>
 
-        {history.length === 0 ? (
+        {chats.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MaterialIcons name="history" size={34} color="#1A73E8" />
-            <Text style={styles.emptyTitle}>No history yet</Text>
+            <MaterialIcons name="forum" size={34} color="#1A73E8" />
+            <Text style={styles.emptyTitle}>No chats yet</Text>
             <Text style={styles.emptyText}>
-              Commands you run from the chat page will appear here with their responses.
+              Start a new chat to talk with the assistant. All messages in that session stay inside
+              one block here.
             </Text>
+            <Pressable style={styles.emptyCta} onPress={startNewChat}>
+              <Text style={styles.emptyCtaText}>New chat</Text>
+            </Pressable>
           </View>
         ) : (
-          history.map((entry) => (
-            <View key={entry.id} style={styles.taskCard}>
-              <View
-                style={[
-                  styles.taskIcon,
-                  { backgroundColor: entry.status === 'success' ? '#34A853' : '#EA4335' },
-                ]}>
-                <MaterialIcons
-                  name={entry.source === 'voice' ? 'mic' : 'keyboard'}
-                  size={23}
-                  color="#FFFFFF"
-                />
+          sortedChats.map((chat) => (
+            <Pressable
+              key={chat.id}
+              style={styles.chatBlock}
+              onPress={() => openConversation(chat)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open chat from ${formatTimestamp(chat.updatedAt)}`}>
+              <View style={styles.chatBlockIcon}>
+                <MaterialIcons name="chat-bubble-outline" size={26} color="#1A73E8" />
               </View>
-              <View style={styles.taskCopy}>
-                <Text style={styles.taskTitle}>{entry.command}</Text>
-                <Text style={styles.taskDescription}>{entry.response}</Text>
-                <Text style={styles.timestamp}>{formatTimestamp(entry.createdAt)}</Text>
+              <View style={styles.chatBlockBody}>
+                <View style={styles.chatBlockTop}>
+                  <Text style={styles.chatBlockTitle}>Contact chat</Text>
+                  <View style={styles.messagePill}>
+                    <Text style={styles.messagePillText}>{chat.messages.length} messages</Text>
+                  </View>
+                </View>
+                <Text style={styles.chatBlockPreview} numberOfLines={2}>
+                  {previewText(chat)}
+                </Text>
+                <Text style={styles.timestamp}>Updated {formatTimestamp(chat.updatedAt)}</Text>
               </View>
-            </View>
+              <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+            </Pressable>
           ))
         )}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function previewText(chat: AssistantChat) {
+  if (chat.messages.length === 0) {
+    return 'No messages yet — open to start the conversation.';
+  }
+  const last = chat.messages[chat.messages.length - 1];
+  return last.command;
 }
 
 function formatTimestamp(value: string) {
@@ -138,6 +175,22 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginTop: 10,
   },
+  newChatButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#1A73E8',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  newChatButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
   sectionHeader: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -178,40 +231,69 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
   },
-  taskCard: {
+  emptyCta: {
+    marginTop: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#E8F0FE',
+    borderRadius: 12,
+  },
+  emptyCtaText: {
+    color: '#174EA6',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  chatBlock: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    elevation: 2,
+    borderColor: '#E8EAED',
+    borderRadius: 16,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: 16,
-    marginBottom: 14,
+    gap: 14,
+    marginBottom: 12,
     padding: 16,
-    shadowColor: '#3C4043',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
   },
-  taskIcon: {
+  chatBlockIcon: {
     alignItems: 'center',
-    borderRadius: 20,
-    height: 46,
+    backgroundColor: '#EDF4FF',
+    borderRadius: 14,
+    height: 52,
     justifyContent: 'center',
-    width: 46,
+    width: 52,
   },
-  taskCopy: {
+  chatBlockBody: {
     flex: 1,
+    minWidth: 0,
   },
-  taskTitle: {
+  chatBlockTop: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  chatBlockTitle: {
     color: '#202124',
     fontSize: 17,
     fontWeight: '600',
+    flex: 1,
   },
-  taskDescription: {
+  messagePill: {
+    backgroundColor: '#F1F3F4',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  messagePillText: {
+    color: '#5F6368',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  chatBlockPreview: {
     color: '#5F6368',
     fontSize: 14,
     lineHeight: 20,
-    marginTop: 4,
+    marginTop: 8,
   },
   timestamp: {
     color: '#80868B',
