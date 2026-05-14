@@ -48,6 +48,13 @@
             "backgroundColor": "#05051D"
           }
         }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "enableGooglePay": false,
+          "merchantIdentifier": []
+        }
       ]
     ],
     "experiments": {

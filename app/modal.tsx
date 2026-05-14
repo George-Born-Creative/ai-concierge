@@ -27,13 +27,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F8FAFF',
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 12,
+    paddingVertical: 24,
   },
   card: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 32,
+    borderRadius: 16,
     borderWidth: 1,
     padding: 28,
   },
@@ -49,7 +50,7 @@ const styles = StyleSheet.create({
   title: {
     color: '#202124',
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '600',
     textAlign: 'center',
   },
   subtitle: {
@@ -66,6 +67,6 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#1A73E8',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '600',
   },
 });
