@@ -1,24 +1,50 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-const integrations = [
-  {
-    id: 'gohighlevel',
+import type { CrmProvider } from '@/lib/api';
+
+type IntegrationCard = {
+  id: CrmProvider;
+  name: string;
+  description: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+};
+
+const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
+  ghl: {
+    id: 'ghl',
     name: 'GoHighLevel',
-    description: 'Connect your CRM contacts, leads, and automations.',
+    description:
+      'Sync contacts, opportunities, notes, tasks, and trigger workflows from voice commands.',
     icon: 'hub',
   },
-  {
-    id: 'salesforce',
-    name: 'Salesforce',
-    description: 'Sync customer records and assistant context.',
+  hubspot: {
+    id: 'hubspot',
+    name: 'HubSpot',
+    description: 'Create contacts and deals, add notes, and manage your pipeline from voice.',
     icon: 'cloud',
   },
-] as const;
+};
 
 export function ConnectIntegrationScreen() {
   const router = useRouter();
+  const { provider } = useLocalSearchParams<{ provider?: CrmProvider }>();
+
+  // Per client spec: one subscription = one CRM. Show only the
+  // integration the user paid for. Default to GHL if missing for now.
+  const activeProvider: CrmProvider =
+    provider === 'hubspot' ? 'hubspot' : provider === 'ghl' ? 'ghl' : 'ghl';
+  const integration = INTEGRATIONS[activeProvider];
+
+  function startConnect() {
+    // Phase 1 will replace this with a backend call to
+    // GET /integrations/{provider}/auth-url and open the URL in WebBrowser.
+    router.push({
+      pathname: '/openai-key',
+      params: { provider: integration.id },
+    });
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -30,32 +56,31 @@ export function ConnectIntegrationScreen() {
         <View style={styles.headerIcon}>
           <MaterialIcons name="lan" size={34} color="#1A73E8" />
         </View>
-        <Text style={styles.title}>Connect your CRM</Text>
+        <Text style={styles.title}>Connect {integration.name}</Text>
         <Text style={styles.subtitle}>
-          Choose the CRM you want AI-Concierge to use for customer and contact workflows.
+          Your plan unlocks {integration.name}. We use OAuth to connect securely so you never have
+          to paste any API keys.
         </Text>
 
-        <View style={styles.integrationList}>
-          {integrations.map((integration) => (
-            <Pressable
-              key={integration.id}
-              style={styles.integrationCard}
-              onPress={() => router.push({ pathname: '/openai-key', params: { crm: integration.id } })}>
-              <View style={styles.integrationIcon}>
-                <MaterialIcons name={integration.icon} size={25} color="#1A73E8" />
-              </View>
-              <View style={styles.integrationCopy}>
-                <Text style={styles.integrationTitle}>Connect {integration.name}</Text>
-                <Text style={styles.integrationDescription}>{integration.description}</Text>
-              </View>
-              <MaterialIcons name="arrow-forward" size={22} color="#9AA0A6" />
-            </Pressable>
-          ))}
+        <View style={styles.integrationCard}>
+          <View style={styles.integrationIcon}>
+            <MaterialIcons name={integration.icon} size={26} color="#1A73E8" />
+          </View>
+          <View style={styles.integrationCopy}>
+            <Text style={styles.integrationTitle}>{integration.name}</Text>
+            <Text style={styles.integrationDescription}>{integration.description}</Text>
+          </View>
         </View>
 
-        <Pressable style={styles.secondaryButton} onPress={() => router.push('/openai-key')}>
-          <Text style={styles.secondaryButtonText}>Skip CRM for now</Text>
+        <Pressable style={styles.primaryButton} onPress={startConnect}>
+          <MaterialIcons name="link" size={22} color="#FFFFFF" />
+          <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
         </Pressable>
+
+        <Text style={styles.helperText}>
+          You can disconnect or switch your CRM later from the Profile tab. Switching CRMs may
+          require a new subscription.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -103,10 +128,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginTop: 10,
   },
-  integrationList: {
-    gap: 14,
-    marginTop: 28,
-  },
   integrationCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -114,23 +135,24 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
+    gap: 14,
+    marginTop: 28,
     padding: 16,
   },
   integrationIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
     borderRadius: 14,
-    height: 48,
+    height: 52,
     justifyContent: 'center',
-    width: 48,
+    width: 52,
   },
   integrationCopy: {
     flex: 1,
   },
   integrationTitle: {
     color: '#202124',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '600',
   },
   integrationDescription: {
@@ -139,13 +161,26 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 4,
   },
-  secondaryButton: {
+  primaryButton: {
     alignItems: 'center',
+    backgroundColor: '#1A73E8',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
     marginTop: 22,
+    minHeight: 58,
   },
-  secondaryButtonText: {
-    color: '#1A73E8',
-    fontSize: 15,
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '600',
+  },
+  helperText: {
+    color: '#5F6368',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 18,
+    textAlign: 'center',
   },
 });
