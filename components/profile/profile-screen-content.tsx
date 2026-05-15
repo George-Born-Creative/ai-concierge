@@ -2,6 +2,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { signOut } from '@/lib/api/auth';
+import { clearSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 const stats = [
@@ -141,7 +143,15 @@ export function ProfileScreenContent() {
 
           <Pressable
             style={[styles.actionButton, styles.logoutButton]}
-            onPress={() => show('Logout will be connected to your auth backend.', 'warning')}>
+            onPress={async () => {
+              try {
+                await signOut().catch(() => undefined);
+              } finally {
+                await clearSession();
+                show('Signed out.', 'success');
+                router.replace('/signup');
+              }
+            }}>
             <View style={[styles.actionIcon, styles.logoutIcon]}>
               <MaterialIcons name="logout" size={22} color="#EA4335" />
             </View>

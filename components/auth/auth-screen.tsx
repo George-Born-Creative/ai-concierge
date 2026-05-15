@@ -13,6 +13,9 @@ import {
   View,
 } from 'react-native';
 
+import { ApiError } from '@/lib/api/client';
+import { signIn, signUp } from '@/lib/api/auth';
+import { setSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 type AuthMode = 'signin' | 'signup';
@@ -28,8 +31,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  function submitAuthForm() {
+  async function submitAuthForm() {
     if (isSignup && !name.trim()) {
       show('Enter your full name to create an account.', 'error');
       return;
@@ -40,13 +44,37 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       return;
     }
 
-    if (isSignup) {
-      router.replace('/plan');
-      return;
-    }
+    setSubmitting(true);
+    try {
+      const result = isSignup
+        ? await signUp({ name: name.trim(), email: email.trim(), password })
+        : await signIn({ email: email.trim(), password });
 
-    show('Signed in successfully.', 'success');
-    router.replace('/(tabs)');
+      await setSession(result.token, result.user);
+
+      if (isSignup) {
+        router.replace('/plan');
+      } else {
+        show('Signed in successfully.', 'success');
+        router.replace(result.user.hasIntegration ? '/(tabs)' : '/plan');
+      }
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? humanizeError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Something went wrong. Please try again.';
+      show(message, 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function humanizeError(err: ApiError): string {
+    if (err.status === 409) return 'An account with this email already exists.';
+    if (err.status === 401) return 'Invalid email or password.';
+    return err.message || 'Authentication failed.';
   }
 
   return (
@@ -132,11 +160,22 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               />
             </View>
 
-            <Pressable style={styles.primaryButton} onPress={submitAuthForm}>
+            <Pressable
+              style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
+              onPress={submitAuthForm}
+              disabled={submitting}>
               <Text style={styles.primaryButtonText}>
-                {isSignup ? 'Create account' : 'Sign in'}
+                {submitting
+                  ? isSignup
+                    ? 'Creating account…'
+                    : 'Signing in…'
+                  : isSignup
+                    ? 'Create account'
+                    : 'Sign in'}
               </Text>
-              <MaterialIcons name="arrow-forward" size={21} color="#FFFFFF" />
+              {!submitting ? (
+                <MaterialIcons name="arrow-forward" size={21} color="#FFFFFF" />
+              ) : null}
             </Pressable>
 
             <Pressable
@@ -305,6 +344,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 10,
     minHeight: 56,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',

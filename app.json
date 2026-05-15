@@ -55,7 +55,8 @@
           "enableGooglePay": false,
           "merchantIdentifier": []
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
