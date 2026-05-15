@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CrmProvider {
+  GHL
+  HUBSPOT
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  name             String
+  passwordHash     String
+  stripeCustomerId String?  @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  subscription Subscription?
+  integrations IntegrationConnection[]
+  openaiKey    OpenAIKey?
+  auditLogs    AuditLog[]
+}
+
+// Per client spec: one subscription = one CRM integration.
+model Plan {
+  id            String      @id @default(cuid())
+  code          String      @unique
+  name          String
+  provider      CrmProvider
+  stripePriceId String      @unique
+  monthlyPrice  Int
+  currency      String      @default("usd")
+  features      String[]
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  subscriptions Subscription[]
+}
+
+// userId is unique so a user has at most one subscription at a time.
+// When the plan changes we update the existing row in place.
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  planId               String
+  stripeSubscriptionId String?            @unique
+  status               SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id])
+}
+
+// All third-party tokens are encrypted with AES-256-GCM before being stored.
+// `enabled` is flipped to false by the Stripe webhook when the user's
+// subscription becomes inactive.
+model IntegrationConnection {
+  id           String      @id @default(cuid())
+  userId       String
+  provider     CrmProvider
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  locationId   String?
+  portalId     String?
+  scopes       String[]
+  enabled      Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+model OpenAIKey {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  encryptedKey String
+  last4        String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Every CRM action the AI takes is recorded here.
+model AuditLog {
+  id        String       @id @default(cuid())
+  userId    String
+  action    String
+  provider  CrmProvider?
+  payload   Json?
+  status    String       @default("success")
+  createdAt DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
