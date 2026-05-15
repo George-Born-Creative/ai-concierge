@@ -14,7 +14,7 @@ import { ToastProvider } from '@/lib/toast';
 void SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
-  initialRouteName: '(auth)/signup',
+  initialRouteName: 'index',
 };
 
 export default function RootLayout() {
@@ -40,7 +40,8 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <ToastProvider>
         <StripeWrapper>
-          <Stack initialRouteName="(auth)/signup">
+          <Stack initialRouteName="index">
+            <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="(auth)/signup" options={{ headerShown: false }} />
             <Stack.Screen name="(auth)/signin" options={{ headerShown: false }} />

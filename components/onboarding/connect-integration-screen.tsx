@@ -2,7 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import type { CrmProvider } from '@/lib/api';
+type CrmProvider = 'ghl' | 'hubspot';
 
 type IntegrationCard = {
   id: CrmProvider;
