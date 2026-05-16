@@ -46,7 +46,6 @@ export default function RootLayout() {
             <Stack.Screen name="(auth)/signup" options={{ headerShown: false }} />
             <Stack.Screen name="(auth)/signin" options={{ headerShown: false }} />
             <Stack.Screen name="(onboarding)/plan" options={{ headerShown: false }} />
-            <Stack.Screen name="(onboarding)/payment" options={{ headerShown: false }} />
             <Stack.Screen name="(onboarding)/connect" options={{ headerShown: false }} />
             <Stack.Screen name="(onboarding)/openai-key" options={{ headerShown: false }} />
             <Stack.Screen name="(chat)/chat" options={{ headerShown: false }} />

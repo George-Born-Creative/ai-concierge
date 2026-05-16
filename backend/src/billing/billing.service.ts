@@ -28,10 +28,15 @@ export class BillingService {
     private readonly stripeProvider: StripeProvider,
   ) {}
 
-  // Creates (or reuses) a Stripe subscription in `incomplete` state and returns
-  // the PaymentSheet parameters the mobile SDK needs to collect a payment
-  // method. One subscription per user — switching CRM cancels the previous
-  // subscription and any linked CRM integration.
+  // Creates a Stripe subscription in `incomplete` state and returns the
+  // PaymentSheet parameters the mobile SDK needs to collect a payment method.
+  //
+  // One subscription per user (enforced by Subscription.userId @unique):
+  //   - already ACTIVE/TRIALING on the same plan → reject (no double-charge)
+  //   - already ACTIVE/TRIALING on a different plan → cancel it, disable the
+  //     linked CRM integration, then create the new one (CRM switch)
+  //   - any other lingering sub (INCOMPLETE/PAST_DUE/etc) → cancel before
+  //     creating a fresh one so we never leave orphans in Stripe
   async createPaymentSheet(userId: string, planCode: string): Promise<PaymentSheetParams> {
     const plan = await this.plans.findByCode(planCode);
     const user = await this.prisma.user.findUnique({
@@ -45,9 +50,19 @@ export class BillingService {
     const stripe = this.stripeProvider.client;
     const customerId = await this.ensureStripeCustomer(stripe, userId, user.email, user.stripeCustomerId);
 
-    if (user.subscription && user.subscription.planId !== plan.id) {
+    if (user.subscription) {
+      const samePlan = user.subscription.planId === plan.id;
+      const active = isActive(user.subscription.status);
+
+      if (samePlan && active) {
+        throw new BadRequestException('You already have this plan active.');
+      }
+
       await this.cancelStripeSubscription(stripe, user.subscription.stripeSubscriptionId);
-      await this.disableIntegrationsForUser(userId);
+
+      if (!samePlan) {
+        await this.disableIntegrationsForUser(userId);
+      }
     }
 
     const stripeSub = await stripe.subscriptions.create({

@@ -36,3 +36,20 @@ export type User = {
   hasOpenAIKey?: boolean;
   openAIKeyLast4?: string | null;
 };
+
+// ─── Billing ─────────────────────────────────────────────────────────────────
+
+export type PlanCode = 'ghl-pro' | 'hubspot-pro';
+
+// Matches POST /billing/payment-sheet on the backend. Field names line up 1:1
+// with what @stripe/stripe-react-native's PaymentSheet expects.
+export type CreatePaymentSheetRequest = {
+  planCode: PlanCode;
+};
+
+export type CreatePaymentSheetResponse = {
+  paymentIntent: string;
+  ephemeralKey: string;
+  customer: string;
+  publishableKey: string;
+};

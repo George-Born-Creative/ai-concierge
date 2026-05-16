@@ -15,6 +15,7 @@ import {
 
 import { ApiError } from '@/lib/api/client';
 import { signIn, signUp } from '@/lib/api/auth';
+import { routeForUser } from '@/lib/onboarding-route';
 import { setSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -52,12 +53,10 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
       await setSession(result.token, result.user);
 
-      if (isSignup) {
-        router.replace('/plan');
-      } else {
+      if (!isSignup) {
         show('Signed in successfully.', 'success');
-        router.replace(result.user.hasIntegration ? '/(tabs)' : '/plan');
       }
+      router.replace(routeForUser(result.user));
     } catch (err) {
       const message =
         err instanceof ApiError
