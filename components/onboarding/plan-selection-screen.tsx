@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 
 import { ApiError } from '@/lib/api/client';
-import { createPaymentSheet } from '@/lib/api/payment';
+import { createPaymentSheet, refreshSubscription } from '@/lib/api/payment';
 import { useToast } from '@/lib/toast';
 
 import { useStripePaymentSheet } from './use-stripe-payment-sheet';
@@ -101,6 +101,15 @@ export function PlanSelectionScreen() {
           show(presented.error.message, 'error');
         }
         return;
+      }
+
+      // Force the backend to reconcile from Stripe so the local row flips
+      // INCOMPLETE → ACTIVE before the next guarded call. Webhook may not be
+      // wired in local dev; this makes the flow work either way.
+      try {
+        await refreshSubscription();
+      } catch {
+        // Non-fatal: the webhook may still arrive shortly.
       }
 
       show('Subscription active. Connect your CRM next.', 'success');

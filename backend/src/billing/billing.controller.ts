@@ -21,4 +21,13 @@ export class BillingController {
   cancel(@CurrentUser() user: AuthenticatedUser) {
     return this.billing.cancelActiveSubscription(user.id);
   }
+
+  // Pulls the latest status from Stripe and updates the local row. Mobile
+  // calls this right after PaymentSheet success so the user doesn't have to
+  // wait on the webhook (which isn't wired in local dev).
+  @Post('subscription/refresh')
+  @HttpCode(200)
+  refresh(@CurrentUser() user: AuthenticatedUser) {
+    return this.billing.syncSubscriptionFromStripe(user.id);
+  }
 }

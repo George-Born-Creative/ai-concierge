@@ -3,3 +3,4 @@ export * from './types';
 
 export * as authApi from './auth';
 export * as paymentApi from './payment';
+export * as ghlApi from './ghl';
