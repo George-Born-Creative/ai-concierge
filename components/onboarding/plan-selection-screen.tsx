@@ -1,7 +1,22 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+import { ApiError } from '@/lib/api/client';
+import { createPaymentSheet } from '@/lib/api/payment';
+import { useToast } from '@/lib/toast';
+
+import { useStripePaymentSheet } from './use-stripe-payment-sheet';
 
 type PlanId = 'ghl-pro' | 'hubspot-pro';
 type CrmProvider = 'ghl' | 'hubspot';
@@ -47,15 +62,60 @@ const PLANS: PlanCard[] = [
 
 export function PlanSelectionScreen() {
   const router = useRouter();
+  const { show } = useToast();
+  const stripeSheet = useStripePaymentSheet();
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('ghl-pro');
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   const active = PLANS.find((plan) => plan.id === selectedPlan) ?? PLANS[0];
 
-  function continueToPayment() {
-    router.push({
-      pathname: '/payment',
-      params: { plan: active.id, provider: active.provider },
-    });
+  async function subscribeToActivePlan() {
+    if (Platform.OS === 'web') {
+      show('Stripe checkout is only available on the iOS / Android build.', 'info');
+      return;
+    }
+    if (!stripeSheet) {
+      show('Payment SDK is still loading. Please try again in a moment.', 'error');
+      return;
+    }
+
+    setIsSubscribing(true);
+    try {
+      const sheet = await createPaymentSheet({ planCode: active.id });
+
+      const init = await stripeSheet.initPaymentSheet({
+        merchantDisplayName: 'AI-Concierge',
+        customerId: sheet.customer,
+        customerEphemeralKeySecret: sheet.ephemeralKey,
+        paymentIntentClientSecret: sheet.paymentIntent,
+        returnURL: 'aiconcierge://stripe-redirect',
+      });
+      if (init.error) {
+        throw new Error(init.error.message);
+      }
+
+      const presented = await stripeSheet.presentPaymentSheet();
+      if (presented.error) {
+        // User cancelled or card was declined. "Canceled" is a no-op.
+        if (!/cancel/i.test(presented.error.message)) {
+          show(presented.error.message, 'error');
+        }
+        return;
+      }
+
+      show('Subscription active. Connect your CRM next.', 'success');
+      router.replace({ pathname: '/connect', params: { provider: active.provider } });
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message || 'Could not start checkout. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not start checkout. Please try again.';
+      show(message, 'error');
+    } finally {
+      setIsSubscribing(false);
+    }
   }
 
   return (
@@ -115,10 +175,22 @@ export function PlanSelectionScreen() {
           })}
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={continueToPayment}>
-          <Text style={styles.primaryButtonText}>Continue to payment</Text>
-          <MaterialIcons name="arrow-forward" size={22} color="#FFFFFF" />
+        <Pressable
+          style={[styles.primaryButton, isSubscribing && styles.primaryButtonDisabled]}
+          onPress={subscribeToActivePlan}
+          disabled={isSubscribing}>
+          {isSubscribing ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <MaterialIcons name="lock" size={20} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>Subscribe with Stripe</Text>
+            </>
+          )}
         </Pressable>
+        <Text style={styles.checkoutHint}>
+          Card details are collected securely inside Stripe. No card data touches our servers.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -280,9 +352,19 @@ const styles = StyleSheet.create({
     marginTop: 24,
     minHeight: 58,
   },
+  primaryButtonDisabled: {
+    opacity: 0.65,
+  },
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  checkoutHint: {
+    color: '#5F6368',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 12,
+    textAlign: 'center',
   },
 });

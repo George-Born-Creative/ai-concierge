@@ -49,7 +49,7 @@ export function ConnectIntegrationScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.backButton} onPress={() => router.replace('/payment')}>
+        <Pressable style={styles.backButton} onPress={() => router.replace('/plan')}>
           <MaterialIcons name="arrow-back" size={22} color="#202124" />
         </Pressable>
 

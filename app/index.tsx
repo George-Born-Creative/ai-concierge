@@ -1,20 +1,31 @@
+import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
-import type { User } from '@/lib/api/types';
-import { clearSession, getToken, hydrateSession, setSession } from '@/lib/session';
+import { routeForUser } from '@/lib/onboarding-route';
+import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 
-// Root entry: decides where the user should land based on whether they
-// have a saved JWT and how far they got through onboarding.
+// Root entry: decides where the user should land based on the saved JWT and
+// how far they got through onboarding. The full funnel is:
 //
-//   no token              → /signup
-//   token, expired/invalid → clear session, /signup
-//   token, no plan        → /plan
-//   token, no integration → /plan (placeholder until OAuth lands)
-//   token, fully set up   → /(tabs)
+//   no token                            → /signup
+//   token, expired (401)                → clear session, /signup
+//   token, no plan / subscription       → /plan
+//   token, plan but no CRM connected    → /connect?provider=<ghl|hubspot>
+//   token, CRM connected, no OpenAI key → /openai-key
+//   token, all set                      → /(tabs)
+//
+// When the backend can't be reached we fall back to the cached user we wrote
+// during signup/signin so the user lands on the correct step instead of being
+// dumped on the home screen.
+//
+// /auth/me is also wrapped in a 6 s timeout so a stuck request can't keep the
+// loading spinner up forever.
+const ME_TIMEOUT_MS = 6_000;
+
 export default function RootIndex() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -33,29 +44,34 @@ export default function RootIndex() {
         }
 
         try {
-          const me = await getMe();
+          const me = await withTimeout(getMe(), ME_TIMEOUT_MS);
           await setSession(token, me);
-          go(nextRouteForUser(me));
+          go(routeForUser(me));
         } catch (err) {
           if (err instanceof ApiError && err.status === 401) {
             await clearSession();
             go('/signup');
             return;
           }
-          // Network / server hiccup: keep the cached session and go to home.
-          // The next protected API call will surface the real error.
-          go('/(tabs)');
+          // Network / server hiccup: fall back to the cached user so we still
+          // route to the correct onboarding step. If we have no cached user,
+          // send them back to signin.
+          const cached = getUser();
+          if (cached) {
+            go(routeForUser(cached));
+          } else {
+            go('/signup');
+          }
         }
       } finally {
         setChecking(false);
       }
     }
 
-    function go(path: string) {
+    function go(target: Href) {
       if (navigated.current) return;
       navigated.current = true;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      router.replace(path as any);
+      router.replace(target);
     }
 
     void decide();
@@ -72,10 +88,20 @@ export default function RootIndex() {
   );
 }
 
-function nextRouteForUser(user: User): string {
-  if (!user.plan) return '/plan';
-  if (!user.hasIntegration) return '/plan';
-  return '/(tabs)';
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('Request timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(t);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(t);
+        reject(err);
+      },
+    );
+  });
 }
 
 const styles = StyleSheet.create({
