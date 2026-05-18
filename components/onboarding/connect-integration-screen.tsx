@@ -13,9 +13,11 @@ import {
   View,
 } from 'react-native';
 
+import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { ghlApi } from '@/lib/api';
 import { refreshSubscription } from '@/lib/api/payment';
+import { refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 type CrmProvider = 'ghl' | 'hubspot';
@@ -107,8 +109,17 @@ export function ConnectIntegrationScreen() {
         return;
       }
 
+      // Refresh the cached user so a cold start lands the user on /openai-key
+      // (or further) rather than re-routing to /connect from stale data.
+      try {
+        const me = await getMe();
+        await refreshUser(me);
+      } catch {
+        // Non-fatal: the route still works because the OAuth flow succeeded.
+      }
+
       show(`${integration.name} connected.`, 'success');
-      router.push({ pathname: '/openai-key', params: { provider: integration.id } });
+      router.replace({ pathname: '/openai-key', params: { provider: integration.id } });
     } catch (err) {
       const message =
         err instanceof ApiError

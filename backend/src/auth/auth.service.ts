@@ -7,16 +7,16 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { UsersService } from '../users/users.service';
 import { SigninDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
 
+// Signin and signup both return the full profile (same shape as GET /auth/me)
+// so the mobile auth gate can route the user straight to their next
+// onboarding step without an extra round trip.
 type AuthResult = {
   token: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-  };
+  user: Awaited<ReturnType<UsersService['getProfile']>>;
 };
 
 @Injectable()
@@ -24,6 +24,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly users: UsersService,
   ) {}
 
   async signup(dto: SignupDto): Promise<AuthResult> {
@@ -33,16 +34,17 @@ export class AuthService {
     }
 
     const passwordHash = await argon2.hash(dto.password);
-    const user = await this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: {
         email: dto.email,
         name: dto.name,
         passwordHash,
       },
-      select: { id: true, name: true, email: true },
+      select: { id: true, email: true },
     });
 
-    return { token: this.sign(user.id, user.email), user };
+    const profile = await this.users.getProfile(created.id);
+    return { token: this.sign(created.id, created.email), user: profile };
   }
 
   async signin(dto: SigninDto): Promise<AuthResult> {
@@ -56,10 +58,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    return {
-      token: this.sign(user.id, user.email),
-      user: { id: user.id, name: user.name, email: user.email },
-    };
+    const profile = await this.users.getProfile(user.id);
+    return { token: this.sign(user.id, user.email), user: profile };
   }
 
   private sign(userId: string, email: string): string {
