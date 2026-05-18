@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
+import { hydrateDevSkip, isOnboardingSkipped } from '@/lib/dev-skip';
 import { routeForUser } from '@/lib/onboarding-route';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 
@@ -35,7 +36,7 @@ export default function RootIndex() {
   useEffect(() => {
     async function decide() {
       try {
-        await hydrateSession();
+        await Promise.all([hydrateSession(), hydrateDevSkip()]);
         const token = getToken();
 
         if (!token) {
@@ -46,7 +47,9 @@ export default function RootIndex() {
         try {
           const me = await withTimeout(getMe(), ME_TIMEOUT_MS);
           await setSession(token, me);
-          go(routeForUser(me));
+          // Dev escape hatch: if a Skip button was tapped earlier, drop the
+          // user straight on the home tab regardless of onboarding status.
+          go(isOnboardingSkipped() ? '/(tabs)' : routeForUser(me));
         } catch (err) {
           if (err instanceof ApiError && err.status === 401) {
             await clearSession();
@@ -58,7 +61,7 @@ export default function RootIndex() {
           // send them back to signin.
           const cached = getUser();
           if (cached) {
-            go(routeForUser(cached));
+            go(isOnboardingSkipped() ? '/(tabs)' : routeForUser(cached));
           } else {
             go('/signup');
           }

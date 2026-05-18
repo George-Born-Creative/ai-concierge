@@ -67,3 +67,30 @@ export type GhlStatusResponse = {
   expiresAt?: string | null;
   scopes?: string[];
 };
+
+// ─── OpenAI key vault ────────────────────────────────────────────────────────
+
+export type SaveOpenAIKeyRequest = {
+  key: string;
+};
+
+export type OpenAIKeyStatus = {
+  exists: boolean;
+  last4: string | null;
+  createdAt: string | null;
+};
+
+// ─── Voice transcribe ────────────────────────────────────────────────────────
+
+export type VoiceIntent = {
+  intent: string;
+  confidence: number;
+  entities: Record<string, string | number | boolean | null>;
+  needs_clarification: boolean;
+  notes: string | null;
+};
+
+export type TranscribeResponse = {
+  transcript: string;
+  intent: VoiceIntent;
+};

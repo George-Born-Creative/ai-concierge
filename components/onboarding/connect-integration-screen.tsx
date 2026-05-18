@@ -17,6 +17,7 @@ import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { ghlApi } from '@/lib/api';
 import { refreshSubscription } from '@/lib/api/payment';
+import { setOnboardingSkipped } from '@/lib/dev-skip';
 import { refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -177,6 +178,15 @@ export function ConnectIntegrationScreen() {
           You can disconnect or switch your CRM later from the Profile tab. Switching CRMs may
           require a new subscription.
         </Text>
+
+        <Pressable
+          style={styles.skipButton}
+          onPress={async () => {
+            await setOnboardingSkipped(true);
+            router.replace('/(tabs)');
+          }}>
+          <Text style={styles.skipButtonText}>Skip for now (dev)</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -281,5 +291,16 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 18,
     textAlign: 'center',
+  },
+  skipButton: {
+    alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 10,
+  },
+  skipButtonText: {
+    color: '#9AA0A6',
+    fontSize: 13,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 });
