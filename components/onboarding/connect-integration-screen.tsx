@@ -1,6 +1,22 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+import { ApiError } from '@/lib/api/client';
+import { ghlApi } from '@/lib/api';
+import { refreshSubscription } from '@/lib/api/payment';
+import { useToast } from '@/lib/toast';
 
 type CrmProvider = 'ghl' | 'hubspot';
 
@@ -10,6 +26,23 @@ type IntegrationCard = {
   description: string;
   icon: keyof typeof MaterialIcons.glyphMap;
 };
+
+// One-shot retry: if the backend says we need an active subscription, the
+// local row is probably still INCOMPLETE because the Stripe webhook hasn't
+// landed. Force a refresh from Stripe and try again.
+async function fetchAuthUrlWithRetry() {
+  try {
+    return await ghlApi.getAuthUrl();
+  } catch (err) {
+    const looksLikeSubscriptionGuard =
+      err instanceof ApiError &&
+      err.status === 403 &&
+      /subscription/i.test(err.message ?? '');
+    if (!looksLikeSubscriptionGuard) throw err;
+    await refreshSubscription();
+    return ghlApi.getAuthUrl();
+  }
+}
 
 const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
   ghl: {
@@ -29,21 +62,64 @@ const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
 
 export function ConnectIntegrationScreen() {
   const router = useRouter();
+  const { show } = useToast();
   const { provider } = useLocalSearchParams<{ provider?: CrmProvider }>();
 
   // Per client spec: one subscription = one CRM. Show only the
-  // integration the user paid for. Default to GHL if missing for now.
+  // integration the user paid for. Default to GHL if missing.
   const activeProvider: CrmProvider =
     provider === 'hubspot' ? 'hubspot' : provider === 'ghl' ? 'ghl' : 'ghl';
   const integration = INTEGRATIONS[activeProvider];
 
-  function startConnect() {
-    // Phase 1 will replace this with a backend call to
-    // GET /integrations/{provider}/auth-url and open the URL in WebBrowser.
-    router.push({
-      pathname: '/openai-key',
-      params: { provider: integration.id },
-    });
+  const [submitting, setSubmitting] = useState(false);
+
+  async function startConnect() {
+    if (activeProvider === 'hubspot') {
+      show('HubSpot OAuth is coming in the next release.', 'info');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { url } = await fetchAuthUrlWithRetry();
+      // Becomes aiconcierge://oauth/ghl — matches the deep link the backend
+      // sends from the OAuth callback HTML.
+      const returnUrl = Linking.createURL('oauth/ghl');
+
+      const result = await WebBrowser.openAuthSessionAsync(url, returnUrl);
+      if (result.type !== 'success') {
+        // User dismissed the browser sheet — silent no-op.
+        return;
+      }
+
+      const params = new URL(result.url).searchParams;
+      if (params.get('status') !== 'ok') {
+        const reason = params.get('reason');
+        show(reason ? `Connection failed: ${reason}` : 'Connection failed.', 'error');
+        return;
+      }
+
+      // Belt-and-suspenders: verify the row actually landed in the DB before
+      // moving the user forward.
+      const status = await ghlApi.getStatus();
+      if (!status.connected) {
+        show('Connection was not saved. Please try again.', 'error');
+        return;
+      }
+
+      show(`${integration.name} connected.`, 'success');
+      router.push({ pathname: '/openai-key', params: { provider: integration.id } });
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message || 'Could not start the connection. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not start the connection. Please try again.';
+      show(message, 'error');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -72,9 +148,18 @@ export function ConnectIntegrationScreen() {
           </View>
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={startConnect}>
-          <MaterialIcons name="link" size={22} color="#FFFFFF" />
-          <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
+        <Pressable
+          style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
+          onPress={startConnect}
+          disabled={submitting}>
+          {submitting ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <MaterialIcons name="link" size={22} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
+            </>
+          )}
         </Pressable>
 
         <Text style={styles.helperText}>
@@ -170,6 +255,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 22,
     minHeight: 58,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',

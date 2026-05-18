@@ -94,6 +94,31 @@ export class BillingService {
     };
   }
 
+  // Pulls the live status of the user's Stripe subscription and reconciles
+  // the local row. Lets the mobile app force the row out of INCOMPLETE right
+  // after PaymentSheet succeeds, even when Stripe webhooks aren't wired in
+  // local dev (whsec_replace_me).
+  async syncSubscriptionFromStripe(userId: string): Promise<{ status: SubscriptionStatus }> {
+    const sub = await this.prisma.subscription.findUnique({ where: { userId } });
+    if (!sub || !sub.stripeSubscriptionId) {
+      throw new NotFoundException('No Stripe subscription to refresh');
+    }
+    const stripeSub = await this.stripeProvider.client.subscriptions.retrieve(
+      sub.stripeSubscriptionId,
+      { expand: ['latest_invoice.payment_intent'] },
+    );
+    // metadata is set when we create the sub; if a manual sub is missing it,
+    // backfill so handleSubscriptionEvent can find the user.
+    if (!stripeSub.metadata?.userId) {
+      await this.stripeProvider.client.subscriptions.update(stripeSub.id, {
+        metadata: { ...stripeSub.metadata, userId },
+      });
+      stripeSub.metadata = { ...stripeSub.metadata, userId };
+    }
+    await this.handleSubscriptionEvent(stripeSub);
+    return { status: mapStripeStatus(stripeSub.status) };
+  }
+
   async cancelActiveSubscription(userId: string): Promise<{ canceled: boolean }> {
     const sub = await this.prisma.subscription.findUnique({ where: { userId } });
     if (!sub || !sub.stripeSubscriptionId) {

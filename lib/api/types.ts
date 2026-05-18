@@ -53,3 +53,17 @@ export type CreatePaymentSheetResponse = {
   customer: string;
   publishableKey: string;
 };
+
+// ─── GoHighLevel OAuth ───────────────────────────────────────────────────────
+
+export type GhlAuthUrlResponse = {
+  url: string;
+  state: string;
+};
+
+export type GhlStatusResponse = {
+  connected: boolean;
+  locationId?: string | null;
+  expiresAt?: string | null;
+  scopes?: string[];
+};

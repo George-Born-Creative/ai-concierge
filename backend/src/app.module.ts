@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
+import { GhlModule } from './integrations/ghl/ghl.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
@@ -15,6 +16,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     PlansModule,
     BillingModule,
+    GhlModule,
   ],
 })
 export class AppModule {}
