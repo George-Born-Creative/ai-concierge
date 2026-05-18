@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { signOut } from '@/lib/api/auth';
+import { setOnboardingSkipped } from '@/lib/dev-skip';
 import { clearSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -148,6 +149,7 @@ export function ProfileScreenContent() {
                 await signOut().catch(() => undefined);
               } finally {
                 await clearSession();
+                await setOnboardingSkipped(false);
                 show('Signed out.', 'success');
                 router.replace('/signup');
               }

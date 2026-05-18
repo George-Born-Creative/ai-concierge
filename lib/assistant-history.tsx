@@ -1,5 +1,7 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
 
+import { voiceApi } from '@/lib/api';
+import type { VoiceIntent } from '@/lib/api/types';
 import {
   AssistantCommandStatus,
   executeContactCommand,
@@ -13,6 +15,10 @@ export type AssistantHistoryEntry = {
   createdAt: string;
   source: 'text' | 'voice';
   voiceUri?: string;
+  // Populated for voice messages once /voice/transcribe completes.
+  pending?: boolean;
+  transcript?: string;
+  intent?: VoiceIntent;
 };
 
 export type AssistantChat = {
@@ -123,6 +129,22 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
+  const updateEntry = useCallback(
+    (entryId: string, patch: Partial<AssistantHistoryEntry>) => {
+      setState((s) => {
+        const chats = s.chats.map((chat) => {
+          const idx = chat.messages.findIndex((m) => m.id === entryId);
+          if (idx < 0) return chat;
+          const messages = [...chat.messages];
+          messages[idx] = { ...messages[idx], ...patch };
+          return { ...chat, messages, updatedAt: new Date().toISOString() };
+        });
+        return { ...s, chats };
+      });
+    },
+    [],
+  );
+
   const runCommand = useCallback(
     async (command: string, source: AssistantHistoryEntry['source'] = 'text') => {
       const result = await executeContactCommand(command);
@@ -145,17 +167,44 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       const entry: AssistantHistoryEntry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         command: 'Voice message',
-        response:
-          'Voice recording received. It is ready to send to speech-to-text, then run as a contact command.',
+        response: 'Transcribing your recording…',
         status: 'success',
         createdAt: new Date().toISOString(),
         source: 'voice',
         voiceUri,
+        pending: true,
       };
       appendEntry(entry);
+
+      // Fire-and-forget: hit /voice/transcribe and patch the entry when the
+      // backend returns transcript + normalized intent JSON. The bubble
+      // re-renders automatically because we update via setState.
+      void (async () => {
+        try {
+          const result = await voiceApi.transcribe(voiceUri);
+          const transcript = result.transcript || '(no speech detected)';
+          updateEntry(entry.id, {
+            command: transcript,
+            response: formatIntentResponse(result.intent),
+            transcript: result.transcript,
+            intent: result.intent,
+            pending: false,
+            status: 'success',
+          });
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : 'Could not transcribe the recording.';
+          updateEntry(entry.id, {
+            response: message,
+            pending: false,
+            status: 'error',
+          });
+        }
+      })();
+
       return entry;
     },
-    [appendEntry]
+    [appendEntry, updateEntry]
   );
 
   const value = useMemo<AssistantHistoryContextValue>(
@@ -196,4 +245,16 @@ export function useAssistantHistory() {
   }
 
   return context;
+}
+
+// Renders the intent JSON into something a human reads first.
+function formatIntentResponse(intent: VoiceIntent): string {
+  const header = `Intent: ${intent.intent} (confidence ${(intent.confidence * 100).toFixed(0)}%)`;
+  const entityEntries = Object.entries(intent.entities ?? {});
+  const entities = entityEntries.length
+    ? entityEntries.map(([k, v]) => `  ${k}: ${v ?? '—'}`).join('\n')
+    : '  (none extracted)';
+  const clarification = intent.needs_clarification ? '\nNeeds clarification.' : '';
+  const notes = intent.notes ? `\nNote: ${intent.notes}` : '';
+  return `${header}\nEntities:\n${entities}${clarification}${notes}`;
 }

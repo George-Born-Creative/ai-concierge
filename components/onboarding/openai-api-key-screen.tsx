@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,6 +14,10 @@ import {
   View,
 } from 'react-native';
 
+import { getMe } from '@/lib/api/auth';
+import { ApiError } from '@/lib/api/client';
+import { openaiApi } from '@/lib/api';
+import { refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 type Mode = 'enter' | 'saved';
@@ -24,27 +29,68 @@ export function OpenAIApiKeyScreen() {
   const [apiKey, setApiKey] = useState('');
   const [savedLast4, setSavedLast4] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('enter');
+  const [submitting, setSubmitting] = useState(false);
 
   const maskedKey = useMemo(() => (savedLast4 ? `sk-•••• •••• ${savedLast4}` : ''), [savedLast4]);
 
-  function saveKey() {
+  // On first paint, check if the user already has a key on file. If so, jump
+  // straight to the masked "saved" state so they don't have to re-paste.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await openaiApi.getStatus();
+        if (cancelled) return;
+        if (status.exists && status.last4) {
+          setSavedLast4(status.last4);
+          setMode('saved');
+        }
+      } catch {
+        // Non-fatal: keep the "enter" form visible so the user can paste a key.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function saveKey() {
     const trimmed = apiKey.trim();
     if (!trimmed) {
       show('Enter your OpenAI API key to continue.', 'error');
       return;
     }
-    if (trimmed.length < 8) {
+    if (trimmed.length < 20) {
       show('That key looks too short. Paste the full key (sk-...).', 'error');
       return;
     }
 
-    // Phase 1: POST /openai/keys to the backend; on success use the returned
-    // last4 instead of slicing on the client.
-    const last4 = trimmed.slice(-4);
-    setSavedLast4(last4);
-    setApiKey('');
-    setMode('saved');
-    show('OpenAI key saved securely.', 'success');
+    setSubmitting(true);
+    try {
+      const status = await openaiApi.saveKey({ key: trimmed });
+      setSavedLast4(status.last4);
+      setApiKey('');
+      setMode('saved');
+      show('OpenAI key saved securely.', 'success');
+
+      // Refresh cached user so /(tabs) doesn't bounce back here on cold start.
+      try {
+        const me = await getMe();
+        await refreshUser(me);
+      } catch {
+        // Non-fatal.
+      }
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message || 'Could not save the key. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not save the key. Please try again.';
+      show(message, 'error');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function startReplace() {
@@ -120,9 +166,18 @@ export function OpenAIApiKeyScreen() {
                 />
               </View>
 
-              <Pressable style={styles.primaryButton} onPress={saveKey}>
-                <Text style={styles.primaryButtonText}>Save key securely</Text>
-                <MaterialIcons name="check" size={22} color="#FFFFFF" />
+              <Pressable
+                style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
+                onPress={saveKey}
+                disabled={submitting}>
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Text style={styles.primaryButtonText}>Save key securely</Text>
+                    <MaterialIcons name="check" size={22} color="#FFFFFF" />
+                  </>
+                )}
               </Pressable>
             </View>
           )}
@@ -247,6 +302,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 18,
     minHeight: 56,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',
