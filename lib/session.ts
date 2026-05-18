@@ -51,6 +51,15 @@ export async function setSession(token: string, user: User): Promise<void> {
   emit();
 }
 
+// Updates the cached user without touching the JWT. Used after server-side
+// state changes (Stripe payment, CRM connect) so the auth gate doesn't
+// bounce the user back to an already-completed step on the next cold start.
+export async function refreshUser(user: User): Promise<void> {
+  state.user = user;
+  await setSecureItem(USER_KEY, JSON.stringify(user));
+  emit();
+}
+
 export async function clearSession(): Promise<void> {
   state.token = null;
   state.user = null;

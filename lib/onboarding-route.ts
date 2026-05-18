@@ -1,23 +1,33 @@
 import type { Href } from 'expo-router';
 
-import type { User } from './api/types';
+import type { User, UserPlan } from './api/types';
+
+// Stripe statuses we consider "subscribed". Anything else — incomplete,
+// past_due, canceled, unpaid — sends the user back to /plan to finish or
+// re-subscribe.
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing']);
+
+export function isActiveSubscription(plan?: UserPlan | null): boolean {
+  return !!plan && ACTIVE_SUBSCRIPTION_STATUSES.has(plan.status);
+}
 
 // Centralized "where should this user go next?" logic. Used by:
 //   - the root auth gate at app/index.tsx on cold start
 //   - the auth screen after a successful signin / signup
 //   - any future place that wants to drop a user back into the funnel
 //
-// Funnel:
-//   no plan                 → /plan         (buy a subscription)
-//   plan but no integration → /connect      (authorize GHL / HubSpot)
-//   integration but no key  → /openai-key   (paste OpenAI key)
-//   all set                 → /(tabs)
+// Funnel (matches the product spec):
+//   not subscribed (no plan or status not active/trialing) → /plan
+//   subscribed but CRM not authorized                      → /connect
+//   CRM connected but no OpenAI key                        → /openai-key
+//   everything set                                         → /(tabs) (Home)
 export function routeForUser(user: User): Href {
-  if (!user.plan) {
+  if (!isActiveSubscription(user.plan)) {
     return '/plan';
   }
   if (!user.hasIntegration) {
-    return { pathname: '/connect', params: { provider: user.plan.provider } };
+    // user.plan is guaranteed non-null here by isActiveSubscription.
+    return { pathname: '/connect', params: { provider: user.plan!.provider } };
   }
   if (!user.hasOpenAIKey) {
     return '/openai-key';

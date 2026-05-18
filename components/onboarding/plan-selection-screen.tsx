@@ -12,8 +12,10 @@ import {
   View,
 } from 'react-native';
 
+import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { createPaymentSheet, refreshSubscription } from '@/lib/api/payment';
+import { refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 import { useStripePaymentSheet } from './use-stripe-payment-sheet';
@@ -108,6 +110,10 @@ export function PlanSelectionScreen() {
       // wired in local dev; this makes the flow work either way.
       try {
         await refreshSubscription();
+        // Refresh the cached user so a cold start lands the user on /connect
+        // (or further) instead of /plan based on stale data.
+        const me = await getMe();
+        await refreshUser(me);
       } catch {
         // Non-fatal: the webhook may still arrive shortly.
       }
