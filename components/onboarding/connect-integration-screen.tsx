@@ -15,7 +15,7 @@ import {
 
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
-import { ghlApi } from '@/lib/api';
+import { ghlApi, hubspotApi } from '@/lib/api';
 import { refreshSubscription } from '@/lib/api/payment';
 import { setOnboardingSkipped } from '@/lib/dev-skip';
 import { refreshUser } from '@/lib/session';
@@ -23,29 +23,23 @@ import { useToast } from '@/lib/toast';
 
 type CrmProvider = 'ghl' | 'hubspot';
 
+// Common shape both ghlApi and hubspotApi expose. Lets the OAuth flow stay
+// provider-agnostic and just dispatch on activeProvider.
+type CrmOAuthClient = {
+  getAuthUrl: () => Promise<{ url: string; state: string }>;
+  getStatus: () => Promise<{ connected: boolean }>;
+};
+
 type IntegrationCard = {
   id: CrmProvider;
   name: string;
   description: string;
   icon: keyof typeof MaterialIcons.glyphMap;
+  api: CrmOAuthClient;
+  // Path appended to the app's deep-link scheme. Must match what the backend
+  // callback redirects to (aiconcierge://oauth/ghl or .../oauth/hubspot).
+  returnUrlPath: string;
 };
-
-// One-shot retry: if the backend says we need an active subscription, the
-// local row is probably still INCOMPLETE because the Stripe webhook hasn't
-// landed. Force a refresh from Stripe and try again.
-async function fetchAuthUrlWithRetry() {
-  try {
-    return await ghlApi.getAuthUrl();
-  } catch (err) {
-    const looksLikeSubscriptionGuard =
-      err instanceof ApiError &&
-      err.status === 403 &&
-      /subscription/i.test(err.message ?? '');
-    if (!looksLikeSubscriptionGuard) throw err;
-    await refreshSubscription();
-    return ghlApi.getAuthUrl();
-  }
-}
 
 const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
   ghl: {
@@ -54,14 +48,35 @@ const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
     description:
       'Sync contacts, opportunities, notes, tasks, and trigger workflows from voice commands.',
     icon: 'hub',
+    api: ghlApi,
+    returnUrlPath: 'oauth/ghl',
   },
   hubspot: {
     id: 'hubspot',
     name: 'HubSpot',
     description: 'Create contacts and deals, add notes, and manage your pipeline from voice.',
     icon: 'cloud',
+    api: hubspotApi,
+    returnUrlPath: 'oauth/hubspot',
   },
 };
+
+// One-shot retry: if the backend says we need an active subscription, the
+// local row is probably still INCOMPLETE because the Stripe webhook hasn't
+// landed. Force a refresh from Stripe and try again.
+async function fetchAuthUrlWithRetry(api: CrmOAuthClient) {
+  try {
+    return await api.getAuthUrl();
+  } catch (err) {
+    const looksLikeSubscriptionGuard =
+      err instanceof ApiError &&
+      err.status === 403 &&
+      /subscription/i.test(err.message ?? '');
+    if (!looksLikeSubscriptionGuard) throw err;
+    await refreshSubscription();
+    return api.getAuthUrl();
+  }
+}
 
 export function ConnectIntegrationScreen() {
   const router = useRouter();
@@ -77,17 +92,12 @@ export function ConnectIntegrationScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   async function startConnect() {
-    if (activeProvider === 'hubspot') {
-      show('HubSpot OAuth is coming in the next release.', 'info');
-      return;
-    }
-
     setSubmitting(true);
     try {
-      const { url } = await fetchAuthUrlWithRetry();
-      // Becomes aiconcierge://oauth/ghl — matches the deep link the backend
-      // sends from the OAuth callback HTML.
-      const returnUrl = Linking.createURL('oauth/ghl');
+      const { url } = await fetchAuthUrlWithRetry(integration.api);
+      // Becomes aiconcierge://oauth/{ghl|hubspot} — must match the deep link
+      // the backend callback redirects to.
+      const returnUrl = Linking.createURL(integration.returnUrlPath);
 
       const result = await WebBrowser.openAuthSessionAsync(url, returnUrl);
       if (result.type !== 'success') {
@@ -104,7 +114,7 @@ export function ConnectIntegrationScreen() {
 
       // Belt-and-suspenders: verify the row actually landed in the DB before
       // moving the user forward.
-      const status = await ghlApi.getStatus();
+      const status = await integration.api.getStatus();
       if (!status.connected) {
         show('Connection was not saved. Please try again.', 'error');
         return;

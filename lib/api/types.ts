@@ -68,6 +68,20 @@ export type GhlStatusResponse = {
   scopes?: string[];
 };
 
+// ─── HubSpot OAuth ───────────────────────────────────────────────────────────
+
+export type HubspotAuthUrlResponse = {
+  url: string;
+  state: string;
+};
+
+export type HubspotStatusResponse = {
+  connected: boolean;
+  portalId?: string | null;
+  expiresAt?: string | null;
+  scopes?: string[];
+};
+
 // ─── OpenAI key vault ────────────────────────────────────────────────────────
 
 export type SaveOpenAIKeyRequest = {
