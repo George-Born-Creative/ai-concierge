@@ -15,7 +15,6 @@ import {
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { createPaymentSheet, refreshSubscription } from '@/lib/api/payment';
-import { setOnboardingSkipped } from '@/lib/dev-skip';
 import { refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -207,15 +206,6 @@ export function PlanSelectionScreen() {
         <Text style={styles.checkoutHint}>
           Card details are collected securely inside Stripe. No card data touches our servers.
         </Text>
-
-        <Pressable
-          style={styles.skipButton}
-          onPress={async () => {
-            await setOnboardingSkipped(true);
-            router.replace('/(tabs)');
-          }}>
-          <Text style={styles.skipButtonText}>Skip for now (dev)</Text>
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -391,16 +381,5 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 12,
     textAlign: 'center',
-  },
-  skipButton: {
-    alignItems: 'center',
-    marginTop: 18,
-    paddingVertical: 10,
-  },
-  skipButtonText: {
-    color: '#9AA0A6',
-    fontSize: 13,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
   },
 });

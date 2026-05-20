@@ -78,4 +78,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | POST   | `/billing/subscription/cancel`| JWT  | Cancel the active subscription                       |
 | POST   | `/webhooks/stripe`            | raw  | Stripe webhook (signature verified)                  |
 
-Phase 2 (CRM OAuth) and Phase 3 (OpenAI key + voice) are scaffolded later.
+Phase 2+ endpoints (CRM OAuth, OpenAI keys, voice) are implemented — see source under `src/integrations/`, `src/openai-keys/`, `src/voice/`.
+
+### GoHighLevel
+
+Set `GHL_CLIENT_ID`, `GHL_CLIENT_SECRET`, and `GHL_REDIRECT_URI` in `.env`. The redirect URI must be registered in your GHL Marketplace app and must match exactly. Use a neutral path with no `ghl` / `highlevel` in the URL (e.g. `http://192.168.43.22:4000/oauth/callback`). Legacy `/integrations/ghl/callback` still works.

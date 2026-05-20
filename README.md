@@ -106,6 +106,29 @@ npm run seed
 
 On success, the app routes to `/connect` and the Stripe CLI / backend log shows the subscription becoming `ACTIVE`.
 
+## GoHighLevel OAuth
+
+GHL credentials live **only** in `backend/.env` (never in the mobile app):
+
+```
+GHL_CLIENT_ID=...
+GHL_CLIENT_SECRET=...
+GHL_REDIRECT_URI=http://<your-PC-LAN-ip>:4000/oauth/callback
+GHL_SCOPES=contacts.readonly contacts.write ...
+```
+
+In the [GHL Marketplace](https://marketplace.gohighlevel.com/) app settings, add the same **Redirect URL** as `GHL_REDIRECT_URI`.
+
+The mobile connect screen calls `GET /integrations/ghl/auth-url` (JWT + active subscription), opens the returned URL in an in-app browser, and returns via `aiconcierge://oauth/ghl` after the backend callback stores tokens.
+
+| Concern | File |
+| --- | --- |
+| OAuth service (auth URL, token exchange, refresh) | [backend/src/integrations/ghl/ghl.service.ts](backend/src/integrations/ghl/ghl.service.ts) |
+| OAuth callback (Marketplace redirect) | [backend/src/integrations/ghl/ghl-oauth-callback.controller.ts](backend/src/integrations/ghl/ghl-oauth-callback.controller.ts) (`GET /oauth/callback`) |
+| Routes (`auth-url`, `status`, `disconnect`) | [backend/src/integrations/ghl/ghl.controller.ts](backend/src/integrations/ghl/ghl.controller.ts) |
+| Mobile API client | [lib/api/ghl.ts](lib/api/ghl.ts) |
+| Connect UI | [components/onboarding/connect-integration-screen.tsx](components/onboarding/connect-integration-screen.tsx) |
+
 ## Get a fresh project
 
 When you're ready, run:
