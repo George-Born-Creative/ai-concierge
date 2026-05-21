@@ -1,10 +1,12 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -17,16 +19,16 @@ import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { ghlApi, hubspotApi } from '@/lib/api';
 import { refreshSubscription } from '@/lib/api/payment';
+import type { GhlStatusResponse, HubspotStatusResponse } from '@/lib/api/types';
+import { getOAuthReturnUrl, parseOAuthReturnUrl } from '@/lib/oauth-return-url';
 import { refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 type CrmProvider = 'ghl' | 'hubspot';
 
-// Common shape both ghlApi and hubspotApi expose. Lets the OAuth flow stay
-// provider-agnostic and just dispatch on activeProvider.
 type CrmOAuthClient = {
-  getAuthUrl: () => Promise<{ url: string; state: string }>;
-  getStatus: () => Promise<{ connected: boolean }>;
+  getAuthUrl: (returnUrl: string) => Promise<{ url: string; state: string }>;
+  getStatus: () => Promise<GhlStatusResponse | HubspotStatusResponse>;
 };
 
 type IntegrationCard = {
@@ -35,9 +37,6 @@ type IntegrationCard = {
   description: string;
   icon: keyof typeof MaterialIcons.glyphMap;
   api: CrmOAuthClient;
-  // Path appended to the app's deep-link scheme. Must match what the backend
-  // callback redirects to (aiconcierge://oauth/ghl or .../oauth/hubspot).
-  returnUrlPath: string;
 };
 
 const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
@@ -48,7 +47,6 @@ const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
       'Sync contacts, opportunities, notes, tasks, and trigger workflows from voice commands.',
     icon: 'hub',
     api: ghlApi,
-    returnUrlPath: 'oauth/ghl',
   },
   hubspot: {
     id: 'hubspot',
@@ -56,16 +54,14 @@ const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
     description: 'Create contacts and deals, add notes, and manage your pipeline from voice.',
     icon: 'cloud',
     api: hubspotApi,
-    returnUrlPath: 'oauth/hubspot',
   },
 };
 
-// One-shot retry: if the backend says we need an active subscription, the
-// local row is probably still INCOMPLETE because the Stripe webhook hasn't
-// landed. Force a refresh from Stripe and try again.
-async function fetchAuthUrlWithRetry(api: CrmOAuthClient) {
+WebBrowser.maybeCompleteAuthSession();
+
+async function fetchAuthUrlWithRetry(api: CrmOAuthClient, returnUrl: string) {
   try {
-    return await api.getAuthUrl();
+    return await api.getAuthUrl(returnUrl);
   } catch (err) {
     const looksLikeSubscriptionGuard =
       err instanceof ApiError &&
@@ -73,63 +69,156 @@ async function fetchAuthUrlWithRetry(api: CrmOAuthClient) {
       /subscription/i.test(err.message ?? '');
     if (!looksLikeSubscriptionGuard) throw err;
     await refreshSubscription();
-    return api.getAuthUrl();
+    return api.getAuthUrl(returnUrl);
   }
 }
 
 export function ConnectIntegrationScreen() {
   const router = useRouter();
   const { show } = useToast();
-  const { provider } = useLocalSearchParams<{ provider?: CrmProvider }>();
+  const { provider, oauthStatus, oauthReason } = useLocalSearchParams<{
+    provider?: CrmProvider;
+    oauthStatus?: string;
+    oauthReason?: string;
+  }>();
+  const oauthHandled = useRef(false);
 
-  // Per client spec: one subscription = one CRM. Show only the
-  // integration the user paid for. Default to GHL if missing.
   const activeProvider: CrmProvider =
     provider === 'hubspot' ? 'hubspot' : provider === 'ghl' ? 'ghl' : 'ghl';
   const integration = INTEGRATIONS[activeProvider];
 
   const [submitting, setSubmitting] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [connected, setConnected] = useState(false);
+  const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
+
+  const loadConnectionStatus = useCallback(async () => {
+    setLoadingStatus(true);
+    try {
+      const status = await integration.api.getStatus();
+      setConnected(status.connected);
+      if (status.connected) {
+        const detail =
+          'locationId' in status && status.locationId
+            ? `Location ${status.locationId}`
+            : 'portalId' in status && status.portalId
+              ? `Portal ${status.portalId}`
+              : 'Saved in your account';
+        setConnectionDetail(detail);
+      } else {
+        setConnectionDetail(null);
+      }
+    } catch {
+      setConnected(false);
+      setConnectionDetail(null);
+    } finally {
+      setLoadingStatus(false);
+    }
+  }, [integration.api]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadConnectionStatus();
+    }, [loadConnectionStatus]),
+  );
+
+  const applyConnectedState = useCallback(async () => {
+    const status = await integration.api.getStatus();
+    if (!status.connected) return false;
+
+    try {
+      const me = await getMe();
+      await refreshUser(me);
+    } catch {
+      // Non-fatal if profile refresh fails.
+    }
+
+    await loadConnectionStatus();
+    show(`${integration.name} connected and saved.`, 'success');
+    return true;
+  }, [integration.api, integration.name, loadConnectionStatus, show]);
+
+  const finishOAuthReturn = useCallback(
+    async (returnUrl: string) => {
+      const parsed = parseOAuthReturnUrl(returnUrl);
+      if (!parsed || parsed.provider !== activeProvider) return false;
+
+      if (parsed.status !== 'ok') {
+        show(
+          parsed.reason ? `Connection failed: ${parsed.reason}` : 'Connection failed.',
+          'error',
+        );
+        return true;
+      }
+
+      const ok = await applyConnectedState();
+      if (!ok) {
+        show('Connection was not saved. Please try again.', 'error');
+      }
+      return true;
+    },
+    [activeProvider, applyConnectedState, show],
+  );
+
+  /** When the browser closes without a deep link, tokens may still be saved on the server. */
+  const syncAfterBrowser = useCallback(async () => {
+    const ok = await applyConnectedState();
+    if (ok) return;
+    await loadConnectionStatus();
+  }, [applyConnectedState, loadConnectionStatus]);
+
+  useEffect(() => {
+    if (!oauthStatus || oauthHandled.current) return;
+    oauthHandled.current = true;
+    if (oauthStatus === 'ok') {
+      void applyConnectedState();
+    } else if (oauthStatus === 'error') {
+      show(
+        oauthReason ? `Connection failed: ${oauthReason}` : 'Connection failed.',
+        'error',
+      );
+    }
+  }, [applyConnectedState, oauthReason, oauthStatus, show]);
+
+  useEffect(() => {
+    const handleUrl = (event: { url: string }) => {
+      const parsed = parseOAuthReturnUrl(event.url);
+      if (!parsed || parsed.provider !== activeProvider) return;
+      void finishOAuthReturn(event.url);
+    };
+
+    const subscription = Linking.addEventListener('url', handleUrl);
+    void Linking.getInitialURL().then((url) => {
+      if (url) handleUrl({ url });
+    });
+
+    return () => subscription.remove();
+  }, [activeProvider, finishOAuthReturn]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void syncAfterBrowser();
+    });
+    return () => sub.remove();
+  }, [syncAfterBrowser]);
 
   async function startConnect() {
     setSubmitting(true);
     try {
-      const { url } = await fetchAuthUrlWithRetry(integration.api);
-      // Becomes aiconcierge://oauth/{ghl|hubspot} — must match the deep link
-      // the backend callback redirects to.
-      const returnUrl = Linking.createURL(integration.returnUrlPath);
+      const returnUrl = getOAuthReturnUrl(activeProvider);
+      const { url } = await fetchAuthUrlWithRetry(integration.api, returnUrl);
 
       const result = await WebBrowser.openAuthSessionAsync(url, returnUrl);
-      if (result.type !== 'success') {
-        // User dismissed the browser sheet — silent no-op.
-        return;
-      }
 
-      const params = new URL(result.url).searchParams;
-      if (params.get('status') !== 'ok') {
-        const reason = params.get('reason');
-        show(reason ? `Connection failed: ${reason}` : 'Connection failed.', 'error');
-        return;
+      if (result.type === 'success') {
+        const handled = await finishOAuthReturn(result.url);
+        if (!handled) {
+          await syncAfterBrowser();
+        }
+      } else {
+        // User closed the browser or deep link did not fire — still check the DB.
+        await syncAfterBrowser();
       }
-
-      // Belt-and-suspenders: verify the row actually landed in the DB before
-      // moving the user forward.
-      const status = await integration.api.getStatus();
-      if (!status.connected) {
-        show('Connection was not saved. Please try again.', 'error');
-        return;
-      }
-
-      // Refresh the cached user so a cold start lands the user on /openai-key
-      // (or further) rather than re-routing to /connect from stale data.
-      try {
-        const me = await getMe();
-        await refreshUser(me);
-      } catch {
-        // Non-fatal: the route still works because the OAuth flow succeeded.
-      }
-
-      show(`${integration.name} connected.`, 'success');
-      router.replace({ pathname: '/openai-key', params: { provider: integration.id } });
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -141,6 +230,10 @@ export function ConnectIntegrationScreen() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function continueToOpenAIKey() {
+    router.replace({ pathname: '/openai-key', params: { provider: integration.id } });
   }
 
   return (
@@ -159,6 +252,23 @@ export function ConnectIntegrationScreen() {
           to paste any API keys.
         </Text>
 
+        {loadingStatus ? (
+          <View style={styles.statusRow}>
+            <ActivityIndicator size="small" color="#1A73E8" />
+            <Text style={styles.statusText}>Checking connection…</Text>
+          </View>
+        ) : connected ? (
+          <View style={styles.connectedBanner}>
+            <MaterialIcons name="check-circle" size={22} color="#137333" />
+            <View style={styles.connectedCopy}>
+              <Text style={styles.connectedTitle}>Connected</Text>
+              <Text style={styles.connectedSubtitle}>
+                Tokens are stored securely on the server. {connectionDetail}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.integrationCard}>
           <View style={styles.integrationIcon}>
             <MaterialIcons name={integration.icon} size={26} color="#1A73E8" />
@@ -169,23 +279,30 @@ export function ConnectIntegrationScreen() {
           </View>
         </View>
 
-        <Pressable
-          style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
-          onPress={startConnect}
-          disabled={submitting}>
-          {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <>
-              <MaterialIcons name="link" size={22} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
-            </>
-          )}
-        </Pressable>
+        {connected ? (
+          <Pressable style={styles.primaryButton} onPress={continueToOpenAIKey}>
+            <MaterialIcons name="arrow-forward" size={22} color="#FFFFFF" />
+            <Text style={styles.primaryButtonText}>Continue to OpenAI key</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
+            onPress={startConnect}
+            disabled={submitting}>
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <MaterialIcons name="link" size={22} color="#FFFFFF" />
+                <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
+              </>
+            )}
+          </Pressable>
+        )}
 
         <Text style={styles.helperText}>
-          You can disconnect or switch your CRM later from the Profile tab. Switching CRMs may
-          require a new subscription.
+          After you approve in GoHighLevel, you will see a success page in the browser, then return
+          here automatically. You can disconnect later from Profile.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -233,6 +350,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     marginTop: 10,
+  },
+  statusRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  statusText: {
+    color: '#5F6368',
+    fontSize: 14,
+  },
+  connectedBanner: {
+    alignItems: 'flex-start',
+    backgroundColor: '#E6F4EA',
+    borderColor: '#CEEAD6',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+    padding: 14,
+  },
+  connectedCopy: {
+    flex: 1,
+  },
+  connectedTitle: {
+    color: '#137333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  connectedSubtitle: {
+    color: '#137333',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
   },
   integrationCard: {
     alignItems: 'center',

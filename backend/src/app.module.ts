@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AuthModule } from './auth/auth.module';
 import { BillingModule } from './billing/billing.module';
+import { HealthModule } from './health/health.module';
 import { GhlModule } from './integrations/ghl/ghl.module';
 import { HubspotModule } from './integrations/hubspot/hubspot.module';
 import { OpenAIKeysModule } from './openai-keys/openai-keys.module';
@@ -14,6 +15,7 @@ import { VoiceModule } from './voice/voice.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    HealthModule,
     PrismaModule,
     AuthModule,
     UsersModule,

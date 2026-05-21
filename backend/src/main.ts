@@ -32,9 +32,10 @@ async function bootstrap() {
   );
 
   const port = Number(config.get<string>('PORT', '4000'));
-  await app.listen(port);
+  const host = config.get<string>('HOST', '0.0.0.0');
+  await app.listen(port, host);
   // eslint-disable-next-line no-console
-  console.log(`AI-Concierge backend listening on http://localhost:${port}`);
+  console.log(`AI-Concierge backend listening on http://${host}:${port}`);
 }
 
 void bootstrap();

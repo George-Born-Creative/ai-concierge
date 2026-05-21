@@ -113,11 +113,11 @@ GHL credentials live **only** in `backend/.env` (never in the mobile app):
 ```
 GHL_CLIENT_ID=...
 GHL_CLIENT_SECRET=...
-GHL_REDIRECT_URI=http://<your-PC-LAN-ip>:4000/oauth/callback
-GHL_SCOPES=contacts.readonly contacts.write ...
+GHL_REDIRECT_URI=https://borncreative.net/
+GHL_SCOPES=contacts.readonly contacts.write
 ```
 
-In the [GHL Marketplace](https://marketplace.gohighlevel.com/) app settings, add the same **Redirect URL** as `GHL_REDIRECT_URI`.
+In the [GHL Marketplace](https://marketplace.gohighlevel.com/) app settings, add the same **Redirect URL** as `GHL_REDIRECT_URI`. Under **Advanced Settings → Auth**, enable the same scopes you put in `GHL_SCOPES` (requesting scopes not selected there causes `Invalid scope(s)`).
 
 The mobile connect screen calls `GET /integrations/ghl/auth-url` (JWT + active subscription), opens the returned URL in an in-app browser, and returns via `aiconcierge://oauth/ghl` after the backend callback stores tokens.
 

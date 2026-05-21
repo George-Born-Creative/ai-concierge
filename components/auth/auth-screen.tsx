@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,14 +11,17 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
+import { getMe, signIn, signUp } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
-import { signIn, signUp } from '@/lib/api/auth';
 import { routeForUser } from '@/lib/onboarding-route';
-import { setSession } from '@/lib/session';
+import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
+
+const SESSION_CHECK_TIMEOUT_MS = 6_000;
 
 type AuthMode = 'signin' | 'signup';
 
@@ -32,7 +36,48 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const { height: windowHeight } = useWindowDimensions();
+  const redirected = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkExistingSession() {
+      try {
+        await hydrateSession();
+        const token = getToken();
+        if (!token) return;
+
+        try {
+          const me = await withTimeout(getMe(), SESSION_CHECK_TIMEOUT_MS);
+          if (cancelled || redirected.current) return;
+          await setSession(token, me);
+          redirected.current = true;
+          router.replace(routeForUser(me));
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) {
+            await clearSession();
+            return;
+          }
+          const cached = getUser();
+          if (cached && !cancelled && !redirected.current) {
+            redirected.current = true;
+            router.replace(routeForUser(cached));
+          }
+        }
+      } finally {
+        if (!cancelled) setCheckingSession(false);
+      }
+    }
+
+    void checkExistingSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   async function submitAuthForm() {
     if (isSignup && !name.trim()) {
@@ -76,13 +121,24 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     return err.message || 'Authentication failed.';
   }
 
+  if (checkingSession) {
+    return (
+      <View style={styles.sessionCheck}>
+        <ActivityIndicator size="large" color="#1A73E8" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { minHeight: windowHeight - 48 },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           {!isSignup ? (
@@ -153,10 +209,25 @@ export function AuthScreen({ mode }: AuthScreenProps) {
                 placeholder="Password"
                 placeholderTextColor="#9AA0A6"
                 style={styles.input}
-                secureTextEntry
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete={isSignup ? 'password-new' : 'password'}
+                textContentType={isSignup ? 'newPassword' : 'password'}
                 returnKeyType="done"
                 onSubmitEditing={submitAuthForm}
               />
+              <Pressable
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                hitSlop={10}
+                onPress={() => setShowPassword((v) => !v)}
+                style={styles.eyeButton}>
+                <MaterialIcons
+                  name={showPassword ? 'visibility-off' : 'visibility'}
+                  size={22}
+                  color="#5F6368"
+                />
+              </Pressable>
             </View>
 
             <Pressable
@@ -184,6 +255,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
                 {isSignup ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
               </Text>
             </Pressable>
+
+            {__DEV__ && process.env.EXPO_PUBLIC_API_BASE_URL ? (
+              <Text style={styles.devApiHint}>
+                API: {process.env.EXPO_PUBLIC_API_BASE_URL}
+              </Text>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -191,7 +268,29 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   );
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('Request timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(t);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(t);
+        reject(err);
+      },
+    );
+  });
+}
+
 const styles = StyleSheet.create({
+  sessionCheck: {
+    alignItems: 'center',
+    backgroundColor: '#F6F9FF',
+    flex: 1,
+    justifyContent: 'center',
+  },
   screen: {
     flex: 1,
     backgroundColor: '#F6F9FF',
@@ -334,6 +433,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
   },
+  eyeButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+    minWidth: 40,
+  },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
@@ -360,5 +465,11 @@ const styles = StyleSheet.create({
     color: '#1A73E8',
     fontSize: 14,
     fontWeight: '600',
+  },
+  devApiHint: {
+    color: '#9AA0A6',
+    fontSize: 11,
+    marginTop: 16,
+    textAlign: 'center',
   },
 });
