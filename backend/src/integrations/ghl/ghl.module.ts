@@ -4,7 +4,10 @@ import { JwtModule } from '@nestjs/jwt';
 
 import { AuthModule } from '../../auth/auth.module';
 import { GhlController } from './ghl.controller';
-import { GhlOAuthCallbackController } from './ghl-oauth-callback.controller';
+import {
+  GhlOAuthCallbackController,
+  GhlRootOAuthCallbackController,
+} from './ghl-oauth-callback.controller';
 import { GhlService } from './ghl.service';
 
 // Reuses the global JWT_SECRET to sign short-lived OAuth `state` tokens.
@@ -23,7 +26,7 @@ import { GhlService } from './ghl.service';
       },
     }),
   ],
-  controllers: [GhlController, GhlOAuthCallbackController],
+  controllers: [GhlController, GhlRootOAuthCallbackController, GhlOAuthCallbackController],
   providers: [GhlService],
   exports: [GhlService],
 })

@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -15,7 +15,8 @@ import {
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { createPaymentSheet, refreshSubscription } from '@/lib/api/payment';
-import { refreshUser } from '@/lib/session';
+import { isActiveSubscription, routeForUser } from '@/lib/onboarding-route';
+import { getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 import { useStripePaymentSheet } from './use-stripe-payment-sheet';
@@ -71,18 +72,47 @@ export function PlanSelectionScreen() {
 
   const active = PLANS.find((plan) => plan.id === selectedPlan) ?? PLANS[0];
 
-  async function subscribeToActivePlan() {
-    if (Platform.OS === 'web') {
-      show('Stripe checkout is only available on the iOS / Android build.', 'info');
-      return;
-    }
-    if (!stripeSheet) {
-      show('Payment SDK is still loading. Please try again in a moment.', 'error');
-      return;
-    }
+  const continueAfterPlan = useCallback(
+    async (user = getUser()) => {
+      let profile = user;
+      try {
+        profile = await getMe();
+        await refreshUser(profile);
+      } catch {
+        if (!profile) return;
+      }
+      router.replace(routeForUser(profile));
+    },
+    [router],
+  );
 
+  async function subscribeToActivePlan() {
     setIsSubscribing(true);
     try {
+      let user = getUser();
+      try {
+        user = await getMe();
+        await refreshUser(user);
+      } catch {
+        // Fall back to cached profile if the network hiccups.
+      }
+
+      if (user && isActiveSubscription(user.plan)) {
+        const planName = user.plan?.name ?? 'your plan';
+        show(`You already have an active subscription (${planName}).`, 'info');
+        await continueAfterPlan(user);
+        return;
+      }
+
+      if (Platform.OS === 'web') {
+        show('Stripe checkout is only available on the iOS / Android build.', 'info');
+        return;
+      }
+      if (!stripeSheet) {
+        show('Payment SDK is still loading. Please try again in a moment.', 'error');
+        return;
+      }
+
       const sheet = await createPaymentSheet({ planCode: active.id });
 
       const init = await stripeSheet.initPaymentSheet({
@@ -119,7 +149,7 @@ export function PlanSelectionScreen() {
       }
 
       show('Subscription active. Connect your CRM next.', 'success');
-      router.replace({ pathname: '/connect', params: { provider: active.provider } });
+      await continueAfterPlan();
     } catch (err) {
       const message =
         err instanceof ApiError

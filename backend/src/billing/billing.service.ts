@@ -69,7 +69,10 @@ export class BillingService {
       customer: customerId,
       items: [{ price: plan.stripePriceId }],
       payment_behavior: 'default_incomplete',
-      payment_settings: { save_default_payment_method: 'on_subscription' },
+      payment_settings: {
+        payment_method_types: ['card'],
+        save_default_payment_method: 'on_subscription',
+      },
       expand: ['latest_invoice.payment_intent'],
       metadata: { userId, planCode: plan.code },
     });

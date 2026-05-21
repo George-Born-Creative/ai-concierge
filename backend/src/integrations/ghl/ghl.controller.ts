@@ -13,7 +13,10 @@ import { AuthenticatedUser, CurrentUser } from '../../common/current-user.decora
 import { ActiveSubscriptionGuard } from '../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GhlCallbackQueryDto } from './dto/callback.query.dto';
-import { handleGhlOAuthCallback } from './ghl-oauth-callback.handler';
+import {
+  handleGhlOAuthCallback,
+  handleGhlOAuthFinish,
+} from './ghl-oauth-callback.handler';
 import { GhlService } from './ghl.service';
 
 @Controller('integrations/ghl')
@@ -24,14 +27,23 @@ export class GhlController {
   // Caller must be authenticated AND have an active GHL subscription.
   @Get('auth-url')
   @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
-  authUrl(@CurrentUser() user: AuthenticatedUser) {
-    return this.ghl.buildAuthUrl(user.id);
+  authUrl(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('returnUrl') returnUrl?: string,
+  ) {
+    return this.ghl.buildAuthUrl(user.id, returnUrl);
   }
 
   // Legacy path — register GHL_REDIRECT_URI as /oauth/callback in Marketplace.
   @Get('callback')
   async callback(@Query() query: GhlCallbackQueryDto, @Res() res: Response) {
     await handleGhlOAuthCallback(this.ghl, query, res);
+  }
+
+  /** Called by the redirect page after load — exchanges code and saves tokens. */
+  @Get('finish')
+  async finish(@Query() query: GhlCallbackQueryDto) {
+    return handleGhlOAuthFinish(this.ghl, query);
   }
 
   @Get('status')

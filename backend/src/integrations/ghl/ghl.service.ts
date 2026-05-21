@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -14,8 +15,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 const OAUTH_AUTHORIZE_URL = 'https://marketplace.gohighlevel.com/oauth/chooselocation';
 const OAUTH_TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
-const DEFAULT_SCOPES =
-  'contacts.readonly contacts.write conversations.readonly conversations.write opportunities.readonly opportunities.write locations.readonly';
+// Must match scopes enabled in Marketplace → Advanced Settings → Auth.
+// Add conversations.* / opportunities.* to GHL_SCOPES only after selecting them in the app builder.
+const DEFAULT_SCOPES = 'contacts.readonly contacts.write';
 const STATE_PURPOSE = 'ghl-oauth-state';
 const STATE_TTL = '10m';
 // Refresh ~60s before actual expiry so in-flight calls never get a 401.
@@ -36,6 +38,8 @@ type StatePayload = {
   sub: string;
   purpose: typeof STATE_PURPOSE;
   nonce: string;
+  /** Mobile app deep link to return to after OAuth (from auth-url query). */
+  returnUrl?: string;
 };
 
 export type GhlStatus = {
@@ -57,13 +61,18 @@ export class GhlService {
 
   // ── OAuth: build the authorize URL the mobile app opens in a browser ────────
 
-  buildAuthUrl(userId: string): { url: string; state: string } {
+  buildAuthUrl(userId: string, returnUrl?: string): { url: string; state: string } {
     const clientId = this.requireConfig('GHL_CLIENT_ID');
     const redirectUri = this.requireConfig('GHL_REDIRECT_URI');
     const scopes = this.config.get<string>('GHL_SCOPES') || DEFAULT_SCOPES;
 
     const state = this.jwt.sign(
-      { sub: userId, purpose: STATE_PURPOSE, nonce: randomBytes(8).toString('hex') } satisfies StatePayload,
+      {
+        sub: userId,
+        purpose: STATE_PURPOSE,
+        nonce: randomBytes(8).toString('hex'),
+        returnUrl: returnUrl ? this.validateReturnUrl(returnUrl) : undefined,
+      } satisfies StatePayload,
       { expiresIn: STATE_TTL },
     );
 
@@ -80,7 +89,18 @@ export class GhlService {
 
   // ── OAuth: exchange code → tokens, encrypt, persist ─────────────────────────
 
-  async handleCallback(code: string, state: string): Promise<{ userId: string }> {
+  resolveReturnUrl(state: string): string {
+    try {
+      const payload = this.jwt.verify<StatePayload>(state);
+      if (payload.returnUrl) return payload.returnUrl;
+    } catch {
+      // Fall through to default scheme link.
+    }
+    const scheme = this.getDeepLinkScheme();
+    return `${scheme}://oauth/ghl`;
+  }
+
+  async handleCallback(code: string, state: string): Promise<{ userId: string; returnUrl: string }> {
     let payload: StatePayload;
     try {
       payload = this.jwt.verify<StatePayload>(state);
@@ -94,6 +114,7 @@ export class GhlService {
     }
 
     const userId = payload.sub;
+    const returnUrl = payload.returnUrl ?? `${this.getDeepLinkScheme()}://oauth/ghl`;
 
     const tokens = await this.exchangeCode(code);
 
@@ -127,7 +148,11 @@ export class GhlService {
       scopes,
     });
 
-    return { userId };
+    this.logger.log(
+      `GHL connected for user ${userId} (locationId=${tokens.locationId ?? 'none'})`,
+    );
+
+    return { userId, returnUrl };
   }
 
   // ── Status / disconnect ─────────────────────────────────────────────────────
@@ -259,6 +284,17 @@ export class GhlService {
 
   getDeepLinkScheme(): string {
     return this.config.get<string>('APP_DEEP_LINK_SCHEME') || 'aiconcierge';
+  }
+
+  private validateReturnUrl(url: string): string {
+    const trimmed = url.trim();
+    if (!/^aiconcierge:\/\//i.test(trimmed) && !/^exp:\/\//i.test(trimmed)) {
+      throw new BadRequestException('returnUrl must use aiconcierge:// or exp:// scheme');
+    }
+    if (!/\/oauth\/(ghl|hubspot)/i.test(trimmed)) {
+      throw new BadRequestException('returnUrl must point to /oauth/ghl or /oauth/hubspot');
+    }
+    return trimmed.split('?')[0] ?? trimmed;
   }
 
   private requireConfig(key: string): string {
