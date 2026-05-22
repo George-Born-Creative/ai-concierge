@@ -169,7 +169,7 @@ function loadingScript(finishUrl: string): string {
 }
 
 function autoRedirectScript(deepLink: string): string {
-  return `setTimeout(function(){window.location.replace(${JSON.stringify(deepLink)});},300);`;
+  return `setTimeout(function(){window.location.replace(${JSON.stringify(deepLink)});},150);`;
 }
 
 function successIcon(): string {

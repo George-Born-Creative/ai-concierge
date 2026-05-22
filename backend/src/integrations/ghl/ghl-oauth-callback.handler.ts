@@ -18,6 +18,7 @@ export async function handleGhlOAuthCallback(
   ghl: GhlService,
   query: GhlCallbackQueryDto,
   res: Response,
+  _requestOrigin?: string,
 ): Promise<void> {
   const fallbackReturn = `${ghl.getDeepLinkScheme()}://oauth/ghl`;
   const returnBase = query.state ? ghl.resolveReturnUrl(query.state) : fallbackReturn;
@@ -33,10 +34,14 @@ export async function handleGhlOAuthCallback(
     return;
   }
 
-  sendLoadingPage(res, query);
+  // Exchange code on the server during this redirect (faster than loading HTML + browser fetch /finish).
+  const started = Date.now();
+  const result = await handleGhlOAuthFinish(ghl, query);
+  logger.log(`GHL OAuth finish completed in ${Date.now() - started}ms (${result.status})`);
+  sendResultPage(res, result.deepLink, result.status, result.reason);
 }
 
-/** Token exchange + DB save; called from the redirect page via fetch. */
+/** Token exchange + DB save (also used by GET /integrations/ghl/finish). */
 export async function handleGhlOAuthFinish(
   ghl: GhlService,
   query: GhlCallbackQueryDto,
@@ -79,30 +84,14 @@ export async function handleGhlOAuthFinish(
   }
 }
 
-function sendLoadingPage(res: Response, query: GhlCallbackQueryDto): void {
-  const params = new URLSearchParams();
-  if (query.code) params.set('code', query.code);
-  if (query.state) params.set('state', query.state);
-  if (query.locationId) params.set('locationId', query.locationId);
-
-  const finishUrl = `/integrations/ghl/finish?${params.toString()}`;
-
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(
-    renderOAuthRedirectPage({
-      status: 'loading',
-      finishUrl,
-    }),
-  );
-}
-
 function sendResultPage(
   res: Response,
   returnBase: string,
   status: 'ok' | 'error',
   reason?: string,
 ): void {
-  const deepLink = buildDeepLink(returnBase, status, reason);
+  const deepLink =
+    returnBase.includes('status=') ? returnBase : buildDeepLink(returnBase, status, reason);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(
     renderOAuthRedirectPage({

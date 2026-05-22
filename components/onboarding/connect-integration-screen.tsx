@@ -1,12 +1,9 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  AppState,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -15,31 +12,19 @@ import {
   View,
 } from 'react-native';
 
-import { getMe } from '@/lib/api/auth';
-import { ApiError } from '@/lib/api/client';
 import { ghlApi, hubspotApi } from '@/lib/api';
-import { refreshSubscription } from '@/lib/api/payment';
-import type { GhlStatusResponse, HubspotStatusResponse } from '@/lib/api/types';
-import { getOAuthReturnUrl, parseOAuthReturnUrl } from '@/lib/oauth-return-url';
-import { refreshUser } from '@/lib/session';
+import { useCrmOAuth, type CrmOAuthApi, type OAuthProvider } from '@/lib/oauth';
 import { useToast } from '@/lib/toast';
 
-type CrmProvider = 'ghl' | 'hubspot';
-
-type CrmOAuthClient = {
-  getAuthUrl: (returnUrl: string) => Promise<{ url: string; state: string }>;
-  getStatus: () => Promise<GhlStatusResponse | HubspotStatusResponse>;
-};
-
 type IntegrationCard = {
-  id: CrmProvider;
+  id: OAuthProvider;
   name: string;
   description: string;
   icon: keyof typeof MaterialIcons.glyphMap;
-  api: CrmOAuthClient;
+  api: CrmOAuthApi;
 };
 
-const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
+const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
   ghl: {
     id: 'ghl',
     name: 'GoHighLevel',
@@ -57,33 +42,16 @@ const INTEGRATIONS: Record<CrmProvider, IntegrationCard> = {
   },
 };
 
-WebBrowser.maybeCompleteAuthSession();
-
-async function fetchAuthUrlWithRetry(api: CrmOAuthClient, returnUrl: string) {
-  try {
-    return await api.getAuthUrl(returnUrl);
-  } catch (err) {
-    const looksLikeSubscriptionGuard =
-      err instanceof ApiError &&
-      err.status === 403 &&
-      /subscription/i.test(err.message ?? '');
-    if (!looksLikeSubscriptionGuard) throw err;
-    await refreshSubscription();
-    return api.getAuthUrl(returnUrl);
-  }
-}
-
 export function ConnectIntegrationScreen() {
   const router = useRouter();
   const { show } = useToast();
   const { provider, oauthStatus, oauthReason } = useLocalSearchParams<{
-    provider?: CrmProvider;
+    provider?: OAuthProvider;
     oauthStatus?: string;
     oauthReason?: string;
   }>();
-  const oauthHandled = useRef(false);
 
-  const activeProvider: CrmProvider =
+  const activeProvider: OAuthProvider =
     provider === 'hubspot' ? 'hubspot' : provider === 'ghl' ? 'ghl' : 'ghl';
   const integration = INTEGRATIONS[activeProvider];
 
@@ -92,145 +60,28 @@ export function ConnectIntegrationScreen() {
   const [connected, setConnected] = useState(false);
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
 
-  const loadConnectionStatus = useCallback(async () => {
-    setLoadingStatus(true);
-    try {
-      const status = await integration.api.getStatus();
-      setConnected(status.connected);
-      if (status.connected) {
-        const detail =
-          'locationId' in status && status.locationId
-            ? `Location ${status.locationId}`
-            : 'portalId' in status && status.portalId
-              ? `Portal ${status.portalId}`
-              : 'Saved in your account';
-        setConnectionDetail(detail);
-      } else {
-        setConnectionDetail(null);
-      }
-    } catch {
-      setConnected(false);
-      setConnectionDetail(null);
-    } finally {
-      setLoadingStatus(false);
-    }
-  }, [integration.api]);
+  const onStatusChange = useCallback((isConnected: boolean, detail: string | null) => {
+    setConnected(isConnected);
+    setConnectionDetail(detail);
+  }, []);
+
+  const { loadConnectionStatus, startOAuthConnect } = useCrmOAuth({
+    provider: activeProvider,
+    api: integration.api,
+    integrationName: integration.name,
+    oauthStatus,
+    oauthReason,
+    show,
+    onStatusChange,
+    setLoadingStatus,
+    setSubmitting,
+  });
 
   useFocusEffect(
     useCallback(() => {
       void loadConnectionStatus();
     }, [loadConnectionStatus]),
   );
-
-  const applyConnectedState = useCallback(async () => {
-    const status = await integration.api.getStatus();
-    if (!status.connected) return false;
-
-    try {
-      const me = await getMe();
-      await refreshUser(me);
-    } catch {
-      // Non-fatal if profile refresh fails.
-    }
-
-    await loadConnectionStatus();
-    show(`${integration.name} connected and saved.`, 'success');
-    return true;
-  }, [integration.api, integration.name, loadConnectionStatus, show]);
-
-  const finishOAuthReturn = useCallback(
-    async (returnUrl: string) => {
-      const parsed = parseOAuthReturnUrl(returnUrl);
-      if (!parsed || parsed.provider !== activeProvider) return false;
-
-      if (parsed.status !== 'ok') {
-        show(
-          parsed.reason ? `Connection failed: ${parsed.reason}` : 'Connection failed.',
-          'error',
-        );
-        return true;
-      }
-
-      const ok = await applyConnectedState();
-      if (!ok) {
-        show('Connection was not saved. Please try again.', 'error');
-      }
-      return true;
-    },
-    [activeProvider, applyConnectedState, show],
-  );
-
-  /** When the browser closes without a deep link, tokens may still be saved on the server. */
-  const syncAfterBrowser = useCallback(async () => {
-    const ok = await applyConnectedState();
-    if (ok) return;
-    await loadConnectionStatus();
-  }, [applyConnectedState, loadConnectionStatus]);
-
-  useEffect(() => {
-    if (!oauthStatus || oauthHandled.current) return;
-    oauthHandled.current = true;
-    if (oauthStatus === 'ok') {
-      void applyConnectedState();
-    } else if (oauthStatus === 'error') {
-      show(
-        oauthReason ? `Connection failed: ${oauthReason}` : 'Connection failed.',
-        'error',
-      );
-    }
-  }, [applyConnectedState, oauthReason, oauthStatus, show]);
-
-  useEffect(() => {
-    const handleUrl = (event: { url: string }) => {
-      const parsed = parseOAuthReturnUrl(event.url);
-      if (!parsed || parsed.provider !== activeProvider) return;
-      void finishOAuthReturn(event.url);
-    };
-
-    const subscription = Linking.addEventListener('url', handleUrl);
-    void Linking.getInitialURL().then((url) => {
-      if (url) handleUrl({ url });
-    });
-
-    return () => subscription.remove();
-  }, [activeProvider, finishOAuthReturn]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') void syncAfterBrowser();
-    });
-    return () => sub.remove();
-  }, [syncAfterBrowser]);
-
-  async function startConnect() {
-    setSubmitting(true);
-    try {
-      const returnUrl = getOAuthReturnUrl(activeProvider);
-      const { url } = await fetchAuthUrlWithRetry(integration.api, returnUrl);
-
-      const result = await WebBrowser.openAuthSessionAsync(url, returnUrl);
-
-      if (result.type === 'success') {
-        const handled = await finishOAuthReturn(result.url);
-        if (!handled) {
-          await syncAfterBrowser();
-        }
-      } else {
-        // User closed the browser or deep link did not fire — still check the DB.
-        await syncAfterBrowser();
-      }
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message || 'Could not start the connection. Please try again.'
-          : err instanceof Error
-            ? err.message
-            : 'Could not start the connection. Please try again.';
-      show(message, 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   function continueToOpenAIKey() {
     router.replace({ pathname: '/openai-key', params: { provider: integration.id } });
@@ -287,7 +138,7 @@ export function ConnectIntegrationScreen() {
         ) : (
           <Pressable
             style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
-            onPress={startConnect}
+            onPress={startOAuthConnect}
             disabled={submitting}>
             {submitting ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -302,7 +153,8 @@ export function ConnectIntegrationScreen() {
 
         <Text style={styles.helperText}>
           After you approve in GoHighLevel, you will see a success page in the browser, then return
-          here automatically. You can disconnect later from Profile.
+          here via aiconcierge://oauth/{integration.id}?status=ok. You can disconnect later from
+          Profile.
         </Text>
       </ScrollView>
     </SafeAreaView>
