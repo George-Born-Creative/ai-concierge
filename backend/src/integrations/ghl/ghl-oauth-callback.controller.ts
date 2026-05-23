@@ -16,6 +16,11 @@ export class GhlRootOAuthCallbackController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    // WordPress/nginx may forward only GHL callbacks here. Ignore normal homepage hits.
+    if (!query.code && !query.state && !query.error) {
+      res.status(404).json({ statusCode: 404, message: 'Not found' });
+      return;
+    }
     await handleGhlOAuthCallback(this.ghl, query, res, getRequestOrigin(req));
   }
 }

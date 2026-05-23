@@ -1,6 +1,6 @@
 import { getToken } from '../session';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
+import { getApiBaseUrl } from './base-url';
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -23,8 +23,9 @@ export class ApiError extends Error {
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token } = options;
 
-  if (!BASE_URL) {
-    throw new ApiError(0, 'EXPO_PUBLIC_API_BASE_URL is not set');
+  const baseUrl = getApiBaseUrl();
+  if (!baseUrl) {
+    throw new ApiError(0, 'API URL is not set. For production, set EXPO_PUBLIC_API_BASE_URL.');
   }
 
   const headers: Record<string, string> = {
@@ -36,7 +37,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,

@@ -1,16 +1,15 @@
 import { getToken } from '../session';
+
+import { getApiBaseUrl } from './base-url';
 import { ApiError } from './client';
 import type { TranscribeResponse } from './types';
-
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
-
-// Uploads the recorded audio file directly to /voice/transcribe.
 // We bypass apiRequest here because that helper sends JSON — Whisper needs
 // multipart/form-data with the raw file. React Native's FormData accepts the
 // shorthand { uri, name, type } shape for file fields.
 export async function transcribe(fileUri: string): Promise<TranscribeResponse> {
-  if (!BASE_URL) {
-    throw new ApiError(0, 'EXPO_PUBLIC_API_BASE_URL is not set');
+  const baseUrl = getApiBaseUrl();
+  if (!baseUrl) {
+    throw new ApiError(0, 'API URL is not set.');
   }
 
   const token = getToken();
@@ -26,7 +25,7 @@ export async function transcribe(fileUri: string): Promise<TranscribeResponse> {
     type: guessMimeType(fileUri),
   } as unknown as Blob);
 
-  const response = await fetch(`${BASE_URL}/voice/transcribe`, {
+  const response = await fetch(`${baseUrl}/voice/transcribe`, {
     method: 'POST',
     headers: {
       // Do NOT set Content-Type; the runtime will add it with the correct

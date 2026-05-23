@@ -69,24 +69,6 @@ export class HubspotController {
     const params = new URLSearchParams({ status });
     if (reason) params.set('reason', reason);
     const deepLink = `${scheme}://oauth/hubspot?${params.toString()}`;
-    const safeLink = escapeHtml(deepLink);
-    const message =
-      status === 'ok'
-        ? 'Connection successful. You can close this window.'
-        : 'Connection failed. You can close this window and try again.';
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(
-      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Concierge</title></head><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#F8FAFF;color:#202124;text-align:center;padding:24px;"><div><p style="font-size:18px;margin:0 0 12px;">${escapeHtml(message)}</p><p style="color:#5F6368;font-size:14px;margin:0;">If you are not returned to the app automatically, <a href="${safeLink}">tap here</a>.</p></div><script>setTimeout(function(){window.location.replace(${JSON.stringify(deepLink)});},150);</script></body></html>`,
-    );
+    res.redirect(302, deepLink);
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
