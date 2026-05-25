@@ -1,6 +1,15 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { signOut } from '@/lib/api/auth';
 import { clearSession } from '@/lib/session';
@@ -27,6 +36,19 @@ const securityItems = [
 export function ProfileScreenContent() {
   const router = useRouter();
   const { show } = useToast();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  async function handleLogout() {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await signOut().catch(() => undefined);
+    } finally {
+      await clearSession();
+      show('Signed out.', 'success');
+      router.replace('/signup');
+    }
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -90,10 +112,11 @@ export function ProfileScreenContent() {
           </View>
         </View>
 
-        <View style={styles.actionsSection}>
+        <View style={styles.actionsSection} pointerEvents={isLoggingOut ? 'box-none' : 'auto'}>
           <Pressable
             style={styles.actionButton}
-            onPress={() => router.push('/openai-key')}>
+            onPress={() => router.push('/openai-key')}
+            disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="vpn-key" size={22} color="#1A73E8" />
             </View>
@@ -106,7 +129,8 @@ export function ProfileScreenContent() {
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => show('CRM switching will be available once Stripe is wired.', 'info')}>
+            onPress={() => show('CRM switching will be available once Stripe is wired.', 'info')}
+            disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="swap-horiz" size={22} color="#1A73E8" />
             </View>
@@ -117,7 +141,10 @@ export function ProfileScreenContent() {
             <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
           </Pressable>
 
-          <Pressable style={styles.actionButton} onPress={() => router.push('/signup')}>
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => router.push('/signup')}
+            disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="person-add" size={22} color="#1A73E8" />
             </View>
@@ -130,7 +157,8 @@ export function ProfileScreenContent() {
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => show('Settings screen coming soon.', 'info')}>
+            onPress={() => show('Settings screen coming soon.', 'info')}
+            disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="settings" size={22} color="#1A73E8" />
             </View>
@@ -142,24 +170,27 @@ export function ProfileScreenContent() {
           </Pressable>
 
           <Pressable
-            style={[styles.actionButton, styles.logoutButton]}
-            onPress={async () => {
-              try {
-                await signOut().catch(() => undefined);
-              } finally {
-                await clearSession();
-                show('Signed out.', 'success');
-                router.replace('/signup');
-              }
-            }}>
+            style={[styles.actionButton, styles.logoutButton, isLoggingOut && styles.actionButtonDisabled]}
+            onPress={handleLogout}
+            disabled={isLoggingOut}>
             <View style={[styles.actionIcon, styles.logoutIcon]}>
-              <MaterialIcons name="logout" size={22} color="#EA4335" />
+              {isLoggingOut ? (
+                <ActivityIndicator size="small" color="#EA4335" />
+              ) : (
+                <MaterialIcons name="logout" size={22} color="#EA4335" />
+              )}
             </View>
             <View style={styles.actionCopy}>
-              <Text style={[styles.actionTitle, styles.logoutTitle]}>Logout</Text>
-              <Text style={styles.actionDescription}>Sign out of AI-Concierge</Text>
+              <Text style={[styles.actionTitle, styles.logoutTitle]}>
+                {isLoggingOut ? 'Logging out…' : 'Logout'}
+              </Text>
+              <Text style={styles.actionDescription}>
+                {isLoggingOut ? 'Please wait' : 'Sign out of AI-Concierge'}
+              </Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color="#F6AEA9" />
+            {!isLoggingOut ? (
+              <MaterialIcons name="chevron-right" size={24} color="#F6AEA9" />
+            ) : null}
           </Pressable>
         </View>
       </ScrollView>
@@ -337,6 +368,9 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     borderColor: '#FAD2CF',
+  },
+  actionButtonDisabled: {
+    opacity: 0.65,
   },
   actionIcon: {
     alignItems: 'center',

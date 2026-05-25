@@ -18,8 +18,14 @@ async function bootstrap() {
   app.use(helmet());
 
   const origins = config.get<string>('CORS_ORIGINS', '');
+  const isProduction = config.get<string>('NODE_ENV') === 'production';
   app.enableCors({
-    origin: origins ? origins.split(',').map((o) => o.trim()) : true,
+    // Dev: allow any origin so Metro IP changes never block the app.
+    origin: isProduction
+      ? origins
+        ? origins.split(',').map((o) => o.trim())
+        : false
+      : true,
     credentials: true,
   });
 
@@ -34,11 +40,8 @@ async function bootstrap() {
   const port = Number(config.get<string>('PORT', '4000'));
   const host = config.get<string>('HOST', '0.0.0.0');
   await app.listen(port, host);
-  const ghlRedirect = config.get<string>('GHL_REDIRECT_URI', '(not set)');
   // eslint-disable-next-line no-console
   console.log(`AI-Concierge backend listening on http://${host}:${port}`);
-  // eslint-disable-next-line no-console
-  console.log(`GHL OAuth redirect_uri (must match Marketplace): ${ghlRedirect}`);
 }
 
 void bootstrap();

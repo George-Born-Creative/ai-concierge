@@ -3,7 +3,7 @@ import { Response } from 'express';
 
 import { GhlCallbackQueryDto } from './dto/callback.query.dto';
 import { GhlService } from './ghl.service';
-import { buildDeepLink, renderOAuthRedirectPage } from './oauth-redirect-page';
+import { buildDeepLink } from './oauth-redirect-page';
 
 const logger = new Logger('GhlOAuthCallback');
 
@@ -92,12 +92,6 @@ function sendResultPage(
 ): void {
   const deepLink =
     returnBase.includes('status=') ? returnBase : buildDeepLink(returnBase, status, reason);
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(
-    renderOAuthRedirectPage({
-      status,
-      deepLink,
-      reason,
-    }),
-  );
+  // 302 straight into the app scheme — WebBrowser.openAuthSessionAsync closes without a tap.
+  res.redirect(302, deepLink);
 }

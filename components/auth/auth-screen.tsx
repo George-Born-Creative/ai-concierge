@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 
 import { getMe, signIn, signUp } from '@/lib/api/auth';
+import { getApiBaseUrl } from '@/lib/api/base-url';
 import { ApiError } from '@/lib/api/client';
 import { routeForUser } from '@/lib/onboarding-route';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
@@ -256,10 +257,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               </Text>
             </Pressable>
 
-            {__DEV__ && process.env.EXPO_PUBLIC_API_BASE_URL ? (
-              <Text style={styles.devApiHint}>
-                API: {process.env.EXPO_PUBLIC_API_BASE_URL}
-              </Text>
+            {__DEV__ ? (
+              <Text style={styles.devApiHint}>API: {getApiBaseUrl() || '(auto)'}</Text>
             ) : null}
           </View>
         </ScrollView>
