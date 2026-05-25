@@ -3,12 +3,16 @@ import { Audio } from 'expo-av';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
+type VoiceActivity = 'idle' | 'recording' | 'sending';
+
 type AIConciergeVoiceRecorderProps = {
   apiEndpoint?: string;
   disabled?: boolean;
   onAudioRecorded?: (uri: string) => Promise<void> | void;
   onError?: (message: string) => void;
   onRecordingChange?: (isRecording: boolean) => void;
+  onActivityChange?: (activity: VoiceActivity) => void;
+  variant?: 'tab' | 'composer';
 };
 
 const waveHeights = [22, 42, 30, 58, 36, 70, 44, 62, 34, 48, 26];
@@ -19,7 +23,10 @@ export function AIConciergeVoiceRecorder({
   onAudioRecorded,
   onError,
   onRecordingChange,
+  onActivityChange,
+  variant = 'tab',
 }: AIConciergeVoiceRecorderProps) {
+  const isComposer = variant === 'composer';
   const recordingRef = useRef<Audio.Recording | null>(null);
   const hasStoppedRef = useRef(false);
   const isStartingRef = useRef(false);
@@ -43,6 +50,15 @@ export function AIConciergeVoiceRecorder({
   }, [isRecording, onRecordingChange]);
 
   useEffect(() => {
+    const activity: VoiceActivity = isSending ? 'sending' : isRecording ? 'recording' : 'idle';
+    onActivityChange?.(activity);
+  }, [isRecording, isSending, onActivityChange]);
+
+  useEffect(() => {
+    if (isComposer) {
+      return;
+    }
+
     if (!isRecording) {
       glowAnim.stopAnimation();
       waveAnim.stopAnimation();
@@ -83,7 +99,7 @@ export function AIConciergeVoiceRecorder({
       glowLoop.stop();
       waveLoop.stop();
     };
-  }, [glowAnim, isRecording, waveAnim]);
+  }, [glowAnim, isComposer, isRecording, waveAnim]);
 
   useEffect(() => {
     return () => {
@@ -211,8 +227,13 @@ export function AIConciergeVoiceRecorder({
   }
 
   return (
-    <View style={[styles.shell, isRecording && styles.recordingShell]}>
-      {isRecording || isSending ? (
+    <View
+      style={[
+        styles.shell,
+        isComposer && styles.composerShell,
+        isRecording && !isComposer && styles.recordingShell,
+      ]}>
+      {(isRecording || isSending) && !isComposer ? (
         <View style={styles.recordingPanel}>
           <View style={styles.headerRow}>
             <View style={[styles.statusDot, isRecording && styles.recordingStatusDot]} />
@@ -247,17 +268,19 @@ export function AIConciergeVoiceRecorder({
         </View>
       ) : null}
 
-      <View style={styles.micStage}>
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.glowRing,
-            {
-              opacity: isRecording ? glowOpacity : 0,
-              transform: [{ scale: glowScale }],
-            },
-          ]}
-        />
+      <View style={[styles.micStage, isComposer && styles.composerMicStage]}>
+        {!isComposer ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.glowRing,
+              {
+                opacity: isRecording ? glowOpacity : 0,
+                transform: [{ scale: glowScale }],
+              },
+            ]}
+          />
+        ) : null}
         <Pressable
           accessibilityLabel="Hold to record voice command"
           disabled={disabled || isSending}
@@ -265,11 +288,16 @@ export function AIConciergeVoiceRecorder({
           onPressOut={stopRecording}
           style={({ pressed }) => [
             styles.micButton,
+            isComposer && styles.composerMicButton,
             isRecording && styles.recordingMicButton,
             (disabled || isSending) && styles.disabledButton,
             pressed && !disabled && !isSending && styles.pressedButton,
           ]}>
-          <MaterialIcons name="mic" size={40} color="#FFFFFF" />
+          {isComposer && isSending ? (
+            <MaterialIcons name="hourglass-top" size={22} color="#FFFFFF" />
+          ) : (
+            <MaterialIcons name="mic" size={isComposer ? 25 : 40} color="#FFFFFF" />
+          )}
         </Pressable>
       </View>
     </View>
@@ -282,6 +310,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'visible',
     width: 120,
+  },
+  composerShell: {
+    width: 48,
   },
   recordingShell: {
     transform: [{ translateY: -4 }],
@@ -334,6 +365,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 106,
   },
+  composerMicStage: {
+    height: 48,
+    width: 48,
+  },
   glowRing: {
     backgroundColor: '#1A73E8',
     borderRadius: 68,
@@ -353,6 +388,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.32,
     shadowRadius: 26,
     width: 92,
+  },
+  composerMicButton: {
+    borderRadius: 14,
+    elevation: 0,
+    height: 48,
+    shadowOpacity: 0,
+    width: 48,
   },
   recordingMicButton: {
     backgroundColor: '#1558D6',

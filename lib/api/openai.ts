@@ -11,6 +11,13 @@ export async function saveKey(data: SaveOpenAIKeyRequest): Promise<OpenAIKeyStat
   });
 }
 
+export async function rotateKey(data: SaveOpenAIKeyRequest): Promise<OpenAIKeyStatus> {
+  return apiRequest<OpenAIKeyStatus>('/openai/keys', {
+    method: 'PUT',
+    body: data,
+  });
+}
+
 export async function getStatus(): Promise<OpenAIKeyStatus> {
   return apiRequest<OpenAIKeyStatus>('/openai/keys');
 }

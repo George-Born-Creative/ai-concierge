@@ -1,6 +1,9 @@
 import { getToken } from '../session';
 
+import { ApiError } from './api-error';
+export { ApiError } from './api-error';
 import { getApiBaseUrl } from './base-url';
+import { toNetworkApiError } from './network-error';
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -9,16 +12,6 @@ type RequestOptions = {
   // sending any auth header (e.g. on /auth/signin).
   token?: string | null;
 };
-
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, token } = options;
@@ -37,11 +30,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    throw toNetworkApiError(err, baseUrl);
+  }
 
   const contentType = response.headers.get('content-type') ?? '';
 

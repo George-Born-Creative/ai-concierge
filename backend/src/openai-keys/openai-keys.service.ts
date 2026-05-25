@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CrmProvider } from '@prisma/client';
+import OpenAI, { APIError } from 'openai';
 
 import { decryptSecret, encryptSecret } from '../common/crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +15,8 @@ export type OpenAIKeyStatus = {
   exists: boolean;
   last4: string | null;
   createdAt: string | null;
+  /** True when the key is valid but the OpenAI account has no quota/billing. */
+  quotaWarning?: boolean;
 };
 
 @Injectable()
@@ -26,6 +30,8 @@ export class OpenAIKeysService {
   // never leaves the backend after this point.
   async saveKey(userId: string, rawKey: string): Promise<OpenAIKeyStatus> {
     const trimmed = rawKey.trim();
+    const check = await this.checkKeyWithOpenAI(trimmed);
+
     const last4 = trimmed.slice(-4);
     const encryptedKey = encryptSecret(trimmed);
 
@@ -35,12 +41,16 @@ export class OpenAIKeysService {
       create: { userId, encryptedKey, last4 },
     });
 
-    await this.audit(userId, 'openai_key.save', 'success', { last4 });
+    await this.audit(userId, 'openai_key.save', 'success', {
+      last4,
+      quotaWarning: check.quotaExceeded,
+    });
 
     return {
       exists: true,
       last4: row.last4,
       createdAt: row.createdAt.toISOString(),
+      quotaWarning: check.quotaExceeded || undefined,
     };
   }
 
@@ -63,6 +73,33 @@ export class OpenAIKeysService {
       await this.audit(userId, 'openai_key.delete', 'success');
     }
     return { ok: true };
+  }
+
+  private async checkKeyWithOpenAI(rawKey: string): Promise<{ quotaExceeded: boolean }> {
+    const openai = new OpenAI({ apiKey: rawKey });
+    try {
+      // models.list is often allowed without billing; a tiny completion matches Whisper billing.
+      await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+      });
+      return { quotaExceeded: false };
+    } catch (err) {
+      if (err instanceof APIError) {
+        if (err.status === 401) {
+          throw new BadRequestException('That OpenAI API key is invalid or revoked.');
+        }
+        if (err.status === 429) {
+          return { quotaExceeded: true };
+        }
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      if (/429|quota|rate limit|insufficient/i.test(message)) {
+        return { quotaExceeded: true };
+      }
+      return { quotaExceeded: false };
+    }
   }
 
   // Returns the decrypted key for server-side use (Whisper, Chat Completions).

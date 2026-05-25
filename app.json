@@ -16,6 +16,7 @@
       }
     },
     "android": {
+      "usesCleartextTraffic": true,
       "intentFilters": [
         {
           "action": "VIEW",

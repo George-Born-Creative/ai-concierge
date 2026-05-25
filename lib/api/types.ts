@@ -92,6 +92,7 @@ export type OpenAIKeyStatus = {
   exists: boolean;
   last4: string | null;
   createdAt: string | null;
+  quotaWarning?: boolean;
 };
 
 // ─── Voice transcribe ────────────────────────────────────────────────────────

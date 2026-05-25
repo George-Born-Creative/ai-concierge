@@ -14,16 +14,13 @@ import {
   View,
 } from 'react-native';
 
+import { AIConciergeVoiceRecorder } from '@/components/ai-concierge-voice-recorder';
+import {
+  ChatVoiceActivity,
+  ChatVoiceWaveOverlay,
+} from '@/components/chat/chat-voice-wave-overlay';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
 import { useToast } from '@/lib/toast';
-
-const suggestions = [
-  'List latest contacts',
-  'Find contact Sarah',
-  'Identify 5551234567',
-  'Create contact Alex 5551234567',
-  'Delete contact Alex',
-];
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -34,9 +31,11 @@ export default function ChatScreen() {
     voiceUri?: string;
     conversationId?: string;
   }>();
-  const { activeMessages, addVoiceMessage, openChat, runCommand } = useAssistantHistory();
+  const { activeChatId, activeMessages, addVoiceMessage, createChat, openChat, runCommand } =
+    useAssistantHistory();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  const [voiceActivity, setVoiceActivity] = useState<ChatVoiceActivity>('idle');
   const commandHandledKey = useRef<string | null>(null);
   const voiceHandledKey = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -106,7 +105,7 @@ export default function ChatScreen() {
     if (convId) {
       openChat(convId);
     }
-    addVoiceMessage(voiceUri);
+    addVoiceMessage(voiceUri, convId);
   }, [params.voiceUri, params.conversationId, openChat, addVoiceMessage]);
 
   useEffect(() => {
@@ -115,8 +114,15 @@ export default function ChatScreen() {
     }
   }, [activeMessages, scrollToBottom]);
 
-  function startVoiceCommand() {
-    show('Speech-to-text UI is ready. Add a speech recognition package to send transcripts here.', 'info');
+  function handleVoiceRecorded(voiceUri: string) {
+    let convId = paramOne(params.conversationId) ?? activeChatId;
+    if (!convId) {
+      convId = createChat();
+    } else {
+      openChat(convId);
+    }
+    addVoiceMessage(voiceUri, convId);
+    scrollToBottom();
   }
 
   return (
@@ -163,23 +169,16 @@ export default function ChatScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.suggestionRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {suggestions.map((suggestion) => (
-              <Pressable
-                key={suggestion}
-                style={styles.suggestionChip}
-                onPress={() => submitCommand(suggestion)}>
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
+        <ChatVoiceWaveOverlay activity={voiceActivity} />
 
         <View style={styles.composer}>
-          <Pressable style={styles.micButton} onPress={startVoiceCommand}>
-            <MaterialIcons name="mic" size={25} color="#FFFFFF" />
-          </Pressable>
+          <AIConciergeVoiceRecorder
+            variant="composer"
+            disabled={isRunning}
+            onActivityChange={setVoiceActivity}
+            onAudioRecorded={handleVoiceRecorded}
+            onError={(message) => show(message, 'error')}
+          />
           <TextInput
             value={input}
             onChangeText={setInput}
@@ -213,19 +212,50 @@ function paramOne(value: string | string[] | undefined): string | undefined {
 }
 
 function CommandBubble({ entry }: { entry: AssistantHistoryEntry }) {
+  const userText = voiceUserText(entry);
+
   return (
     <View style={styles.commandGroup}>
       <View style={styles.userBubble}>
-        <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'Voice command' : 'Command'}</Text>
-        <Text style={styles.userText}>{entry.command}</Text>
-        {entry.voiceUri ? <Text style={styles.voiceAttachment}>Audio attached</Text> : null}
+        <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'Command'}</Text>
+        <Text style={styles.userText} selectable>
+          {userText}
+        </Text>
       </View>
       <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
         <Text style={styles.bubbleLabel}>Response</Text>
-        <Text style={styles.assistantText}>{entry.response}</Text>
+        {entry.pending ? (
+          <View style={styles.pendingRow}>
+            <ActivityIndicator size="small" color="#1A73E8" />
+            <Text style={styles.assistantText} selectable>
+              {entry.response}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.assistantText} selectable>
+            {entry.response}
+          </Text>
+        )}
       </View>
     </View>
   );
+}
+
+function voiceUserText(entry: AssistantHistoryEntry): string {
+  if (entry.source !== 'voice') {
+    return entry.command;
+  }
+
+  const transcript = entry.transcript?.trim() || entry.command.trim();
+  if (transcript && transcript !== 'Voice message') {
+    return transcript;
+  }
+
+  if (entry.pending) {
+    return 'Transcribing your voice…';
+  }
+
+  return entry.command;
 }
 
 const styles = StyleSheet.create({
@@ -235,6 +265,7 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
+    position: 'relative',
   },
   header: {
     alignItems: 'center',
@@ -389,35 +420,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 23,
   },
-  voiceAttachment: {
-    color: '#D2E3FC',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 8,
-    textTransform: 'uppercase',
+  pendingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
   },
   assistantText: {
     color: '#202124',
     fontSize: 15,
     lineHeight: 22,
-  },
-  suggestionRow: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  suggestionChip: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#DADCE0',
-    borderRadius: 14,
-    borderWidth: 1,
-    marginRight: 10,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-  },
-  suggestionText: {
-    color: '#202124',
-    fontSize: 14,
-    fontWeight: '600',
   },
   composer: {
     alignItems: 'center',
@@ -428,14 +439,6 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 14,
-  },
-  micButton: {
-    alignItems: 'center',
-    backgroundColor: '#1A73E8',
-    borderRadius: 14,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
   },
   input: {
     backgroundColor: '#F1F3F4',

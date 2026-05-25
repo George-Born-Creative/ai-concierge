@@ -21,6 +21,7 @@ export default function TabLayout() {
           backgroundColor: '#FFFFFF',
           borderTopColor: '#E8EAED',
           height: 82,
+          overflow: 'visible',
           paddingBottom: 18,
           paddingTop: 10,
         },
