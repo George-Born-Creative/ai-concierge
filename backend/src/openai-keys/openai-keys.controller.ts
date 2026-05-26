@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 
@@ -23,6 +24,13 @@ export class OpenAIKeysController {
   @Post()
   @HttpCode(200)
   save(@CurrentUser() user: AuthenticatedUser, @Body() dto: SaveOpenAIKeyDto) {
+    return this.keys.saveKey(user.id, dto.key);
+  }
+
+  /** Rotate / replace the stored key (same upsert as POST). */
+  @Put()
+  @HttpCode(200)
+  rotate(@CurrentUser() user: AuthenticatedUser, @Body() dto: SaveOpenAIKeyDto) {
     return this.keys.saveKey(user.id, dto.key);
   }
 

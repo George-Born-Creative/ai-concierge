@@ -1,7 +1,8 @@
 import { getToken } from '../session';
 
 import { getApiBaseUrl } from './base-url';
-import { ApiError } from './client';
+import { ApiError } from './api-error';
+import { toNetworkApiError } from './network-error';
 import type { TranscribeResponse } from './types';
 // We bypass apiRequest here because that helper sends JSON — Whisper needs
 // multipart/form-data with the raw file. React Native's FormData accepts the
@@ -25,15 +26,20 @@ export async function transcribe(fileUri: string): Promise<TranscribeResponse> {
     type: guessMimeType(fileUri),
   } as unknown as Blob);
 
-  const response = await fetch(`${baseUrl}/voice/transcribe`, {
-    method: 'POST',
-    headers: {
-      // Do NOT set Content-Type; the runtime will add it with the correct
-      // multipart boundary.
-      Authorization: `Bearer ${token}`,
-    },
-    body: form,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/voice/transcribe`, {
+      method: 'POST',
+      headers: {
+        // Do NOT set Content-Type; the runtime will add it with the correct
+        // multipart boundary.
+        Authorization: `Bearer ${token}`,
+      },
+      body: form,
+    });
+  } catch (err) {
+    throw toNetworkApiError(err, baseUrl);
+  }
 
   if (!response.ok) {
     const message = await safeErrorMessage(response);

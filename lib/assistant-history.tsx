@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
 
 import { voiceApi } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
 import type { VoiceIntent } from '@/lib/api/types';
 import {
   AssistantCommandStatus,
@@ -47,6 +48,16 @@ function emptyChat(): AssistantChat {
   };
 }
 
+function chatWithId(id: string): AssistantChat {
+  const now = new Date().toISOString();
+  return {
+    id,
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
+  };
+}
+
 type AssistantHistoryContextValue = {
   chats: AssistantChat[];
   activeChatId: string | null;
@@ -59,7 +70,7 @@ type AssistantHistoryContextValue = {
     command: string,
     source?: AssistantHistoryEntry['source']
   ) => Promise<AssistantHistoryEntry>;
-  addVoiceMessage: (voiceUri: string) => AssistantHistoryEntry;
+  addVoiceMessage: (voiceUri: string, chatId?: string) => AssistantHistoryEntry;
 };
 
 const AssistantHistoryContext = createContext<AssistantHistoryContextValue | null>(null);
@@ -105,14 +116,14 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     setState({ chats: [], activeChatId: null });
   }, []);
 
-  const appendEntry = useCallback((entry: AssistantHistoryEntry) => {
+  const appendEntry = useCallback((entry: AssistantHistoryEntry, targetChatId?: string) => {
     setState((s) => {
       const chats = [...s.chats];
-      let activeChatId = s.activeChatId;
+      let activeChatId = targetChatId ?? s.activeChatId;
       let idx = activeChatId ? chats.findIndex((c) => c.id === activeChatId) : -1;
 
       if (idx < 0) {
-        const chat = emptyChat();
+        const chat = targetChatId ? chatWithId(targetChatId) : emptyChat();
         chats.push(chat);
         activeChatId = chat.id;
         idx = chats.length - 1;
@@ -147,23 +158,40 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
 
   const runCommand = useCallback(
     async (command: string, source: AssistantHistoryEntry['source'] = 'text') => {
-      const result = await executeContactCommand(command);
       const entry: AssistantHistoryEntry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         command,
-        response: result.response,
-        status: result.status,
+        response: 'Running your command…',
+        status: 'success',
         createdAt: new Date().toISOString(),
         source,
+        pending: true,
       };
       appendEntry(entry);
+
+      try {
+        const result = await executeContactCommand(command);
+        updateEntry(entry.id, {
+          response: result.response,
+          status: result.status,
+          pending: false,
+        });
+      } catch (err) {
+        updateEntry(entry.id, {
+          response:
+            err instanceof Error ? err.message : 'Something went wrong while running your command.',
+          status: 'error',
+          pending: false,
+        });
+      }
+
       return entry;
     },
-    [appendEntry]
+    [appendEntry, updateEntry]
   );
 
   const addVoiceMessage = useCallback(
-    (voiceUri: string) => {
+    (voiceUri: string, chatId?: string) => {
       const entry: AssistantHistoryEntry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         command: 'Voice message',
@@ -174,26 +202,45 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         voiceUri,
         pending: true,
       };
-      appendEntry(entry);
+      appendEntry(entry, chatId);
 
-      // Fire-and-forget: hit /voice/transcribe and patch the entry when the
-      // backend returns transcript + normalized intent JSON. The bubble
-      // re-renders automatically because we update via setState.
       void (async () => {
         try {
           const result = await voiceApi.transcribe(voiceUri);
-          const transcript = result.transcript || '(no speech detected)';
+          const transcript = result.transcript?.trim() ?? '';
+
+          if (!transcript) {
+            updateEntry(entry.id, {
+              command: '(no speech detected)',
+              response: 'No speech detected. Try speaking closer to the microphone.',
+              pending: false,
+              status: 'error',
+            });
+            return;
+          }
+
+          // Show the transcript in the user bubble, then run the command.
           updateEntry(entry.id, {
             command: transcript,
-            response: formatIntentResponse(result.intent),
-            transcript: result.transcript,
+            transcript,
             intent: result.intent,
+            response: 'Running your command…',
+            pending: true,
+          });
+
+          const exec = await executeContactCommand(transcript);
+          updateEntry(entry.id, {
+            response: exec.response,
             pending: false,
-            status: 'success',
+            status: exec.status,
           });
         } catch (err) {
           const message =
-            err instanceof Error ? err.message : 'Could not transcribe the recording.';
+            err instanceof ApiError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : 'Could not transcribe the recording.';
           updateEntry(entry.id, {
             response: message,
             pending: false,
@@ -245,16 +292,4 @@ export function useAssistantHistory() {
   }
 
   return context;
-}
-
-// Renders the intent JSON into something a human reads first.
-function formatIntentResponse(intent: VoiceIntent): string {
-  const header = `Intent: ${intent.intent} (confidence ${(intent.confidence * 100).toFixed(0)}%)`;
-  const entityEntries = Object.entries(intent.entities ?? {});
-  const entities = entityEntries.length
-    ? entityEntries.map(([k, v]) => `  ${k}: ${v ?? '—'}`).join('\n')
-    : '  (none extracted)';
-  const clarification = intent.needs_clarification ? '\nNeeds clarification.' : '';
-  const notes = intent.notes ? `\nNote: ${intent.notes}` : '';
-  return `${header}\nEntities:\n${entities}${clarification}${notes}`;
 }

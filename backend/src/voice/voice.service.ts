@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { CrmProvider } from '@prisma/client';
-import OpenAI, { toFile } from 'openai';
+import OpenAI, { APIError, toFile } from 'openai';
 
 import { OpenAIKeysService } from '../openai-keys/openai-keys.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -83,6 +83,7 @@ export class VoiceService {
     }
 
     const apiKey = await this.keys.getDecryptedKey(userId);
+    const keyStatus = await this.keys.getStatus(userId);
     const openai = new OpenAI({ apiKey });
 
     const filename = file.originalname || 'voice.m4a';
@@ -96,10 +97,12 @@ export class VoiceService {
       });
       transcript = whisper.text?.trim() ?? '';
     } catch (err) {
-      const message = (err as Error).message || 'Whisper request failed';
-      this.logger.warn(`Whisper failure for ${userId}: ${message}`);
+      const message = formatOpenAIError(err, 'transcription');
+      this.logger.warn(
+        `Whisper failure for ${userId} (key ···${keyStatus.last4 ?? '????'}): ${message}`,
+      );
       await this.audit(userId, 'voice.transcribe', 'failure', { stage: 'whisper', message });
-      throw new BadRequestException(`Transcription failed: ${message}`);
+      throw new BadRequestException(message);
     }
 
     if (!transcript) {
@@ -130,7 +133,7 @@ export class VoiceService {
       const raw = completion.choices[0]?.message?.content ?? '{}';
       intent = this.parseIntent(raw);
     } catch (err) {
-      const message = (err as Error).message || 'Normalizer request failed';
+      const message = formatOpenAIError(err, 'intent');
       this.logger.warn(`Normalizer failure for ${userId}: ${message}`);
       // Best-effort: return the transcript even if normalization failed so the
       // user still sees what they said.
@@ -139,7 +142,7 @@ export class VoiceService {
         confidence: 0,
         entities: {},
         needs_clarification: true,
-        notes: `Normalizer failed: ${message}`,
+        notes: message,
       };
     }
 
@@ -209,4 +212,29 @@ function clamp01(value: unknown): number {
   if (n < 0) return 0;
   if (n > 1) return 1;
   return n;
+}
+
+function formatOpenAIError(err: unknown, stage: 'transcription' | 'intent'): string {
+  if (err instanceof APIError) {
+    if (err.status === 429) {
+      return 'Your OpenAI account has no remaining quota. Add billing or credits at platform.openai.com, then try again or rotate your key in Profile.';
+    }
+    if (err.status === 401) {
+      return 'Your OpenAI API key is invalid or revoked. Rotate it in Profile → OpenAI key.';
+    }
+    if (err.status === 403) {
+      return 'Your OpenAI API key cannot access this model. Check permissions or rotate the key in Profile.';
+    }
+  }
+
+  const raw = err instanceof Error ? err.message : 'Request failed';
+  if (/429|quota|rate limit|insufficient/i.test(raw)) {
+    return 'Your OpenAI account has no remaining quota. Add billing or credits at platform.openai.com, then try again or rotate your key in Profile.';
+  }
+  if (/401|invalid.*api key|incorrect api key/i.test(raw)) {
+    return 'Your OpenAI API key is invalid or revoked. Rotate it in Profile → OpenAI key.';
+  }
+
+  const label = stage === 'transcription' ? 'Transcription' : 'Intent parsing';
+  return `${label} failed: ${raw}`;
 }

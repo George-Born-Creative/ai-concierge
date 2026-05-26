@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { signOut } from '@/lib/api/auth';
+import { openaiApi } from '@/lib/api';
 import { clearSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -37,6 +38,19 @@ export function ProfileScreenContent() {
   const router = useRouter();
   const { show } = useToast();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [openAIKeyLast4, setOpenAIKeyLast4] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void openaiApi.getStatus().then((status) => {
+      if (!cancelled && status.last4) {
+        setOpenAIKeyLast4(status.last4);
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleLogout() {
     if (isLoggingOut) return;
@@ -115,14 +129,23 @@ export function ProfileScreenContent() {
         <View style={styles.actionsSection} pointerEvents={isLoggingOut ? 'box-none' : 'auto'}>
           <Pressable
             style={styles.actionButton}
-            onPress={() => router.push('/openai-key')}
+            onPress={() =>
+              router.push({
+                pathname: '/openai-key',
+                params: { from: 'profile', replace: '1' },
+              })
+            }
             disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="vpn-key" size={22} color="#1A73E8" />
             </View>
             <View style={styles.actionCopy}>
               <Text style={styles.actionTitle}>Rotate OpenAI key</Text>
-              <Text style={styles.actionDescription}>Replace your saved API key</Text>
+              <Text style={styles.actionDescription}>
+                {openAIKeyLast4
+                  ? `Current key ···${openAIKeyLast4} — tap to replace`
+                  : 'Add or replace your OpenAI API key'}
+              </Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
           </Pressable>
