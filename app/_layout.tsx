@@ -50,6 +50,7 @@ export default function RootLayout() {
             <Stack.Screen name="oauth/[provider]" options={{ headerShown: false }} />
             <Stack.Screen name="(onboarding)/openai-key" options={{ headerShown: false }} />
             <Stack.Screen name="(chat)/chat" options={{ headerShown: false }} />
+            <Stack.Screen name="settings" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
           </Stack>
           <StatusBar style="dark" />

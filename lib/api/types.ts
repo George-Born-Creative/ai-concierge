@@ -66,6 +66,7 @@ export type GhlStatusResponse = {
   locationId?: string | null;
   expiresAt?: string | null;
   scopes?: string[];
+  calendarScopesGranted?: boolean;
 };
 
 export type GhlContactSummary = {
@@ -90,6 +91,51 @@ export type CreateGhlContactRequest = {
   name?: string;
   email?: string;
   phone?: string;
+};
+
+export type GhlCalendarSummary = {
+  id: string;
+  name: string;
+  isActive?: boolean;
+};
+
+export type GhlCalendarsListResponse = {
+  calendars: GhlCalendarSummary[];
+};
+
+export type GhlAppointmentSummary = {
+  id: string;
+  title: string;
+  startTime?: string;
+  endTime?: string;
+  contactId?: string;
+  calendarId?: string;
+  status?: string;
+};
+
+export type GhlAppointmentsListResponse = {
+  appointments: GhlAppointmentSummary[];
+};
+
+export type CreateGhlAppointmentRequest = {
+  calendarId?: string;
+  calendarName?: string;
+  contactId?: string;
+  contactName?: string;
+  startTime: string;
+  endTime?: string;
+  durationMinutes?: number;
+  title?: string;
+  notes?: string;
+  timeZone?: string;
+};
+
+export type ListGhlCalendarEventsParams = {
+  calendarId?: string;
+  calendarName?: string;
+  startTime?: string;
+  endTime?: string;
+  days?: number;
 };
 
 // ─── HubSpot OAuth ───────────────────────────────────────────────────────────

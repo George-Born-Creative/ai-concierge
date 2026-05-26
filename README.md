@@ -114,7 +114,7 @@ GHL credentials live **only** in `backend/.env` (never in the mobile app):
 GHL_CLIENT_ID=...
 GHL_CLIENT_SECRET=...
 GHL_REDIRECT_URI=https://borncreative.net/
-GHL_SCOPES=contacts.readonly contacts.write
+GHL_SCOPES=contacts.readonly contacts.write calendars.readonly calendars.write calendars/events.readonly calendars/events.write calendars/groups.readonly calendars/groups.write calendars/resources.readonly calendars/resources.write
 ```
 
 In the [GHL Marketplace](https://marketplace.gohighlevel.com/) app settings, add the same **Redirect URL** as `GHL_REDIRECT_URI`. Under **Advanced Settings → Auth**, enable the same scopes you put in `GHL_SCOPES` (requesting scopes not selected there causes `Invalid scope(s)`).

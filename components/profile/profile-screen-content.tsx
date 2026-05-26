@@ -166,21 +166,7 @@ export function ProfileScreenContent() {
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => router.push('/signup')}
-            disabled={isLoggingOut}>
-            <View style={styles.actionIcon}>
-              <MaterialIcons name="person-add" size={22} color="#1A73E8" />
-            </View>
-            <View style={styles.actionCopy}>
-              <Text style={styles.actionTitle}>Create account</Text>
-              <Text style={styles.actionDescription}>Sign up for AI-Concierge</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
-          </Pressable>
-
-          <Pressable
-            style={styles.actionButton}
-            onPress={() => show('Settings screen coming soon.', 'info')}
+            onPress={() => router.push('/settings')}
             disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
               <MaterialIcons name="settings" size={22} color="#1A73E8" />
