@@ -1,4 +1,6 @@
-import * as Contacts from 'expo-contacts';
+import { ghlApi, voiceApi } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
+import type { GhlContactSummary, VoiceIntent } from '@/lib/api/types';
 
 export type AssistantCommandStatus = 'success' | 'error';
 
@@ -7,201 +9,214 @@ export type AssistantCommandResult = {
   status: AssistantCommandStatus;
 };
 
-type ContactSummary = {
-  id?: string;
-  name: string;
-  phone?: string;
-  email?: string;
-};
+const CONTACT_INTENTS = new Set([
+  'list_contacts',
+  'find_contact',
+  'create_contact',
+  'delete_contact',
+]);
 
-const CONTACT_FIELDS = [
-  Contacts.Fields.FirstName,
-  Contacts.Fields.LastName,
-  Contacts.Fields.Name,
-  Contacts.Fields.PhoneNumbers,
-  Contacts.Fields.Emails,
-];
-
-export async function executeContactCommand(command: string): Promise<AssistantCommandResult> {
+export async function executeContactCommand(
+  command: string,
+  intent?: VoiceIntent,
+): Promise<AssistantCommandResult> {
   const normalized = command.trim();
 
   if (!normalized) {
     return {
-      response: 'Say or type a contact command to get started.',
+      response: 'Tell me what you want to do with your contacts.',
       status: 'error',
     };
   }
-
-  const permission = await Contacts.requestPermissionsAsync();
-
-  if (permission.status !== 'granted') {
-    return {
-      response: 'I need contacts permission before I can fetch, create, identify, or delete contacts.',
-      status: 'error',
-    };
-  }
-
-  const lowerCommand = normalized.toLowerCase();
 
   try {
-    if (isLatestContactsCommand(lowerCommand)) {
-      return listLatestContacts();
+    let resolved = intent;
+
+    if (!shouldRunIntent(resolved)) {
+      try {
+        resolved = await voiceApi.interpret(normalized);
+      } catch {
+        // Fall back to local phrase matching if interpret fails (e.g. no OpenAI key).
+      }
     }
 
-    if (isCreateContactCommand(lowerCommand)) {
-      return createContact(normalized);
+    if (resolved?.needs_clarification && resolved.notes) {
+      return { response: resolved.notes, status: 'error' };
     }
 
-    if (isDeleteContactCommand(lowerCommand)) {
-      return deleteContact(normalized);
+    if (resolved && shouldRunIntent(resolved)) {
+      const fromIntent = await executeFromIntent(resolved);
+      if (fromIntent) return fromIntent;
     }
 
-    if (isFindContactCommand(lowerCommand)) {
-      return findContact(normalized);
-    }
-
-    return {
-      response:
-        'I can handle contacts for now. Try: "list latest contacts", "find Sarah", "create contact Sarah 5551234567", or "delete contact Sarah".',
-      status: 'error',
-    };
+    return executeWithHeuristics(normalized);
   } catch (error) {
     return {
-      response: error instanceof Error ? error.message : 'Something went wrong while working with contacts.',
+      response: ghlErrorMessage(error),
       status: 'error',
     };
   }
 }
 
-function isLatestContactsCommand(command: string) {
+function shouldRunIntent(intent?: VoiceIntent): boolean {
+  if (!intent) return false;
+  if (intent.intent === 'unknown') return false;
+  return CONTACT_INTENTS.has(intent.intent);
+}
+
+async function executeFromIntent(
+  intent: VoiceIntent,
+): Promise<AssistantCommandResult | null> {
+  switch (intent.intent) {
+    case 'list_contacts':
+      return listLatestContacts();
+    case 'find_contact':
+      return findContactByQuery(extractSearchQuery(intent.entities));
+    case 'create_contact':
+      return createContactFromDetails(extractCreateDetails(intent.entities));
+    case 'delete_contact':
+      return deleteContactByQuery(extractSearchQuery(intent.entities));
+    default:
+      return null;
+  }
+}
+
+async function executeWithHeuristics(command: string): Promise<AssistantCommandResult> {
+  const lower = command.toLowerCase();
+
+  if (looksLikeList(lower)) {
+    return listLatestContacts();
+  }
+  if (looksLikeCreate(lower)) {
+    return createContactFromDetails(parseCreateFromText(command));
+  }
+  if (looksLikeDelete(lower)) {
+    return deleteContactByQuery(stripLeadPhrases(command, DELETE_LEADS));
+  }
+  if (looksLikeFind(lower)) {
+    return findContactByQuery(stripLeadPhrases(command, FIND_LEADS));
+  }
+
+  return {
+    response:
+      'I can list, look up, add, or remove contacts in GoHighLevel. Try something like "pull up my contacts" or "add Sarah 555-123-4567".',
+    status: 'error',
+  };
+}
+
+const FIND_LEADS = [
+  'look up',
+  'look for',
+  'search for',
+  'search',
+  'find contact',
+  'find',
+  'fetch',
+  'identify',
+  'who is',
+  'who\'s',
+  'whos',
+  'got anyone',
+  'anyone named',
+  'anybody named',
+  'do we have',
+  'do i have',
+  'get contact',
+];
+
+const DELETE_LEADS = [
+  'delete contact',
+  'delete',
+  'remove contact',
+  'remove',
+  'get rid of',
+  'drop',
+  'erase',
+];
+
+const CREATE_LEADS = [
+  'create contact',
+  'create',
+  'add contact',
+  'add',
+  'new contact',
+  'save contact',
+  'save',
+  'put in',
+  'register',
+];
+
+function looksLikeList(command: string) {
   return (
-    command.includes('latest contact') ||
-    command.includes('recent contact') ||
-    command.includes('list contact') ||
-    command.includes('show contact') ||
-    command === 'contacts'
+    /\b(contacts?|people|leads|clients)\b/.test(command) &&
+    /\b(list|show|pull up|get|see|recent|latest|my|all|who)\b/.test(command) &&
+    !/\b(add|create|delete|remove|find|look)\b/.test(command)
   );
 }
 
-function isCreateContactCommand(command: string) {
-  return command.includes('create contact') || command.includes('add contact') || command.startsWith('save ');
+function looksLikeCreate(command: string) {
+  return CREATE_LEADS.some((lead) => command.includes(lead));
 }
 
-function isDeleteContactCommand(command: string) {
-  return command.includes('delete contact') || command.includes('remove contact');
+function looksLikeDelete(command: string) {
+  return DELETE_LEADS.some((lead) => command.includes(lead));
 }
 
-function isFindContactCommand(command: string) {
-  return (
-    command.includes('find ') ||
-    command.includes('fetch ') ||
-    command.includes('identify ') ||
-    command.includes('who is ') ||
-    command.includes('get contact')
-  );
+function looksLikeFind(command: string) {
+  return FIND_LEADS.some((lead) => command.includes(lead));
 }
 
 async function listLatestContacts(): Promise<AssistantCommandResult> {
-  const contacts = await loadContacts(10);
-  const summaries = contacts.map(toContactSummary).filter((contact) => contact.name !== 'Unknown');
+  const result = await ghlApi.listContacts({ limit: 10 });
+  const summaries = result.contacts.filter((contact) => contact.name !== 'Unknown');
 
   if (summaries.length === 0) {
     return {
-      response: 'I could not find any contacts yet.',
+      response: "You don't have any contacts in GoHighLevel yet.",
       status: 'success',
     };
   }
 
   return {
-    response: `Here are the latest contacts:\n${summaries.map(formatContact).join('\n')}`,
+    response: `Here's who you've got recently:\n${summaries.map(formatContact).join('\n')}`,
     status: 'success',
   };
 }
 
-async function createContact(command: string): Promise<AssistantCommandResult> {
-  const details = parseCreateCommand(command);
-
+async function createContactFromDetails(
+  details: ReturnType<typeof parseCreateFromText>,
+): Promise<AssistantCommandResult> {
   if (!details.name || (!details.phone && !details.email)) {
     return {
-      response: 'Please include a name and phone or email. Example: "create contact Sarah Parker 5551234567".',
+      response: 'I need a name and either a phone number or email. Something like "add Sarah 555-123-4567".',
       status: 'error',
     };
   }
 
-  const contactId = await Contacts.addContactAsync({
-    contactType: Contacts.ContactTypes.Person,
+  const { firstName, lastName } = splitName(details.name);
+  const created = await ghlApi.createContact({
     name: details.name,
-    firstName: details.name,
-    phoneNumbers: details.phone
-      ? [
-          {
-            label: 'mobile',
-            number: details.phone,
-          },
-        ]
-      : undefined,
-    emails: details.email
-      ? [
-          {
-            label: 'work',
-            email: details.email,
-          },
-        ]
-      : undefined,
+    firstName,
+    lastName,
+    phone: details.phone,
+    email: details.email,
   });
 
+  const bits = [
+    created.phone ? `phone ${created.phone}` : null,
+    created.email ? `email ${created.email}` : null,
+  ].filter(Boolean);
+
   return {
-    response: `Created ${details.name}${details.phone ? ` with ${details.phone}` : ''}${
-      details.email ? ` and ${details.email}` : ''
-    }. Contact id: ${contactId}.`,
+    response: `Done — added ${created.name}${bits.length ? ` (${bits.join(', ')})` : ''}.`,
     status: 'success',
   };
 }
 
-async function deleteContact(command: string): Promise<AssistantCommandResult> {
-  const query = cleanCommandTarget(command, ['delete contact', 'remove contact']);
-
+async function deleteContactByQuery(query: string): Promise<AssistantCommandResult> {
   if (!query) {
     return {
-      response: 'Tell me which contact to delete. Example: "delete contact Sarah Parker".',
-      status: 'error',
-    };
-  }
-
-  const matches = await findMatchingContacts(query);
-
-  if (matches.length === 0 || !matches[0].id) {
-    return {
-      response: `I could not find a contact matching "${query}".`,
-      status: 'error',
-    };
-  }
-
-  await Contacts.removeContactAsync(matches[0].id);
-
-  return {
-    response: `Deleted ${matches[0].name}.`,
-    status: 'success',
-  };
-}
-
-async function findContact(command: string): Promise<AssistantCommandResult> {
-  const query = cleanCommandTarget(command, [
-    'find contact',
-    'find',
-    'fetch user contact',
-    'fetch contact',
-    'fetch',
-    'identify the person with',
-    'identify person with',
-    'identify',
-    'who is',
-    'get contact',
-  ]);
-
-  if (!query) {
-    return {
-      response: 'Tell me a name, phone, or email to identify. Example: "identify 5551234567".',
+      response: 'Who should I remove? Give me a name or number.',
       status: 'error',
     };
   }
@@ -210,82 +225,138 @@ async function findContact(command: string): Promise<AssistantCommandResult> {
 
   if (matches.length === 0) {
     return {
-      response: `I could not identify anyone matching "${query}".`,
+      response: `Couldn't find anyone matching "${query}".`,
+      status: 'error',
+    };
+  }
+
+  await ghlApi.deleteContact(matches[0].id);
+
+  return {
+    response: `Removed ${matches[0].name}.`,
+    status: 'success',
+  };
+}
+
+async function findContactByQuery(query: string): Promise<AssistantCommandResult> {
+  if (!query) {
+    return {
+      response: 'Who are you looking for? A name, phone, or email works.',
+      status: 'error',
+    };
+  }
+
+  const matches = await findMatchingContacts(query);
+
+  if (matches.length === 0) {
+    return {
+      response: `No one in GoHighLevel matches "${query}".`,
       status: 'error',
     };
   }
 
   return {
-    response: `I found ${matches.length} matching contact${matches.length > 1 ? 's' : ''}:\n${matches
-      .slice(0, 5)
-      .map(formatContact)
-      .join('\n')}`,
+    response:
+      matches.length === 1
+        ? `Found them:\n${formatContact(matches[0])}`
+        : `Found ${matches.length} people:\n${matches
+            .slice(0, 5)
+            .map(formatContact)
+            .join('\n')}`,
     status: 'success',
   };
 }
 
 async function findMatchingContacts(query: string) {
-  const contacts = await loadContacts(200);
+  const result = await ghlApi.listContacts({ limit: 20, query });
   const searchableQuery = normalizeSearch(query);
 
-  return contacts
-    .map(toContactSummary)
-    .filter((contact) => {
-      const searchableContact = normalizeSearch(
-        [contact.name, contact.phone, contact.email].filter(Boolean).join(' ')
-      );
-
-      return searchableContact.includes(searchableQuery);
-    });
-}
-
-async function loadContacts(pageSize: number) {
-  const result = await Contacts.getContactsAsync({
-    fields: CONTACT_FIELDS,
-    pageSize,
-    sort: Contacts.SortTypes.FirstName,
+  return result.contacts.filter((contact) => {
+    const searchableContact = normalizeSearch(
+      [contact.name, contact.phone, contact.email].filter(Boolean).join(' '),
+    );
+    return searchableContact.includes(searchableQuery);
   });
-
-  return result.data;
 }
 
-function parseCreateCommand(command: string) {
-  const target = cleanCommandTarget(command, ['create contact', 'add contact', 'save']);
-  const email = target.match(/[^\s]+@[^\s]+\.[^\s]+/)?.[0];
+function extractSearchQuery(entities: VoiceIntent['entities']): string {
+  const query = entityString(entities, 'query');
+  if (query) return query;
+
+  const name = buildNameFromEntities(entities);
+  if (name) return name;
+
+  return entityString(entities, 'phone', 'email') ?? '';
+}
+
+function extractCreateDetails(entities: VoiceIntent['entities']) {
+  const email = entityString(entities, 'email')?.toLowerCase();
+  const phone = entityString(entities, 'phone');
+  const name =
+    entityString(entities, 'name') || buildNameFromEntities(entities) || '';
+
+  return { name, phone, email };
+}
+
+function parseCreateFromText(command: string) {
+  const target = stripLeadPhrases(command, CREATE_LEADS);
+  const email = target.match(/[^\s]+@[^\s]+\.[^\s]+/)?.[0]?.toLowerCase();
   const phone = target.match(/[+()\d][+()\d\s.-]{5,}/)?.[0]?.trim();
   const name = target
     .replace(email ?? '', '')
     .replace(phone ?? '', '')
-    .replace(/\bwith\b|\bphone\b|\bemail\b|\bnumber\b/gi, '')
+    .replace(/\b(with|phone|email|number|named|called)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
   return { email, name, phone };
 }
 
-function cleanCommandTarget(command: string, prefixes: string[]) {
-  let target = command.trim();
+function buildNameFromEntities(entities: VoiceIntent['entities']) {
+  const direct = entityString(entities, 'name');
+  if (direct) return direct;
 
-  for (const prefix of prefixes) {
-    const expression = new RegExp(`^${escapeRegExp(prefix)}\\s*`, 'i');
+  const first = entityString(entities, 'firstName', 'first_name');
+  const last = entityString(entities, 'lastName', 'last_name');
+  return [first, last].filter(Boolean).join(' ');
+}
+
+function entityString(
+  entities: VoiceIntent['entities'],
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = entities[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function stripLeadPhrases(command: string, leads: string[]) {
+  let target = command.trim();
+  const sorted = [...leads].sort((a, b) => b.length - a.length);
+
+  for (const lead of sorted) {
+    const expression = new RegExp(`^${escapeRegExp(lead)}\\s*`, 'i');
     target = target.replace(expression, '');
   }
 
-  return target.replace(/\s+/g, ' ').trim();
+  return target.replace(/^(the|a|an|contact|person)\s+/i, '').replace(/\s+/g, ' ').trim();
 }
 
-function toContactSummary(contact: Contacts.ExistingContact): ContactSummary {
-  return {
-    id: contact.id,
-    name: contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'Unknown',
-    phone: contact.phoneNumbers?.[0]?.number,
-    email: contact.emails?.[0]?.email,
-  };
+function splitName(name: string) {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: undefined };
+  }
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 }
 
-function formatContact(contact: ContactSummary) {
-  const detail = [contact.phone, contact.email].filter(Boolean).join(' | ');
-  return detail ? `- ${contact.name}: ${detail}` : `- ${contact.name}`;
+function formatContact(contact: GhlContactSummary) {
+  const detail = [contact.phone, contact.email].filter(Boolean).join(' · ');
+  return detail ? `· ${contact.name} — ${detail}` : `· ${contact.name}`;
 }
 
 function normalizeSearch(value: string) {
@@ -294,4 +365,16 @@ function normalizeSearch(value: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function ghlErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 403) {
+      return 'Hook up GoHighLevel in Profile first, then I can work with your contacts.';
+    }
+    return error.message;
+  }
+  return error instanceof Error
+    ? error.message
+    : 'Something went wrong while working with your contacts.';
 }

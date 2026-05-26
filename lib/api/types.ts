@@ -68,6 +68,30 @@ export type GhlStatusResponse = {
   scopes?: string[];
 };
 
+export type GhlContactSummary = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  dateAdded?: string;
+};
+
+export type GhlContactsListResponse = {
+  contacts: GhlContactSummary[];
+  meta?: {
+    total?: number;
+    startAfterId?: string | null;
+  };
+};
+
+export type CreateGhlContactRequest = {
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+};
+
 // ─── HubSpot OAuth ───────────────────────────────────────────────────────────
 
 export type HubspotAuthUrlResponse = {

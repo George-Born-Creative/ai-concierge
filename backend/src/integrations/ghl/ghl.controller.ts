@@ -1,7 +1,10 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  Param,
   Post,
   Query,
   Req,
@@ -14,6 +17,8 @@ import { AuthenticatedUser, CurrentUser } from '../../common/current-user.decora
 import { ActiveSubscriptionGuard } from '../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GhlCallbackQueryDto } from './dto/callback.query.dto';
+import { CreateGhlContactDto } from './dto/create-contact.dto';
+import { ListContactsQueryDto } from './dto/list-contacts.query.dto';
 import {
   handleGhlOAuthCallback,
   handleGhlOAuthFinish,
@@ -66,5 +71,34 @@ export class GhlController {
   @UseGuards(JwtAuthGuard)
   disconnect(@CurrentUser() user: AuthenticatedUser) {
     return this.ghl.disconnect(user.id);
+  }
+
+  @Get('contacts')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  listContacts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListContactsQueryDto,
+  ) {
+    return this.ghl.listContacts(user.id, query.limit ?? 10, query.query);
+  }
+
+  @Post('contacts')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  createContact(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateGhlContactDto,
+  ) {
+    return this.ghl.createContact(user.id, body);
+  }
+
+  @Delete('contacts/:id')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  deleteContact(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') contactId: string,
+  ) {
+    return this.ghl.deleteContact(user.id, contactId);
   }
 }

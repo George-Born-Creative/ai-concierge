@@ -39,23 +39,31 @@ export type TranscribeResult = {
   };
 };
 
-const NORMALIZER_SYSTEM_PROMPT = `You convert voice-command transcripts for a CRM assistant into a strict JSON schema. The user is speaking to control GoHighLevel or HubSpot.
+const NORMALIZER_SYSTEM_PROMPT = `You interpret casual spoken or typed commands for a GoHighLevel CRM assistant. Users speak in everyday English — not rigid command templates.
 
 Output JSON with this exact shape (no markdown, no commentary):
 {
   "intent": one of ${SUPPORTED_INTENTS.map((i) => `"${i}"`).join(', ')},
   "confidence": number between 0 and 1,
-  "entities": { ... extracted fields like name, email, phone, title, notes, amount, ... },
+  "entities": { ... extracted fields },
   "needs_clarification": boolean,
   "notes": string or null
 }
 
-Rules:
-- Pick "unknown" if the command does not fit any intent.
-- Normalize phone numbers to digits only.
+Intent examples (informal → intent):
+- "pull up my contacts", "who do I have in there", "show recent people" → list_contacts
+- "look up Sarah", "got anyone named Mike?", "find the guy with 555-1234" → find_contact
+- "add John Smith 555-1234", "put Sarah in", "save a contact for jane@test.com" → create_contact
+- "remove Sarah", "delete Mike from the list", "get rid of that contact" → delete_contact
+
+Entity rules:
+- find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
+- create_contact: extract "name" (full name), or "firstName" + "lastName", plus "phone" and/or "email".
+- Normalize phone to digits with optional leading +.
 - Lowercase emails.
-- If a required field is missing, set "needs_clarification": true.
-- Never invent entities that the user did not say.`;
+- If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
+- Pick "unknown" only when it is not a CRM/contact action at all.
+- Never invent details the user did not say.`;
 
 @Injectable()
 export class VoiceService {
@@ -119,32 +127,7 @@ export class VoiceService {
       };
     }
 
-    let intent: TranscribeResult['intent'];
-    try {
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        temperature: 0,
-        messages: [
-          { role: 'system', content: NORMALIZER_SYSTEM_PROMPT },
-          { role: 'user', content: transcript },
-        ],
-      });
-      const raw = completion.choices[0]?.message?.content ?? '{}';
-      intent = this.parseIntent(raw);
-    } catch (err) {
-      const message = formatOpenAIError(err, 'intent');
-      this.logger.warn(`Normalizer failure for ${userId}: ${message}`);
-      // Best-effort: return the transcript even if normalization failed so the
-      // user still sees what they said.
-      intent = {
-        intent: 'unknown',
-        confidence: 0,
-        entities: {},
-        needs_clarification: true,
-        notes: message,
-      };
-    }
+    const intent = await this.interpretText(userId, transcript, openai);
 
     await this.audit(userId, 'voice.transcribe', 'success', {
       intent: intent.intent,
@@ -152,6 +135,53 @@ export class VoiceService {
     });
 
     return { transcript, intent };
+  }
+
+  async interpret(userId: string, text: string): Promise<TranscribeResult['intent']> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return {
+        intent: 'unknown',
+        confidence: 0,
+        entities: {},
+        needs_clarification: true,
+        notes: 'Say what you want to do with your contacts.',
+      };
+    }
+
+    const apiKey = await this.keys.getDecryptedKey(userId);
+    const openai = new OpenAI({ apiKey });
+    return this.interpretText(userId, trimmed, openai);
+  }
+
+  private async interpretText(
+    userId: string,
+    text: string,
+    openai: OpenAI,
+  ): Promise<TranscribeResult['intent']> {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
+        temperature: 0,
+        messages: [
+          { role: 'system', content: NORMALIZER_SYSTEM_PROMPT },
+          { role: 'user', content: text },
+        ],
+      });
+      const raw = completion.choices[0]?.message?.content ?? '{}';
+      return this.parseIntent(raw);
+    } catch (err) {
+      const message = formatOpenAIError(err, 'intent');
+      this.logger.warn(`Normalizer failure for ${userId}: ${message}`);
+      return {
+        intent: 'unknown',
+        confidence: 0,
+        entities: {},
+        needs_clarification: true,
+        notes: message,
+      };
+    }
   }
 
   private parseIntent(raw: string): TranscribeResult['intent'] {

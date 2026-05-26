@@ -3,7 +3,8 @@ import { getToken } from '../session';
 import { getApiBaseUrl } from './base-url';
 import { ApiError } from './api-error';
 import { toNetworkApiError } from './network-error';
-import type { TranscribeResponse } from './types';
+import { apiRequest } from './client';
+import type { TranscribeResponse, VoiceIntent } from './types';
 // We bypass apiRequest here because that helper sends JSON — Whisper needs
 // multipart/form-data with the raw file. React Native's FormData accepts the
 // shorthand { uri, name, type } shape for file fields.
@@ -47,6 +48,13 @@ export async function transcribe(fileUri: string): Promise<TranscribeResponse> {
   }
 
   return (await response.json()) as TranscribeResponse;
+}
+
+export async function interpret(text: string): Promise<VoiceIntent> {
+  return apiRequest<VoiceIntent>('/voice/interpret', {
+    method: 'POST',
+    body: { text },
+  });
 }
 
 function extractFilename(uri: string): string {
