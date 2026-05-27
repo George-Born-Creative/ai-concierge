@@ -202,3 +202,43 @@ export type TranscribeResponse = {
   transcript: string;
   intent: VoiceIntent;
 };
+
+// ─── Assistant conversations ─────────────────────────────────────────────────
+
+export type AssistantConversationSummary = {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  preview: string | null;
+};
+
+export type AssistantMessage = {
+  id: string;
+  command: string;
+  response: string;
+  status: 'success' | 'error';
+  source: 'text' | 'voice';
+  transcript?: string;
+  intent?: VoiceIntent;
+  voiceUri?: string;
+  pending?: boolean;
+  createdAt: string;
+};
+
+export type AssistantConversation = {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messages: AssistantMessage[];
+};
+
+export type RunAssistantCommandRequest = {
+  text: string;
+  source?: 'text' | 'voice';
+  transcript?: string;
+  voiceUri?: string;
+  intent?: VoiceIntent;
+};

@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
 import { getMe, signIn, signUp } from '@/lib/api/auth';
 import { getApiBaseUrl } from '@/lib/api/base-url';
 import { ApiError } from '@/lib/api/client';
@@ -132,6 +133,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
   return (
     <SafeAreaView style={styles.screen}>
+      <PageHeader />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>

@@ -1,12 +1,19 @@
-import { createContext, PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
-
-import { voiceApi } from '@/lib/api';
-import { ApiError } from '@/lib/api/client';
-import type { VoiceIntent } from '@/lib/api/types';
 import {
-  AssistantCommandStatus,
-  executeContactCommand,
-} from '@/lib/contact-assistant';
+  createContext,
+  PropsWithChildren,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
+import { assistantApi, voiceApi } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
+import type { AssistantMessage, VoiceIntent } from '@/lib/api/types';
+import { getToken, subscribeSession } from '@/lib/session';
+
+export type AssistantCommandStatus = 'success' | 'error';
 
 export type AssistantHistoryEntry = {
   id: string;
@@ -16,7 +23,6 @@ export type AssistantHistoryEntry = {
   createdAt: string;
   source: 'text' | 'voice';
   voiceUri?: string;
-  // Populated for voice messages once /voice/transcribe completes.
   pending?: boolean;
   transcript?: string;
   intent?: VoiceIntent;
@@ -24,37 +30,47 @@ export type AssistantHistoryEntry = {
 
 export type AssistantChat = {
   id: string;
+  title: string | null;
   createdAt: string;
   updatedAt: string;
   messages: AssistantHistoryEntry[];
+  messageCount?: number;
 };
 
 type AssistantState = {
   chats: AssistantChat[];
   activeChatId: string | null;
+  loading: boolean;
 };
 
-function newChatId() {
-  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function emptyChat(): AssistantChat {
-  const now = new Date().toISOString();
+function mapMessage(message: AssistantMessage): AssistantHistoryEntry {
   return {
-    id: newChatId(),
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
+    id: message.id,
+    command: message.command,
+    response: message.response,
+    status: message.status,
+    createdAt: message.createdAt,
+    source: message.source,
+    voiceUri: message.voiceUri,
+    pending: message.pending,
+    transcript: message.transcript,
+    intent: message.intent,
   };
 }
 
-function chatWithId(id: string): AssistantChat {
-  const now = new Date().toISOString();
+function mapConversation(conv: {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messages: AssistantMessage[];
+}): AssistantChat {
   return {
-    id,
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
+    id: conv.id,
+    title: conv.title,
+    createdAt: conv.createdAt,
+    updatedAt: conv.updatedAt,
+    messages: conv.messages.map(mapMessage),
   };
 }
 
@@ -62,13 +78,18 @@ type AssistantHistoryContextValue = {
   chats: AssistantChat[];
   activeChatId: string | null;
   activeMessages: AssistantHistoryEntry[];
-  createChat: () => string;
+  loading: boolean;
+  createChat: () => Promise<string>;
   openChat: (chatId: string) => void;
-  deleteChat: (chatId: string) => void;
-  clearAllChats: () => void;
+  loadChat: (chatId: string) => Promise<void>;
+  deleteChat: (chatId: string) => Promise<void>;
+  deleteMessage: (chatId: string, messageId: string) => Promise<void>;
+  clearAllChats: () => Promise<void>;
+  refreshChats: () => Promise<void>;
   runCommand: (
     command: string,
-    source?: AssistantHistoryEntry['source']
+    source?: AssistantHistoryEntry['source'],
+    conversationId?: string,
   ) => Promise<AssistantHistoryEntry>;
   addVoiceMessage: (voiceUri: string, chatId?: string) => AssistantHistoryEntry;
 };
@@ -76,164 +97,404 @@ type AssistantHistoryContextValue = {
 const AssistantHistoryContext = createContext<AssistantHistoryContextValue | null>(null);
 
 export function AssistantHistoryProvider({ children }: PropsWithChildren) {
-  const [state, setState] = useState<AssistantState>({ chats: [], activeChatId: null });
+  const [state, setState] = useState<AssistantState>({
+    chats: [],
+    activeChatId: null,
+    loading: true,
+  });
+
+  const refreshChats = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      setState({ chats: [], activeChatId: null, loading: false });
+      return;
+    }
+
+    try {
+      const summaries = await assistantApi.listConversations();
+      setState((s) => {
+        const existing = new Map(s.chats.map((chat) => [chat.id, chat]));
+        const chats: AssistantChat[] = summaries.map((summary) => {
+          const prior = existing.get(summary.id);
+          if (prior && prior.messages.length > 0) {
+            return {
+              ...prior,
+              title: summary.title,
+              updatedAt: summary.updatedAt,
+            };
+          }
+          return {
+            id: summary.id,
+            title: summary.title,
+            createdAt: summary.createdAt,
+            updatedAt: summary.updatedAt,
+            messages: prior?.messages ?? [],
+            messageCount: summary.messageCount,
+          };
+        });
+        return {
+          chats,
+          activeChatId: s.activeChatId,
+          loading: false,
+        };
+      });
+    } catch {
+      setState((s) => ({ ...s, loading: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshChats();
+  }, [refreshChats]);
+
+  useEffect(() => subscribeSession(() => void refreshChats()), [refreshChats]);
 
   const activeMessages = useMemo(() => {
     const chat = state.chats.find((c) => c.id === state.activeChatId);
     return chat?.messages ?? [];
   }, [state.chats, state.activeChatId]);
 
-  const createChat = useCallback(() => {
-    const chat = emptyChat();
-    setState((s) => ({
-      chats: [...s.chats, chat],
-      activeChatId: chat.id,
-    }));
-    return chat.id;
-  }, []);
-
-  const openChat = useCallback((chatId: string) => {
+  const upsertChat = useCallback((chat: AssistantChat) => {
     setState((s) => {
-      if (!s.chats.some((c) => c.id === chatId)) {
-        return s;
+      const idx = s.chats.findIndex((c) => c.id === chat.id);
+      const chats = [...s.chats];
+      if (idx >= 0) {
+        const prior = chats[idx];
+        const serverIds = new Set(chat.messages.map((m) => m.id));
+        // Preserve any locally pending messages that the server doesn't know about yet.
+        const pendingLocal = prior.messages.filter(
+          (m) => m.pending && !serverIds.has(m.id),
+        );
+        chats[idx] = {
+          ...chat,
+          messages: [...chat.messages, ...pendingLocal],
+        };
+      } else {
+        chats.push(chat);
       }
-      return { ...s, activeChatId: chatId };
+      return { ...s, chats, activeChatId: chat.id };
     });
   }, []);
 
-  const deleteChat = useCallback((chatId: string) => {
+  const createChat = useCallback(async () => {
+    const placeholderId = `local-${Date.now()}`;
+    const now = new Date().toISOString();
+    const placeholder: AssistantChat = {
+      id: placeholderId,
+      title: null,
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    };
+    setState((s) => ({
+      chats: [...s.chats, placeholder],
+      activeChatId: placeholderId,
+      loading: false,
+    }));
+
+    const created = await assistantApi.createConversation();
+    const chat = mapConversation(created);
+    setState((s) => {
+      const chats = s.chats.map((row) =>
+        row.id === placeholderId
+          ? { ...chat, messages: row.messages, updatedAt: row.updatedAt }
+          : row,
+      );
+      return { chats, activeChatId: chat.id, loading: false };
+    });
+    return chat.id;
+  }, []);
+
+  const loadChat = useCallback(
+    async (chatId: string) => {
+      const full = await assistantApi.getConversation(chatId);
+      upsertChat(mapConversation(full));
+    },
+    [upsertChat],
+  );
+
+  const openChat = useCallback((chatId: string) => {
+    setState((s) => ({ ...s, activeChatId: chatId }));
+    void loadChat(chatId);
+  }, [loadChat]);
+
+  const deleteChat = useCallback(async (chatId: string) => {
+    await assistantApi.deleteConversation(chatId);
     setState((s) => {
       const chats = s.chats.filter((c) => c.id !== chatId);
       let activeChatId = s.activeChatId;
       if (activeChatId === chatId) {
         activeChatId = chats[chats.length - 1]?.id ?? null;
       }
-      return { chats, activeChatId };
+      return { chats, activeChatId, loading: false };
     });
   }, []);
 
-  const clearAllChats = useCallback(() => {
-    setState({ chats: [], activeChatId: null });
+  const clearAllChats = useCallback(async () => {
+    await assistantApi.clearConversations();
+    setState({ chats: [], activeChatId: null, loading: false });
   }, []);
 
-  const appendEntry = useCallback((entry: AssistantHistoryEntry, targetChatId?: string) => {
+  const deleteMessage = useCallback(async (chatId: string, messageId: string) => {
+    await assistantApi.deleteMessage(chatId, messageId);
     setState((s) => {
-      const chats = [...s.chats];
-      let activeChatId = targetChatId ?? s.activeChatId;
-      let idx = activeChatId ? chats.findIndex((c) => c.id === activeChatId) : -1;
-
-      if (idx < 0) {
-        const chat = targetChatId ? chatWithId(targetChatId) : emptyChat();
-        chats.push(chat);
-        activeChatId = chat.id;
-        idx = chats.length - 1;
-      }
-
-      const chat = chats[idx];
-      const now = new Date().toISOString();
-      chats[idx] = {
-        ...chat,
-        messages: [...chat.messages, entry],
-        updatedAt: now,
-      };
-      return { chats, activeChatId };
+      const chats = s.chats.map((chat) => {
+        if (chat.id !== chatId) return chat;
+        const messages = chat.messages.filter((m) => m.id !== messageId);
+        return {
+          ...chat,
+          messages,
+          updatedAt: messages[messages.length - 1]?.createdAt ?? chat.updatedAt,
+        };
+      });
+      return { ...s, chats };
     });
   }, []);
 
-  const updateEntry = useCallback(
-    (entryId: string, patch: Partial<AssistantHistoryEntry>) => {
+  const ensureConversationId = useCallback(
+    async (targetChatId?: string) => {
+      if (targetChatId) {
+        return targetChatId;
+      }
+      if (state.activeChatId) {
+        return state.activeChatId;
+      }
+      return createChat();
+    },
+    [createChat, state.activeChatId],
+  );
+
+  const applyServerMessage = useCallback(
+    (chatId: string, message: AssistantMessage, optimisticId?: string) => {
+      const entry = mapMessage(message);
       setState((s) => {
-        const chats = s.chats.map((chat) => {
-          const idx = chat.messages.findIndex((m) => m.id === entryId);
-          if (idx < 0) return chat;
-          const messages = [...chat.messages];
-          messages[idx] = { ...messages[idx], ...patch };
-          return { ...chat, messages, updatedAt: new Date().toISOString() };
-        });
-        return { ...s, chats };
+        const chats = [...s.chats];
+        const idx = chats.findIndex((c) => c.id === chatId);
+        if (idx < 0) {
+          chats.push({
+            id: chatId,
+            title: null,
+            createdAt: entry.createdAt,
+            updatedAt: entry.createdAt,
+            messages: [entry],
+          });
+          return { chats, activeChatId: chatId, loading: false };
+        }
+
+        const chat = chats[idx];
+        const existingIdx = chat.messages.findIndex(
+          (m) => m.id === entry.id || (optimisticId && m.id === optimisticId),
+        );
+        const messages = [...chat.messages];
+        if (existingIdx >= 0) {
+          messages[existingIdx] = entry;
+        } else {
+          messages.push(entry);
+        }
+
+        chats[idx] = {
+          ...chat,
+          messages,
+          updatedAt: entry.createdAt,
+        };
+        return { chats, activeChatId: chatId, loading: false };
       });
+      return entry;
     },
     [],
   );
 
+  const appendOptimistic = useCallback((chatId: string, entry: AssistantHistoryEntry) => {
+    setState((s) => {
+      const chats = [...s.chats];
+      const idx = chats.findIndex((c) => c.id === chatId);
+      if (idx < 0) {
+        chats.push({
+          id: chatId,
+          title: null,
+          createdAt: entry.createdAt,
+          updatedAt: entry.createdAt,
+          messages: [entry],
+        });
+        return { chats, activeChatId: chatId, loading: false };
+      }
+      const chat = chats[idx];
+      chats[idx] = {
+        ...chat,
+        messages: [...chat.messages, entry],
+        updatedAt: entry.createdAt,
+      };
+      return { chats, activeChatId: chatId, loading: false };
+    });
+  }, []);
+
   const runCommand = useCallback(
-    async (command: string, source: AssistantHistoryEntry['source'] = 'text') => {
-      const entry: AssistantHistoryEntry = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    async (
+      command: string,
+      source: AssistantHistoryEntry['source'] = 'text',
+      conversationId?: string,
+    ): Promise<AssistantHistoryEntry> => {
+      const knownChatId = conversationId;
+      const optimisticId = `pending-${Date.now()}`;
+      const optimistic: AssistantHistoryEntry = {
+        id: optimisticId,
         command,
-        response: 'Running your command…',
+        response: 'Sending…',
         status: 'success',
         createdAt: new Date().toISOString(),
         source,
         pending: true,
       };
-      appendEntry(entry);
 
-      try {
-        const result = await executeContactCommand(command);
-        updateEntry(entry.id, {
-          response: result.response,
-          status: result.status,
-          pending: false,
-        });
-      } catch (err) {
-        updateEntry(entry.id, {
-          response:
-            err instanceof Error ? err.message : 'Something went wrong while running your command.',
-          status: 'error',
-          pending: false,
-        });
+      if (knownChatId) {
+        appendOptimistic(knownChatId, optimistic);
       }
 
-      return entry;
+      const chatId = await ensureConversationId(conversationId);
+
+      if (!knownChatId || knownChatId !== chatId) {
+        appendOptimistic(chatId, optimistic);
+      }
+
+      try {
+        const result = await assistantApi.runCommand(chatId, { text: command, source });
+        setState((s) => {
+          const chats = s.chats.map((chat) => {
+            if (chat.id !== chatId) return chat;
+            const messages = chat.messages
+              .filter((m) => m.id !== optimisticId)
+              .concat(mapMessage(result));
+            return { ...chat, messages, updatedAt: result.createdAt };
+          });
+          return { ...s, chats, activeChatId: chatId };
+        });
+        return mapMessage(result);
+      } catch (err) {
+        const response =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'Something went wrong while running your command.';
+        setState((s) => {
+          const chats = s.chats.map((chat) => {
+            if (chat.id !== chatId) return chat;
+            const messages = chat.messages.map((m) =>
+              m.id === optimisticId
+                ? { ...m, response, status: 'error' as const, pending: false }
+                : m,
+            );
+            return { ...chat, messages };
+          });
+          return { ...s, chats, activeChatId: chatId };
+        });
+        return { ...optimistic, response, status: 'error' as const, pending: false };
+      }
     },
-    [appendEntry, updateEntry]
+    [appendOptimistic, ensureConversationId],
   );
 
   const addVoiceMessage = useCallback(
     (voiceUri: string, chatId?: string) => {
+      const optimisticId = `pending-voice-${Date.now()}`;
       const entry: AssistantHistoryEntry = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        id: optimisticId,
         command: 'Voice message',
-        response: 'Transcribing your recording…',
+        response: 'Sending…',
         status: 'success',
         createdAt: new Date().toISOString(),
         source: 'voice',
         voiceUri,
         pending: true,
       };
-      appendEntry(entry, chatId);
+
+      if (chatId) {
+        appendOptimistic(chatId, entry);
+      }
 
       void (async () => {
+        let convId = '';
         try {
-          const result = await voiceApi.transcribe(voiceUri);
-          const transcript = result.transcript?.trim() ?? '';
+          convId = await ensureConversationId(chatId);
+          if (!chatId) {
+            appendOptimistic(convId, entry);
+          }
+        } catch {
+          return;
+        }
+
+        setState((s) => ({
+          ...s,
+          chats: s.chats.map((chat) => {
+            if (chat.id !== convId) return chat;
+            return {
+              ...chat,
+              messages: chat.messages.map((m) =>
+                m.id === optimisticId
+                  ? { ...m, response: 'Transcribing your recording…' }
+                  : m,
+              ),
+            };
+          }),
+        }));
+
+        try {
+          const transcribed = await voiceApi.transcribe(voiceUri);
+          const transcript = transcribed.transcript?.trim() ?? '';
 
           if (!transcript) {
-            updateEntry(entry.id, {
-              command: '(no speech detected)',
-              response: 'No speech detected. Try speaking closer to the microphone.',
-              pending: false,
-              status: 'error',
-            });
+            setState((s) => ({
+              ...s,
+              chats: s.chats.map((chat) => {
+                if (chat.id !== convId) return chat;
+                return {
+                  ...chat,
+                  messages: chat.messages.map((m) =>
+                    m.id === optimisticId
+                      ? {
+                          ...m,
+                          command: '(no speech detected)',
+                          response: 'No speech detected. Try speaking closer to the microphone.',
+                          pending: false,
+                          status: 'error' as const,
+                        }
+                      : m,
+                  ),
+                };
+              }),
+            }));
             return;
           }
 
-          // Show the transcript in the user bubble, then run the command.
-          updateEntry(entry.id, {
-            command: transcript,
-            transcript,
-            intent: result.intent,
-            response: 'Running your command…',
-            pending: true,
-          });
+          // Reflect the transcript on the user's bubble while the command runs.
+          setState((s) => ({
+            ...s,
+            chats: s.chats.map((chat) => {
+              if (chat.id !== convId) return chat;
+              return {
+                ...chat,
+                messages: chat.messages.map((m) =>
+                  m.id === optimisticId
+                    ? {
+                        ...m,
+                        command: transcript,
+                        transcript,
+                        response: 'Running your command…',
+                      }
+                    : m,
+                ),
+              };
+            }),
+          }));
 
-          const exec = await executeContactCommand(transcript, result.intent);
-          updateEntry(entry.id, {
-            response: exec.response,
-            pending: false,
-            status: exec.status,
+          const result = await assistantApi.runCommand(convId, {
+            text: transcript,
+            source: 'voice',
+            transcript,
+            voiceUri,
+            intent: transcribed.intent,
           });
+          applyServerMessage(convId, result, optimisticId);
         } catch (err) {
           const message =
             err instanceof ApiError
@@ -241,17 +502,27 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
               : err instanceof Error
                 ? err.message
                 : 'Could not transcribe the recording.';
-          updateEntry(entry.id, {
-            response: message,
-            pending: false,
-            status: 'error',
-          });
+          if (!convId) return;
+          setState((s) => ({
+            ...s,
+            chats: s.chats.map((chat) => {
+              if (chat.id !== convId) return chat;
+              return {
+                ...chat,
+                messages: chat.messages.map((m) =>
+                  m.id === optimisticId
+                    ? { ...m, response: message, pending: false, status: 'error' as const }
+                    : m,
+                ),
+              };
+            }),
+          }));
         }
       })();
 
       return entry;
     },
-    [appendEntry, updateEntry]
+    [appendOptimistic, applyServerMessage, ensureConversationId],
   );
 
   const value = useMemo<AssistantHistoryContextValue>(
@@ -259,24 +530,32 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       chats: state.chats,
       activeChatId: state.activeChatId,
       activeMessages,
+      loading: state.loading,
       createChat,
       openChat,
+      loadChat,
       deleteChat,
+      deleteMessage,
       clearAllChats,
+      refreshChats,
       runCommand,
       addVoiceMessage,
     }),
     [
       state.chats,
       state.activeChatId,
+      state.loading,
       activeMessages,
       createChat,
       openChat,
+      loadChat,
       deleteChat,
+      deleteMessage,
       clearAllChats,
+      refreshChats,
       runCommand,
       addVoiceMessage,
-    ]
+    ],
   );
 
   return (

@@ -8,3 +8,4 @@ export * as ghlApi from './ghl';
 export * as hubspotApi from './hubspot';
 export * as openaiApi from './openai';
 export * as voiceApi from './voice';
+export * as assistantApi from './assistant';

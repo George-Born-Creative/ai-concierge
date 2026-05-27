@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -31,8 +32,15 @@ export default function ChatScreen() {
     voiceUri?: string;
     conversationId?: string;
   }>();
-  const { activeChatId, activeMessages, addVoiceMessage, createChat, openChat, runCommand } =
-    useAssistantHistory();
+  const {
+    activeChatId,
+    activeMessages,
+    addVoiceMessage,
+    createChat,
+    deleteMessage,
+    openChat,
+    runCommand,
+  } = useAssistantHistory();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [voiceActivity, setVoiceActivity] = useState<ChatVoiceActivity>('idle');
@@ -58,12 +66,13 @@ export default function ChatScreen() {
       setIsRunning(true);
 
       try {
-        await runCommand(trimmedCommand, source);
+        const convId = paramOne(params.conversationId) ?? activeChatId ?? undefined;
+        await runCommand(trimmedCommand, source, convId);
       } finally {
         setIsRunning(false);
       }
     },
-    [isRunning, runCommand]
+    [activeChatId, isRunning, params.conversationId, runCommand]
   );
 
   useEffect(() => {
@@ -109,15 +118,15 @@ export default function ChatScreen() {
   }, [params.voiceUri, params.conversationId, openChat, addVoiceMessage]);
 
   useEffect(() => {
-    if (activeMessages.length > 0) {
+    if (activeMessages.length > 0 || isRunning) {
       scrollToBottom();
     }
-  }, [activeMessages, scrollToBottom]);
+  }, [activeMessages, isRunning, scrollToBottom]);
 
-  function handleVoiceRecorded(voiceUri: string) {
+  async function handleVoiceRecorded(voiceUri: string) {
     let convId = paramOne(params.conversationId) ?? activeChatId;
     if (!convId) {
-      convId = createChat();
+      convId = await createChat();
     } else {
       openChat(convId);
     }
@@ -150,7 +159,7 @@ export default function ChatScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={scrollToBottom}>
-          {activeMessages.length === 0 ? (
+          {activeMessages.length === 0 && !isRunning ? (
             <View style={styles.heroCard}>
               <View style={styles.assistantMark}>
                 <View style={[styles.dot, styles.blueDot]} />
@@ -165,7 +174,17 @@ export default function ChatScreen() {
               </Text>
             </View>
           ) : (
-            activeMessages.map((entry) => <CommandBubble key={entry.id} entry={entry} />)
+            activeMessages.map((entry) => (
+              <CommandBubble
+                key={entry.id}
+                entry={entry}
+                onDelete={
+                  activeChatId
+                    ? () => confirmDeleteMessage(activeChatId, entry.id, deleteMessage)
+                    : undefined
+                }
+              />
+            ))
           )}
         </ScrollView>
 
@@ -211,33 +230,58 @@ function paramOne(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function CommandBubble({ entry }: { entry: AssistantHistoryEntry }) {
+function confirmDeleteMessage(
+  conversationId: string,
+  messageId: string,
+  deleteMessage: (conversationId: string, messageId: string) => Promise<void>,
+) {
+  Alert.alert('Delete message?', 'This removes the command and response from this chat.', [
+    { text: 'Cancel', style: 'cancel' },
+    {
+      text: 'Delete',
+      style: 'destructive',
+      onPress: () => void deleteMessage(conversationId, messageId),
+    },
+  ]);
+}
+
+function CommandBubble({
+  entry,
+  onDelete,
+}: {
+  entry: AssistantHistoryEntry;
+  onDelete?: () => void;
+}) {
   const userText = voiceUserText(entry);
 
   return (
-    <View style={styles.commandGroup}>
-      <View style={styles.userBubble}>
-        <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'Command'}</Text>
+    <Pressable
+      style={styles.commandGroup}
+      onLongPress={onDelete}
+      delayLongPress={400}
+      disabled={!onDelete || entry.pending}>
+      <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
+        <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
         <Text style={styles.userText} selectable>
           {userText}
         </Text>
       </View>
-      <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
-        <Text style={styles.bubbleLabel}>Response</Text>
-        {entry.pending ? (
+      {entry.pending ? (
+        <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
           <View style={styles.pendingRow}>
             <ActivityIndicator size="small" color="#1A73E8" />
-            <Text style={styles.assistantText} selectable>
-              {entry.response}
-            </Text>
+            <Text style={styles.pendingText}>{entry.response}</Text>
           </View>
-        ) : (
+        </View>
+      ) : (
+        <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
+          <Text style={styles.bubbleLabel}>Response</Text>
           <Text style={styles.assistantText} selectable>
             {entry.response}
           </Text>
-        )}
-      </View>
-    </View>
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -424,6 +468,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 10,
+  },
+  pendingUserBubble: {
+    opacity: 0.95,
+  },
+  pendingAssistantBubble: {
+    backgroundColor: '#F8FAFF',
+    borderColor: '#D2E3FC',
+  },
+  pendingText: {
+    color: '#5F6368',
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
   },
   assistantText: {
     color: '#202124',

@@ -98,7 +98,20 @@ Entity rules:
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
 - Pick "unknown" only when it is not a CRM/contact/calendar action at all.
-- Never invent details the user did not say.`;
+- Never invent details the user did not say.
+
+Conversation context (when provided):
+- Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them").
+- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId when the user refers to "that" or "them".
+- If the latest message is a follow-up, merge missing entities from session context rather than asking again.
+- Still set needs_clarification when a required field cannot be inferred from history or session.`;
+
+export type ConversationHistoryTurn = {
+  command: string;
+  response: string;
+};
+
+export type SessionContextPayload = Record<string, string | undefined>;
 
 @Injectable()
 export class VoiceService {
@@ -191,12 +204,37 @@ export class VoiceService {
     return this.interpretText(userId, trimmed, openai);
   }
 
+  async interpretWithContext(
+    userId: string,
+    text: string,
+    history: ConversationHistoryTurn[],
+    sessionContext?: SessionContextPayload | null,
+  ): Promise<TranscribeResult['intent']> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return {
+        intent: 'unknown',
+        confidence: 0,
+        entities: {},
+        needs_clarification: true,
+        notes: 'Say what you want to do with your contacts.',
+      };
+    }
+
+    const apiKey = await this.keys.getDecryptedKey(userId);
+    const openai = new OpenAI({ apiKey });
+    return this.interpretText(userId, trimmed, openai, history, sessionContext);
+  }
+
   private async interpretText(
     userId: string,
     text: string,
     openai: OpenAI,
+    history: ConversationHistoryTurn[] = [],
+    sessionContext?: SessionContextPayload | null,
   ): Promise<TranscribeResult['intent']> {
     try {
+      const userContent = this.buildInterpretUserContent(text, history, sessionContext);
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         response_format: { type: 'json_object' },
@@ -205,7 +243,7 @@ export class VoiceService {
           { role: 'system', content: NORMALIZER_SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `English command:\n${text}`,
+            content: userContent,
           },
         ],
       });
@@ -222,6 +260,29 @@ export class VoiceService {
         notes: message,
       };
     }
+  }
+
+  private buildInterpretUserContent(
+    text: string,
+    history: ConversationHistoryTurn[],
+    sessionContext?: SessionContextPayload | null,
+  ): string {
+    const parts: string[] = [];
+    if (sessionContext && Object.keys(sessionContext).length > 0) {
+      parts.push(`Session context JSON:\n${JSON.stringify(sessionContext)}`);
+    }
+    if (history.length > 0) {
+      const turns = history
+        .slice(-15)
+        .map(
+          (turn, index) =>
+            `Turn ${index + 1}\nUser: ${turn.command}\nAssistant: ${turn.response}`,
+        )
+        .join('\n\n');
+      parts.push(`Prior conversation:\n${turns}`);
+    }
+    parts.push(`Latest English command:\n${text}`);
+    return parts.join('\n\n');
   }
 
   private parseIntent(raw: string): TranscribeResult['intent'] {

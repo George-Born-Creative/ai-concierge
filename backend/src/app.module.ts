@@ -10,6 +10,7 @@ import { OpenAIKeysModule } from './openai-keys/openai-keys.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
+import { AssistantModule } from './assistant/assistant.module';
 import { VoiceModule } from './voice/voice.module';
 
 @Module({
@@ -25,6 +26,7 @@ import { VoiceModule } from './voice/voice.module';
     HubspotModule,
     OpenAIKeysModule,
     VoiceModule,
+    AssistantModule,
   ],
 })
 export class AppModule {}

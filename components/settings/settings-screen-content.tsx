@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
 import { ghlApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import type { GhlStatusResponse } from '@/lib/api/types';
@@ -96,13 +97,8 @@ export function SettingsScreenContent() {
 
   return (
     <SafeAreaView style={styles.screen}>
+      <PageHeader title="Settings" showBack onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.backRow} onPress={() => router.back()} disabled={submitting}>
-          <MaterialIcons name="arrow-back" size={22} color="#1A73E8" />
-          <Text style={styles.backText}>Profile</Text>
-        </Pressable>
-
-        <Text style={styles.title}>Settings</Text>
         <Text style={styles.subtitle}>Manage your GoHighLevel connection and scopes.</Text>
 
         <View style={styles.card}>
@@ -179,30 +175,13 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 16,
     paddingBottom: 40,
-    paddingTop: 12,
-  },
-  backRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 16,
-  },
-  backText: {
-    color: '#1A73E8',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  title: {
-    color: '#202124',
-    fontSize: 28,
-    fontWeight: '600',
+    paddingTop: 18,
   },
   subtitle: {
     color: '#5F6368',
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 20,
-    marginTop: 6,
   },
   card: {
     backgroundColor: '#FFFFFF',
