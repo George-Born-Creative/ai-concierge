@@ -13,10 +13,11 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
-import { ghlApi } from '@/lib/api';
+import { ghlApi, openaiApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
-import type { GhlStatusResponse } from '@/lib/api/types';
+import type { GhlStatusResponse, OpenAIKeyStatus } from '@/lib/api/types';
 import { getOAuthReturnUrl, useCrmOAuth } from '@/lib/oauth';
+import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 export function SettingsScreenContent() {
@@ -26,6 +27,8 @@ export function SettingsScreenContent() {
   const [submitting, setSubmitting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<GhlStatusResponse | null>(null);
+  const [openaiStatus, setOpenaiStatus] = useState<OpenAIKeyStatus | null>(null);
+  const [loadingOpenai, setLoadingOpenai] = useState(true);
 
   const onStatusChange = useCallback((isConnected: boolean) => {
     setConnected(isConnected);
@@ -55,10 +58,23 @@ export function SettingsScreenContent() {
     }
   }, []);
 
+  const refreshOpenaiStatus = useCallback(async () => {
+    setLoadingOpenai(true);
+    try {
+      const next = await openaiApi.getStatus();
+      setOpenaiStatus(next);
+    } catch {
+      setOpenaiStatus(null);
+    } finally {
+      setLoadingOpenai(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       void refreshStatus();
-    }, [refreshStatus]),
+      void refreshOpenaiStatus();
+    }, [refreshStatus, refreshOpenaiStatus]),
   );
 
   async function handleDisconnect() {
@@ -93,14 +109,31 @@ export function SettingsScreenContent() {
     }
   }
 
+  function handleManageOpenaiKey() {
+    router.push({
+      pathname: '/openai-key',
+      params: { from: 'settings', replace: '1' },
+    });
+  }
+
+  function handleSwitchCrm() {
+    show('CRM switching will be available once both providers are wired.', 'info');
+  }
+
   const calendarReady = status?.calendarScopesGranted !== false;
+  const hasOpenaiKey = openaiStatus?.exists === true;
+  const currentUser = getUser();
+  const crmProviderLabel = currentUser?.provider === 'hubspot' ? 'HubSpot' : 'GoHighLevel';
 
   return (
     <SafeAreaView style={styles.screen}>
       <PageHeader title="Settings" showBack onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.subtitle}>Manage your GoHighLevel connection and scopes.</Text>
+        <Text style={styles.subtitle}>
+          Manage your CRM connection, OpenAI key, and assistant preferences.
+        </Text>
 
+        {/* ── GoHighLevel ─────────────────────────────────────────────────── */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <MaterialIcons name="hub" size={28} color="#1A73E8" />
@@ -156,12 +189,81 @@ export function SettingsScreenContent() {
               </Pressable>
             ) : null}
           </View>
+
+          <Text style={styles.helpText}>
+            Reconnect after enabling new scopes in the GHL Marketplace (for example Calendars).
+            This clears the old token and opens the authorization screen again.
+          </Text>
         </View>
 
-        <Text style={styles.helpText}>
-          Reconnect after enabling new scopes in the GHL Marketplace (for example Calendars). This
-          clears the old token and opens the authorization screen again.
-        </Text>
+        {/* ── OpenAI key ──────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="vpn-key" size={28} color="#1A73E8" />
+            <View style={styles.cardCopy}>
+              <Text style={styles.cardTitle}>OpenAI API key</Text>
+              {loadingOpenai ? (
+                <ActivityIndicator size="small" color="#1A73E8" style={styles.inlineSpinner} />
+              ) : (
+                <Text
+                  style={[styles.statusText, hasOpenaiKey ? styles.statusOn : styles.statusOff]}>
+                  {hasOpenaiKey ? 'Connected' : 'Not set'}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {hasOpenaiKey && openaiStatus?.last4 ? (
+            <Text style={styles.detailText}>Current key ···{openaiStatus.last4}</Text>
+          ) : (
+            <Text style={styles.detailText}>
+              Add a personal key to enable voice transcription and intent parsing.
+            </Text>
+          )}
+
+          {openaiStatus?.quotaWarning ? (
+            <View style={styles.warningBox}>
+              <MaterialIcons name="warning" size={20} color="#E37400" />
+              <Text style={styles.warningText}>
+                This key looks low on quota. Rotate to a fresh key to keep voice commands working.
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.actions}>
+            <Pressable style={styles.primaryButton} onPress={handleManageOpenaiKey}>
+              <Text style={styles.primaryButtonText}>
+                {hasOpenaiKey ? 'Rotate OpenAI key' : 'Add OpenAI key'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.helpText}>
+            Your key is stored encrypted on the server and only used for your transcriptions.
+          </Text>
+        </View>
+
+        {/* ── Switch CRM ──────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="swap-horiz" size={28} color="#1A73E8" />
+            <View style={styles.cardCopy}>
+              <Text style={styles.cardTitle}>CRM provider</Text>
+              <Text style={[styles.statusText, styles.statusOn]}>{crmProviderLabel}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.detailText}>
+            Switch between GoHighLevel and HubSpot. The assistant will use the active provider
+            for all contact, calendar, and (soon) opportunity commands.
+          </Text>
+
+          <View style={styles.actions}>
+            <Pressable style={styles.secondaryNeutralButton} onPress={handleSwitchCrm}>
+              <Text style={styles.secondaryNeutralButtonText}>Switch CRM</Text>
+            </Pressable>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -188,6 +290,7 @@ const styles = StyleSheet.create({
     borderColor: '#E8EAED',
     borderRadius: 16,
     borderWidth: 1,
+    marginBottom: 14,
     padding: 18,
   },
   cardHeader: {
@@ -264,6 +367,17 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: '#EA4335',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryNeutralButton: {
+    alignItems: 'center',
+    backgroundColor: '#F1F3F4',
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  secondaryNeutralButtonText: {
+    color: '#1A73E8',
     fontSize: 16,
     fontWeight: '600',
   },

@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AssistantMessageSource, AssistantMessageStatus, Prisma } from '@prisma/client';
 
+import { PrismaService } from '../prisma/prisma.service';
 import { VoiceService } from '../voice/voice.service';
 import { AssistantCommandService } from './assistant-command.service';
 import type { AssistantSessionContext } from './assistant.types';
-import { PrismaService } from '../prisma/prisma.service';
 import { RunAssistantCommandDto } from './dto/run-command.dto';
 
 const HISTORY_LIMIT = 15;
