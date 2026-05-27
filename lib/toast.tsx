@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -68,8 +68,16 @@ function ToastItem({ entry, onDismiss }: { entry: ToastEntry; onDismiss: () => v
   const config = VARIANT_CONFIG[entry.variant];
   const translateY = useRef(new Animated.Value(-80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const dismissedRef = useRef(false);
+  const onDismissRef = useRef(onDismiss);
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   const dismiss = useCallback(() => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
     Animated.parallel([
       Animated.timing(translateY, {
         toValue: -80,
@@ -82,11 +90,15 @@ function ToastItem({ entry, onDismiss }: { entry: ToastEntry; onDismiss: () => v
         duration: 260,
         useNativeDriver: true,
       }),
-    ]).start(onDismiss);
-  }, [opacity, translateY, onDismiss]);
+    ]).start(() => {
+      // Defer parent setState so it never runs during another component's render.
+      setTimeout(() => onDismissRef.current(), 0);
+    });
+  }, [opacity, translateY]);
 
-  // Slide in, hold, slide out
-  useCallback(() => {
+  // Slide in once on mount, then auto-dismiss after a hold.
+  useEffect(() => {
+    let holdTimer: ReturnType<typeof setTimeout> | null = null;
     Animated.parallel([
       Animated.timing(translateY, {
         toValue: 0,
@@ -100,9 +112,15 @@ function ToastItem({ entry, onDismiss }: { entry: ToastEntry; onDismiss: () => v
         useNativeDriver: true,
       }),
     ]).start(() => {
-      setTimeout(dismiss, 3200);
+      holdTimer = setTimeout(dismiss, 3200);
     });
-  }, [])(); // IIFE — runs once on mount
+
+    return () => {
+      if (holdTimer) clearTimeout(holdTimer);
+    };
+    // Run only on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <Animated.View style={[styles.toast, { transform: [{ translateY }], opacity }]}>

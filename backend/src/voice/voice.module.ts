@@ -9,5 +9,6 @@ import { VoiceService } from './voice.service';
   imports: [AuthModule, OpenAIKeysModule],
   controllers: [VoiceController],
   providers: [VoiceService],
+  exports: [VoiceService],
 })
 export class VoiceModule {}

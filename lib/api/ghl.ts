@@ -1,16 +1,20 @@
 import { apiRequest } from './client';
 import type {
   CreateGhlAppointmentRequest,
+  CreateGhlCalendarRequest,
   CreateGhlContactRequest,
   GhlAppointmentSummary,
   GhlAppointmentsListResponse,
   GhlAuthUrlResponse,
+  GhlCalendarFreeSlotsParams,
+  GhlCalendarFreeSlotsResponse,
   GhlCalendarSummary,
   GhlCalendarsListResponse,
   GhlContactSummary,
   GhlContactsListResponse,
   GhlStatusResponse,
   ListGhlCalendarEventsParams,
+  UpdateGhlCalendarRequest,
 } from './types';
 
 // Returns the GHL OAuth URL the app should open in an in-app browser session.
@@ -65,6 +69,50 @@ export async function deleteContact(contactId: string): Promise<{ ok: true }> {
 
 export async function listCalendars(): Promise<GhlCalendarsListResponse> {
   return apiRequest<GhlCalendarsListResponse>('/integrations/ghl/calendars');
+}
+
+export async function getCalendar(calendarId: string): Promise<GhlCalendarSummary> {
+  return apiRequest<GhlCalendarSummary>(`/integrations/ghl/calendars/${calendarId}`);
+}
+
+export async function createCalendar(
+  body: CreateGhlCalendarRequest,
+): Promise<GhlCalendarSummary> {
+  return apiRequest<GhlCalendarSummary>('/integrations/ghl/calendars', {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function updateCalendar(
+  calendarId: string,
+  body: UpdateGhlCalendarRequest,
+): Promise<GhlCalendarSummary> {
+  return apiRequest<GhlCalendarSummary>(`/integrations/ghl/calendars/${calendarId}`, {
+    method: 'PUT',
+    body,
+  });
+}
+
+export async function deleteCalendar(calendarId: string): Promise<{ ok: true }> {
+  return apiRequest<{ ok: true }>(`/integrations/ghl/calendars/${calendarId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getCalendarFreeSlots(
+  calendarId: string,
+  params: GhlCalendarFreeSlotsParams,
+): Promise<GhlCalendarFreeSlotsResponse> {
+  const q = new URLSearchParams({
+    startDate: String(params.startDate),
+    endDate: String(params.endDate),
+  });
+  if (params.timezone) q.set('timezone', params.timezone);
+  if (params.userId) q.set('userId', params.userId);
+  return apiRequest<GhlCalendarFreeSlotsResponse>(
+    `/integrations/ghl/calendars/${calendarId}/free-slots?${q.toString()}`,
+  );
 }
 
 export async function listCalendarEvents(

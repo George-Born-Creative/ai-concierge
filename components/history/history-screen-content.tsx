@@ -1,20 +1,31 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AssistantChat, useAssistantHistory } from '@/lib/assistant-history';
 
 export function HistoryScreenContent() {
   const router = useRouter();
-  const { chats, clearAllChats, createChat, openChat } = useAssistantHistory();
+  const { chats, clearAllChats, createChat, deleteChat, openChat } = useAssistantHistory();
 
   const sortedChats = [...chats].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
 
-  function startNewChat() {
-    const id = createChat();
+  async function startNewChat() {
+    const id = await createChat();
     router.push({ pathname: '/chat', params: { conversationId: id } });
+  }
+
+  function confirmDeleteChat(chat: AssistantChat) {
+    Alert.alert('Delete chat?', 'This removes the whole conversation.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => void deleteChat(chat.id),
+      },
+    ]);
   }
 
   function openConversation(chat: AssistantChat) {
@@ -67,29 +78,40 @@ export function HistoryScreenContent() {
           </View>
         ) : (
           sortedChats.map((chat) => (
-            <Pressable
-              key={chat.id}
-              style={styles.chatBlock}
-              onPress={() => openConversation(chat)}
-              accessibilityRole="button"
-              accessibilityLabel={`Open chat from ${formatTimestamp(chat.updatedAt)}`}>
-              <View style={styles.chatBlockIcon}>
-                <MaterialIcons name="chat-bubble-outline" size={26} color="#1A73E8" />
-              </View>
-              <View style={styles.chatBlockBody}>
-                <View style={styles.chatBlockTop}>
-                  <Text style={styles.chatBlockTitle}>Contact chat</Text>
-                  <View style={styles.messagePill}>
-                    <Text style={styles.messagePillText}>{chat.messages.length} messages</Text>
-                  </View>
+            <View key={chat.id} style={styles.chatBlock}>
+              <Pressable
+                style={styles.chatBlockPressable}
+                onPress={() => openConversation(chat)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open chat from ${formatTimestamp(chat.updatedAt)}`}>
+                <View style={styles.chatBlockIcon}>
+                  <MaterialIcons name="chat-bubble-outline" size={26} color="#1A73E8" />
                 </View>
-                <Text style={styles.chatBlockPreview} numberOfLines={2}>
-                  {previewText(chat)}
-                </Text>
-                <Text style={styles.timestamp}>Updated {formatTimestamp(chat.updatedAt)}</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
-            </Pressable>
+                <View style={styles.chatBlockBody}>
+                  <View style={styles.chatBlockTop}>
+                    <Text style={styles.chatBlockTitle} numberOfLines={1}>
+                      {chat.title?.trim() || 'Contact chat'}
+                    </Text>
+                    <View style={styles.messagePill}>
+                      <Text style={styles.messagePillText}>
+                        {chat.messageCount ?? chat.messages.length} messages
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.chatBlockPreview} numberOfLines={2}>
+                    {previewText(chat)}
+                  </Text>
+                  <Text style={styles.timestamp}>Updated {formatTimestamp(chat.updatedAt)}</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+              </Pressable>
+              <Pressable
+                style={styles.deleteChatButton}
+                onPress={() => confirmDeleteChat(chat)}
+                accessibilityLabel="Delete conversation">
+                <MaterialIcons name="delete-outline" size={22} color="#D93025" />
+              </Pressable>
+            </View>
           ))
         )}
       </ScrollView>
@@ -250,9 +272,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 14,
     marginBottom: 12,
+    overflow: 'hidden',
+  },
+  chatBlockPressable: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 14,
     padding: 16,
+  },
+  deleteChatButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
   },
   chatBlockIcon: {
     alignItems: 'center',

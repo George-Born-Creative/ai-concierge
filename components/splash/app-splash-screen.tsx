@@ -1,51 +1,49 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
+// Visible JS splash. Uses the same four-dot logo as the home/auth screens so
+// the brand is consistent end-to-end. Stays mounted (covering the whole tree)
+// until the root layout receives the bootstrap-ready signal.
 export function AppSplashScreen() {
-  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const pulseLoop = Animated.loop(
+    const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
+        Animated.timing(pulse, {
           toValue: 1,
           duration: 900,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
-        Animated.timing(pulseAnim, {
+        Animated.timing(pulse, {
           toValue: 0,
           duration: 900,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
 
-    pulseLoop.start();
-
-    return () => pulseLoop.stop();
-  }, [pulseAnim]);
-
-  const logoScale = pulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.06],
-  });
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
 
   return (
-    <View style={styles.screen}>
-      <Animated.View style={[styles.logoMark, { transform: [{ scale: logoScale }] }]}>
+    <View style={styles.screen} pointerEvents="none">
+      <Animated.View style={[styles.logoMark, { transform: [{ scale }] }]}>
         <View style={[styles.logoDot, styles.blueDot]} />
         <View style={[styles.logoDot, styles.redDot]} />
         <View style={[styles.logoDot, styles.yellowDot]} />
         <View style={[styles.logoDot, styles.greenDot]} />
       </Animated.View>
-
       <Text style={styles.name}>AI-Concierge</Text>
     </View>
   );
 }
 
+// Dot sizes/positions mirror components/home/home-screen-content.tsx exactly.
 const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
@@ -55,46 +53,46 @@ const styles = StyleSheet.create({
   },
   logoMark: {
     alignItems: 'center',
-    height: 118,
+    height: 96,
     justifyContent: 'center',
-    width: 118,
+    width: 96,
   },
   logoDot: {
-    borderRadius: 24,
+    borderRadius: 20,
     position: 'absolute',
   },
   blueDot: {
     backgroundColor: '#4285F4',
-    height: 68,
-    left: 10,
-    width: 68,
+    height: 56,
+    left: 8,
+    width: 56,
   },
   redDot: {
     backgroundColor: '#EA4335',
-    height: 42,
-    right: 14,
-    top: 14,
-    width: 42,
+    height: 36,
+    right: 12,
+    top: 12,
+    width: 36,
   },
   yellowDot: {
     backgroundColor: '#FBBC04',
-    bottom: 16,
-    height: 38,
-    right: 20,
-    width: 38,
+    bottom: 12,
+    height: 32,
+    right: 18,
+    width: 32,
   },
   greenDot: {
     backgroundColor: '#34A853',
-    bottom: 24,
-    height: 28,
-    left: 30,
-    width: 28,
+    bottom: 20,
+    height: 24,
+    left: 24,
+    width: 24,
   },
   name: {
     color: '#202124',
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '600',
-    letterSpacing: -0.7,
-    marginTop: 22,
+    letterSpacing: -0.8,
+    marginTop: 24,
   },
 });

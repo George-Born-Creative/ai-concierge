@@ -7,14 +7,13 @@ import { useAssistantHistory } from '@/lib/assistant-history';
 import { useToast } from '@/lib/toast';
 
 export function VoiceAssistantTabButton(props: BottomTabBarButtonProps) {
-  const { accessibilityState, children, style, testID } = props;
+  const { accessibilityState, style, testID } = props;
   const router = useRouter();
   const { show } = useToast();
   const { activeChatId, addVoiceMessage, createChat } = useAssistantHistory();
 
-  function sendAudio(voiceUri: string) {
-    const conversationId = activeChatId ?? createChat();
-    // Pass the file URI through context — router params break on file:// paths.
+  async function sendAudio(voiceUri: string) {
+    const conversationId = activeChatId ?? (await createChat());
     addVoiceMessage(voiceUri, conversationId);
     router.push({
       pathname: '/chat',
@@ -22,6 +21,9 @@ export function VoiceAssistantTabButton(props: BottomTabBarButtonProps) {
     });
   }
 
+  // Intentionally not rendering React Navigation's default tab `children`
+  // (the placeholder icon slot). The mic IS the tab — nothing should sit
+  // under it.
   return (
     <View
       accessibilityState={accessibilityState}
@@ -31,7 +33,6 @@ export function VoiceAssistantTabButton(props: BottomTabBarButtonProps) {
         onAudioRecorded={sendAudio}
         onError={(message) => show(message, 'error')}
       />
-      {children}
     </View>
   );
 }

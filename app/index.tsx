@@ -1,10 +1,11 @@
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
+import { markBootstrapReady } from '@/lib/bootstrap-signal';
 import { routeForUser } from '@/lib/onboarding-route';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 
@@ -28,7 +29,6 @@ const ME_TIMEOUT_MS = 6_000;
 
 export default function RootIndex() {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
   // Guard so React strict-mode double-mount doesn't fire two redirects.
   const navigated = useRef(false);
 
@@ -64,7 +64,12 @@ export default function RootIndex() {
           }
         }
       } finally {
-        setChecking(false);
+        // Tell the root layout the session is ready so the JS dots-splash can
+        // fade out. A small delay lets the target screen mount its first frame
+        // underneath the overlay, avoiding a white flash mid-transition.
+        setTimeout(() => {
+          markBootstrapReady();
+        }, 80);
       }
     }
 
@@ -77,15 +82,9 @@ export default function RootIndex() {
     void decide();
   }, [router]);
 
-  if (!checking) {
-    return null;
-  }
-
-  return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" color="#1A73E8" />
-    </View>
-  );
+  // While bootstrapping, the native splash is still covering the screen, so we
+  // render a matching solid background instead of a spinner.
+  return <View style={styles.container} />;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -106,9 +105,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
-    backgroundColor: '#F6F9FF',
+    // The JS dots-splash overlay covers this view while bootstrap runs. We
+    // still match the splash background so the very first paint blends in.
+    backgroundColor: '#F8FAFF',
     flex: 1,
-    justifyContent: 'center',
   },
 });

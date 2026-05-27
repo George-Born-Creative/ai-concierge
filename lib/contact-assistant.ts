@@ -15,6 +15,11 @@ const ASSISTANT_INTENTS = new Set([
   'create_contact',
   'delete_contact',
   'list_calendars',
+  'get_calendar',
+  'create_calendar',
+  'update_calendar',
+  'delete_calendar',
+  'get_free_slots',
   'list_appointments',
   'create_appointment',
   'cancel_appointment',
@@ -82,6 +87,16 @@ async function executeFromIntent(
       return deleteContactByQuery(extractSearchQuery(intent.entities));
     case 'list_calendars':
       return listCalendars();
+    case 'get_calendar':
+      return getCalendarByQuery(extractCalendarQuery(intent.entities));
+    case 'create_calendar':
+      return createCalendarFromDetails(extractCalendarCreateDetails(intent.entities));
+    case 'update_calendar':
+      return updateCalendarFromDetails(extractCalendarUpdateDetails(intent.entities));
+    case 'delete_calendar':
+      return deleteCalendarByQuery(extractCalendarQuery(intent.entities));
+    case 'get_free_slots':
+      return getFreeSlotsFromDetails(extractFreeSlotsDetails(intent.entities));
     case 'list_appointments':
       return listUpcomingAppointments(extractAppointmentRange(intent.entities));
     case 'create_appointment':
@@ -98,6 +113,12 @@ async function executeWithHeuristics(command: string): Promise<AssistantCommandR
 
   if (looksLikeListCalendars(lower)) {
     return listCalendars();
+  }
+  if (looksLikeFreeSlots(lower)) {
+    return {
+      response: 'Which calendar, and what date range? Try "free slots tomorrow on my main calendar".',
+      status: 'error',
+    };
   }
   if (looksLikeListAppointments(lower)) {
     return listUpcomingAppointments();
@@ -227,6 +248,26 @@ function looksLikeFind(command: string) {
   return FIND_LEADS.some((lead) => command.includes(lead));
 }
 
+async function resolveCalendarId(calendarId?: string, calendarName?: string) {
+  if (calendarId?.trim()) return calendarId.trim();
+
+  const calendars = await ghlApi.listCalendars();
+  if (calendars.calendars.length === 0) {
+    throw new Error('No calendars found in GoHighLevel');
+  }
+
+  const query = calendarName?.trim().toLowerCase();
+  if (query) {
+    const match = calendars.calendars.find((calendar) =>
+      calendar.name.toLowerCase().includes(query),
+    );
+    if (match) return match.id;
+    throw new Error(`No calendar matching "${calendarName}"`);
+  }
+
+  return calendars.calendars[0].id;
+}
+
 async function listCalendars(): Promise<AssistantCommandResult> {
   const result = await ghlApi.listCalendars();
 
@@ -239,6 +280,114 @@ async function listCalendars(): Promise<AssistantCommandResult> {
 
   return {
     response: `Here are your calendars:\n${result.calendars.map(formatCalendar).join('\n')}`,
+    status: 'success',
+  };
+}
+
+async function getCalendarByQuery(query: string): Promise<AssistantCommandResult> {
+  if (!query.trim()) {
+    return {
+      response: 'Which calendar? Give me a name or ID.',
+      status: 'error',
+    };
+  }
+
+  const calendarId = await resolveCalendarId(undefined, query);
+  const calendar = await ghlApi.getCalendar(calendarId);
+
+  return {
+    response: `Calendar: ${calendar.name}${calendar.isActive === false ? ' (inactive)' : ''} (id ${calendar.id})`,
+    status: 'success',
+  };
+}
+
+async function createCalendarFromDetails(
+  details: ReturnType<typeof extractCalendarCreateDetails>,
+): Promise<AssistantCommandResult> {
+  if (!details.name) {
+    return {
+      response: 'What should I name the new calendar?',
+      status: 'error',
+    };
+  }
+
+  const created = await ghlApi.createCalendar({
+    name: details.name,
+    description: details.description,
+    isActive: details.isActive,
+  });
+
+  return {
+    response: `Created calendar "${created.name}" (id ${created.id}).`,
+    status: 'success',
+  };
+}
+
+async function updateCalendarFromDetails(
+  details: ReturnType<typeof extractCalendarUpdateDetails>,
+): Promise<AssistantCommandResult> {
+  if (!details.calendarId && !details.calendarName) {
+    return {
+      response: 'Which calendar should I update?',
+      status: 'error',
+    };
+  }
+
+  const calendarId = await resolveCalendarId(details.calendarId, details.calendarName);
+  const updated = await ghlApi.updateCalendar(calendarId, {
+    name: details.name,
+    description: details.description,
+    isActive: details.isActive,
+  });
+
+  return {
+    response: `Updated calendar "${updated.name}".`,
+    status: 'success',
+  };
+}
+
+async function deleteCalendarByQuery(query: string): Promise<AssistantCommandResult> {
+  if (!query.trim()) {
+    return {
+      response: 'Which calendar should I delete?',
+      status: 'error',
+    };
+  }
+
+  const calendarId = await resolveCalendarId(undefined, query);
+  const calendar = await ghlApi.getCalendar(calendarId);
+  await ghlApi.deleteCalendar(calendarId);
+
+  return {
+    response: `Deleted calendar "${calendar.name}".`,
+    status: 'success',
+  };
+}
+
+async function getFreeSlotsFromDetails(
+  details: ReturnType<typeof extractFreeSlotsDetails>,
+): Promise<AssistantCommandResult> {
+  const calendarId = await resolveCalendarId(details.calendarId, details.calendarName);
+  const startDate = details.startDate ?? Date.now();
+  const endDate = details.endDate ?? startDate + (details.days ?? 7) * 24 * 60 * 60 * 1000;
+
+  const slots = await ghlApi.getCalendarFreeSlots(calendarId, {
+    startDate,
+    endDate,
+    timezone: details.timezone,
+    userId: details.userId,
+  });
+
+  const summary = formatFreeSlots(slots);
+  if (!summary) {
+    return {
+      response: 'No free slots in that range.',
+      status: 'success',
+    };
+  }
+
+  return {
+    response: `Available slots:\n${summary}`,
     status: 'success',
   };
 }
@@ -294,6 +443,7 @@ async function createAppointmentFromDetails(
     durationMinutes: details.durationMinutes,
     title: details.title,
     notes: details.notes,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 
   return {
@@ -451,6 +601,84 @@ function extractSearchQuery(entities: VoiceIntent['entities']): string {
   return entityString(entities, 'phone', 'email') ?? '';
 }
 
+function extractCalendarQuery(entities: VoiceIntent['entities']) {
+  return (
+    entityString(entities, 'query', 'calendarName', 'calendarId', 'name') ?? ''
+  );
+}
+
+function extractCalendarCreateDetails(entities: VoiceIntent['entities']) {
+  return {
+    name: entityString(entities, 'name', 'calendarName') ?? '',
+    description: entityString(entities, 'description'),
+    isActive:
+      entities.isActive === true || entities.isActive === 'true'
+        ? true
+        : entities.isActive === false || entities.isActive === 'false'
+          ? false
+          : undefined,
+  };
+}
+
+function extractCalendarUpdateDetails(entities: VoiceIntent['entities']) {
+  return {
+    calendarId: entityString(entities, 'calendarId', 'calendar_id'),
+    calendarName: entityString(entities, 'calendarName', 'calendar_name', 'query'),
+    name: entityString(entities, 'name'),
+    description: entityString(entities, 'description'),
+    isActive:
+      entities.isActive === true || entities.isActive === 'true'
+        ? true
+        : entities.isActive === false || entities.isActive === 'false'
+          ? false
+          : undefined,
+  };
+}
+
+function extractFreeSlotsDetails(entities: VoiceIntent['entities']) {
+  const days = entityNumber(entities, 'days');
+  const startDate = entityNumber(entities, 'startDate', 'start_date');
+  const endDate = entityNumber(entities, 'endDate', 'end_date');
+  return {
+    calendarId: entityString(entities, 'calendarId', 'calendar_id'),
+    calendarName: entityString(entities, 'calendarName', 'calendar_name', 'name'),
+    startDate,
+    endDate,
+    days,
+    timezone: entityString(entities, 'timezone', 'timeZone'),
+    userId: entityString(entities, 'userId', 'user_id'),
+  };
+}
+
+function formatFreeSlots(payload: Record<string, unknown>): string {
+  const lines: string[] = [];
+
+  const dated = payload as Record<string, { slots?: { start?: string; end?: string }[] }>;
+  for (const [day, value] of Object.entries(dated)) {
+    if (day === 'traceId') continue;
+    const daySlots = value?.slots ?? [];
+    if (!Array.isArray(daySlots) || daySlots.length === 0) continue;
+    const times = daySlots
+      .slice(0, 8)
+      .map((slot) => {
+        const start = slot.start ? formatWhen(slot.start) : '';
+        return start || 'slot';
+      })
+      .join(', ');
+    lines.push(`· ${day}: ${times}`);
+    if (lines.length >= 7) break;
+  }
+
+  return lines.join('\n');
+}
+
+function looksLikeFreeSlots(command: string) {
+  return (
+    /\b(free slot|available slot|open slot|availability)\b/.test(command) ||
+    (/\b(slot|slots)\b/.test(command) && /\b(free|available|open)\b/.test(command))
+  );
+}
+
 function extractAppointmentRange(entities: VoiceIntent['entities']) {
   const days = entityNumber(entities, 'days');
   return {
@@ -593,9 +821,27 @@ function formatAppointment(appointment: GhlAppointmentSummary) {
 }
 
 function formatWhen(iso?: string) {
-  if (!iso) return '';
-  const time = Date.parse(iso);
-  if (Number.isNaN(time)) return iso;
+  if (iso == null || iso === '') return '';
+
+  const raw = String(iso).trim();
+  const wall = parseIsoWallClock(raw);
+  if (wall) {
+    return formatWallClock(wall);
+  }
+
+  const epochMs = parseEpochMs(raw);
+  if (epochMs != null) {
+    return new Date(epochMs).toLocaleString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+
+  const time = Date.parse(raw);
+  if (Number.isNaN(time)) return raw;
   return new Date(time).toLocaleString(undefined, {
     weekday: 'short',
     month: 'short',
@@ -603,6 +849,38 @@ function formatWhen(iso?: string) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+/** Show the wall-clock from GHL ISO (offset preserved), not a second device conversion. */
+function parseIsoWallClock(value: string) {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/i,
+  );
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  };
+}
+
+function formatWallClock(parts: { year: number; month: number; day: number; hour: number; minute: number }) {
+  const date = new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
+  return date.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function parseEpochMs(value: string): number | null {
+  if (!/^\d{10,13}$/.test(value)) return null;
+  const n = Number(value);
+  return value.length <= 10 ? n * 1000 : n;
 }
 
 function normalizeSearch(value: string) {

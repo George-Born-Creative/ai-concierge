@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -18,8 +19,11 @@ import { ActiveSubscriptionGuard } from '../../common/guards/active-subscription
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GhlCallbackQueryDto } from './dto/callback.query.dto';
 import { CreateGhlContactDto } from './dto/create-contact.dto';
+import { CalendarFreeSlotsQueryDto } from './dto/calendar-free-slots.query.dto';
 import { CreateGhlAppointmentDto } from './dto/create-appointment.dto';
+import { CreateGhlCalendarDto } from './dto/create-calendar.dto';
 import { ListCalendarEventsQueryDto } from './dto/list-calendar-events.query.dto';
+import { UpdateGhlCalendarDto } from './dto/update-calendar.dto';
 import { ListContactsQueryDto } from './dto/list-contacts.query.dto';
 import {
   handleGhlOAuthCallback,
@@ -118,6 +122,56 @@ export class GhlController {
   @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
   listCalendars(@CurrentUser() user: AuthenticatedUser) {
     return this.ghl.listCalendars(user.id);
+  }
+
+  @Post('calendars')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  createCalendar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateGhlCalendarDto,
+  ) {
+    return this.ghl.createCalendar(user.id, body);
+  }
+
+  @Get('calendars/:calendarId/free-slots')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  getCalendarFreeSlots(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('calendarId') calendarId: string,
+    @Query() query: CalendarFreeSlotsQueryDto,
+  ) {
+    return this.ghl.getCalendarFreeSlots(user.id, calendarId, query);
+  }
+
+  @Get('calendars/:calendarId')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  getCalendar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('calendarId') calendarId: string,
+  ) {
+    return this.ghl.getCalendar(user.id, calendarId);
+  }
+
+  @Put('calendars/:calendarId')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  updateCalendar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('calendarId') calendarId: string,
+    @Body() body: UpdateGhlCalendarDto,
+  ) {
+    return this.ghl.updateCalendar(user.id, calendarId, body);
+  }
+
+  @Delete('calendars/:calendarId')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  deleteCalendar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('calendarId') calendarId: string,
+  ) {
+    return this.ghl.deleteCalendar(user.id, calendarId);
   }
 
   @Get('calendar-events')

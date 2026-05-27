@@ -24,6 +24,11 @@ const SUPPORTED_INTENTS = [
   'update_contact',
   'delete_contact',
   'list_calendars',
+  'get_calendar',
+  'create_calendar',
+  'update_calendar',
+  'delete_calendar',
+  'get_free_slots',
   'list_appointments',
   'create_appointment',
   'cancel_appointment',
@@ -69,6 +74,11 @@ Intent examples (informal → intent):
 - "add John Smith 555-1234", "put Sarah in", "save a contact for jane@test.com" → create_contact
 - "remove Sarah", "delete Mike from the list", "get rid of that contact" → delete_contact
 - "what calendars do I have", "show my calendars" → list_calendars
+- "open the sales calendar", "show calendar details" → get_calendar
+- "create a calendar called Sales", "add a new booking calendar" → create_calendar
+- "update the sales calendar", "rename my calendar" → update_calendar
+- "delete the test calendar" → delete_calendar
+- "what slots are free tomorrow", "show available times this week" → get_free_slots
 - "what's on my calendar", "any meetings tomorrow", "show upcoming appointments" → list_appointments
 - "book Sarah tomorrow at 2pm", "schedule a call with Mike Friday at 10", "set up a meeting with John" → create_appointment
 - "cancel Sarah's appointment", "remove tomorrow's meeting with Mike" → cancel_appointment
@@ -76,6 +86,11 @@ Intent examples (informal → intent):
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
 - create_contact: extract "name" (full name), or "firstName" + "lastName", plus "phone" and/or "email".
+- get_calendar: "calendarId" or "calendarName".
+- create_calendar: "name" (required), optional "description", "isActive".
+- update_calendar: "calendarId" or "calendarName", plus fields to change ("name", "description", "isActive").
+- delete_calendar: "calendarId" or "calendarName".
+- get_free_slots: "calendarId" or "calendarName"; "startDate" and "endDate" as Unix ms, or "days" ahead (max 31-day window); optional "timezone", "userId".
 - list_appointments: optional "startTime" / "endTime" as ISO 8601, or "days" as number of days ahead (default 14).
 - create_appointment: "contactName" or "name", "title", "calendarName" if mentioned, "startTime" as ISO 8601 (infer from spoken date/time), optional "endTime" or "durationMinutes" (default 30).
 - cancel_appointment: "query", "contactName", "title", and/or "startTime" to identify the booking.
@@ -83,7 +98,20 @@ Entity rules:
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
 - Pick "unknown" only when it is not a CRM/contact/calendar action at all.
-- Never invent details the user did not say.`;
+- Never invent details the user did not say.
+
+Conversation context (when provided):
+- Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them").
+- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId when the user refers to "that" or "them".
+- If the latest message is a follow-up, merge missing entities from session context rather than asking again.
+- Still set needs_clarification when a required field cannot be inferred from history or session.`;
+
+export type ConversationHistoryTurn = {
+  command: string;
+  response: string;
+};
+
+export type SessionContextPayload = Record<string, string | undefined>;
 
 @Injectable()
 export class VoiceService {
@@ -176,12 +204,37 @@ export class VoiceService {
     return this.interpretText(userId, trimmed, openai);
   }
 
+  async interpretWithContext(
+    userId: string,
+    text: string,
+    history: ConversationHistoryTurn[],
+    sessionContext?: SessionContextPayload | null,
+  ): Promise<TranscribeResult['intent']> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return {
+        intent: 'unknown',
+        confidence: 0,
+        entities: {},
+        needs_clarification: true,
+        notes: 'Say what you want to do with your contacts.',
+      };
+    }
+
+    const apiKey = await this.keys.getDecryptedKey(userId);
+    const openai = new OpenAI({ apiKey });
+    return this.interpretText(userId, trimmed, openai, history, sessionContext);
+  }
+
   private async interpretText(
     userId: string,
     text: string,
     openai: OpenAI,
+    history: ConversationHistoryTurn[] = [],
+    sessionContext?: SessionContextPayload | null,
   ): Promise<TranscribeResult['intent']> {
     try {
+      const userContent = this.buildInterpretUserContent(text, history, sessionContext);
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         response_format: { type: 'json_object' },
@@ -190,7 +243,7 @@ export class VoiceService {
           { role: 'system', content: NORMALIZER_SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `English command:\n${text}`,
+            content: userContent,
           },
         ],
       });
@@ -207,6 +260,29 @@ export class VoiceService {
         notes: message,
       };
     }
+  }
+
+  private buildInterpretUserContent(
+    text: string,
+    history: ConversationHistoryTurn[],
+    sessionContext?: SessionContextPayload | null,
+  ): string {
+    const parts: string[] = [];
+    if (sessionContext && Object.keys(sessionContext).length > 0) {
+      parts.push(`Session context JSON:\n${JSON.stringify(sessionContext)}`);
+    }
+    if (history.length > 0) {
+      const turns = history
+        .slice(-15)
+        .map(
+          (turn, index) =>
+            `Turn ${index + 1}\nUser: ${turn.command}\nAssistant: ${turn.response}`,
+        )
+        .join('\n\n');
+      parts.push(`Prior conversation:\n${turns}`);
+    }
+    parts.push(`Latest English command:\n${text}`);
+    return parts.join('\n\n');
   }
 
   private parseIntent(raw: string): TranscribeResult['intent'] {
