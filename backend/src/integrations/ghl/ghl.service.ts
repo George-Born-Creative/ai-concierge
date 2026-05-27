@@ -17,6 +17,8 @@ const OAUTH_AUTHORIZE_URL = 'https://marketplace.gohighlevel.com/oauth/chooseloc
 const OAUTH_TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
 const GHL_API_BASE = 'https://services.leadconnectorhq.com';
 const GHL_API_VERSION = '2023-02-21';
+/** Calendar / appointment routes require this version (contacts use GHL_API_VERSION). */
+const GHL_CALENDAR_API_VERSION = '2021-04-15';
 // Must match scopes enabled in Marketplace → Advanced Settings → Auth (e.g. Calendars section).
 const DEFAULT_SCOPES = [
   'contacts.readonly',
@@ -125,6 +127,10 @@ type GhlRawCalendar = {
   id: string;
   name?: string;
   isActive?: boolean;
+  slotDuration?: number;
+  slotDurationUnit?: string;
+  timezone?: string;
+  selectedTimezone?: string;
 };
 
 type GhlRawCalendarsResponse = {
@@ -134,8 +140,9 @@ type GhlRawCalendarsResponse = {
 type GhlRawEvent = {
   id: string;
   title?: string;
-  startTime?: string;
-  endTime?: string;
+  /** ISO string, epoch ms, or occasionally a nested object from GHL. */
+  startTime?: string | number | Record<string, unknown>;
+  endTime?: string | number | Record<string, unknown>;
   contactId?: string;
   calendarId?: string;
   appointmentStatus?: string;
@@ -215,7 +222,7 @@ export class GhlService {
     const tokens = await this.exchangeCode(code);
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-    const scopes = (tokens.scope ?? '').split(' ').filter(Boolean);
+    const scopes = this.resolveStoredScopes(tokens.scope);
 
     await this.prisma.integrationConnection.upsert({
       where: { userId_provider: { userId, provider: CrmProvider.GHL } },
@@ -245,7 +252,7 @@ export class GhlService {
     });
 
     this.logger.log(
-      `GHL connected for user ${userId} (locationId=${tokens.locationId ?? 'none'})`,
+      `GHL connected for user ${userId} (locationId=${tokens.locationId ?? 'none'}, tokenScope=${tokens.scope ?? 'none'}, storedScopes=${scopes.length})`,
     );
 
     return { userId, returnUrl };
@@ -260,12 +267,21 @@ export class GhlService {
     if (!row || !row.enabled) {
       return { connected: false };
     }
+
+    const scopes = this.resolveStoredScopes(undefined, row.scopes);
+    if (scopes.length !== row.scopes.length || scopes.some((scope, i) => scope !== row.scopes[i])) {
+      await this.prisma.integrationConnection.update({
+        where: { userId_provider: { userId, provider: CrmProvider.GHL } },
+        data: { scopes },
+      });
+    }
+
     return {
       connected: true,
       locationId: row.locationId,
       expiresAt: row.expiresAt?.toISOString() ?? null,
-      scopes: row.scopes,
-      calendarScopesGranted: this.hasCalendarScopes(row.scopes),
+      scopes,
+      calendarScopesGranted: this.hasCalendarScopes(scopes),
     };
   }
 
@@ -367,7 +383,6 @@ export class GhlService {
   // ── Calendars (GHL) ───────────────────────────────────────────────────────────
 
   async listCalendars(userId: string): Promise<GhlCalendarsListResult> {
-    await this.ensureCalendarScopes(userId);
     const locationId = await this.requireLocationId(userId);
     const raw = await this.ghlRequest<GhlRawCalendarsResponse>(
       userId,
@@ -378,12 +393,112 @@ export class GhlService {
     return {
       calendars: (raw.calendars ?? [])
         .filter((calendar) => calendar.id)
-        .map((calendar) => ({
-          id: calendar.id,
-          name: calendar.name?.trim() || 'Unnamed calendar',
-          isActive: calendar.isActive,
-        })),
+        .map((calendar) => this.toCalendarSummary(calendar)),
     };
+  }
+
+  async getCalendar(userId: string, calendarId: string): Promise<GhlCalendarSummary> {
+    const raw = await this.ghlRequest<{ calendar?: GhlRawCalendar } & GhlRawCalendar>(
+      userId,
+      'GET',
+      `/calendars/${calendarId}`,
+    );
+    const calendar = raw.calendar ?? raw;
+    if (!calendar.id) {
+      throw new BadRequestException('GHL did not return the calendar');
+    }
+    return this.toCalendarSummary(calendar);
+  }
+
+  async createCalendar(
+    userId: string,
+    input: {
+      name: string;
+      description?: string;
+      isActive?: boolean;
+      options?: Record<string, unknown>;
+    },
+  ): Promise<GhlCalendarSummary> {
+    const locationId = await this.requireLocationId(userId);
+    const body: Record<string, unknown> = {
+      locationId,
+      name: input.name.trim(),
+      ...(input.options ?? {}),
+    };
+    if (input.description?.trim()) body.description = input.description.trim();
+    if (input.isActive !== undefined) body.isActive = input.isActive;
+
+    const raw = await this.ghlRequest<{ calendar?: GhlRawCalendar } & GhlRawCalendar>(
+      userId,
+      'POST',
+      '/calendars/',
+      body,
+    );
+    const calendar = raw.calendar ?? raw;
+    if (!calendar.id) {
+      throw new BadRequestException('GHL did not return the created calendar');
+    }
+    await this.audit(userId, 'ghl.calendar.create', 'success', { calendarId: calendar.id });
+    return this.toCalendarSummary(calendar);
+  }
+
+  async updateCalendar(
+    userId: string,
+    calendarId: string,
+    input: {
+      name?: string;
+      description?: string;
+      isActive?: boolean;
+      options?: Record<string, unknown>;
+    },
+  ): Promise<GhlCalendarSummary> {
+    const body: Record<string, unknown> = { ...(input.options ?? {}) };
+    if (input.name?.trim()) body.name = input.name.trim();
+    if (input.description?.trim()) body.description = input.description.trim();
+    if (input.isActive !== undefined) body.isActive = input.isActive;
+
+    const raw = await this.ghlRequest<{ calendar?: GhlRawCalendar } & GhlRawCalendar>(
+      userId,
+      'PUT',
+      `/calendars/${calendarId}`,
+      body,
+    );
+    const calendar = raw.calendar ?? raw;
+    if (!calendar.id) {
+      throw new BadRequestException('GHL did not return the updated calendar');
+    }
+    await this.audit(userId, 'ghl.calendar.update', 'success', { calendarId: calendar.id });
+    return this.toCalendarSummary(calendar);
+  }
+
+  async deleteCalendar(userId: string, calendarId: string): Promise<{ ok: true }> {
+    await this.ghlRequest(userId, 'DELETE', `/calendars/${calendarId}`);
+    await this.audit(userId, 'ghl.calendar.delete', 'success', { calendarId });
+    return { ok: true };
+  }
+
+  async getCalendarFreeSlots(
+    userId: string,
+    calendarId: string,
+    input: {
+      startDate: number;
+      endDate: number;
+      timezone?: string;
+      userId?: string;
+    },
+  ): Promise<Record<string, unknown>> {
+    const params = new URLSearchParams({
+      startDate: String(input.startDate),
+      endDate: String(input.endDate),
+    });
+    if (input.timezone?.trim()) params.set('timezone', input.timezone.trim());
+    if (input.userId?.trim()) params.set('userId', input.userId.trim());
+
+    return this.ghlRequest<Record<string, unknown>>(
+      userId,
+      'GET',
+      `/calendars/${calendarId}/free-slots?${params.toString()}`,
+    );
   }
 
   async listCalendarEvents(
@@ -396,12 +511,12 @@ export class GhlService {
       days?: number;
     } = {},
   ): Promise<GhlAppointmentsListResult> {
-    await this.ensureCalendarScopes(userId);
     const locationId = await this.requireLocationId(userId);
     const range = this.resolveEventRange(input.startTime, input.endTime, input.days ?? 14);
     const calendarIds = await this.resolveCalendarIds(userId, locationId, input);
 
     const appointments: GhlAppointmentSummary[] = [];
+    const calendarTimeZones = new Map<string, string>();
     for (const calendarId of calendarIds) {
       const params = new URLSearchParams({
         locationId,
@@ -414,7 +529,21 @@ export class GhlService {
         'GET',
         `/calendars/events?${params.toString()}`,
       );
-      appointments.push(...(raw.events ?? []).map((event) => this.toAppointmentSummary(event)));
+
+      let timeZone = calendarTimeZones.get(calendarId);
+      if (!timeZone) {
+        const calendarRaw = await this.ghlRequest<{ calendar?: GhlRawCalendar } & GhlRawCalendar>(
+          userId,
+          'GET',
+          `/calendars/${calendarId}`,
+        );
+        timeZone = this.resolveCalendarTimeZone(undefined, calendarRaw.calendar ?? calendarRaw);
+        calendarTimeZones.set(calendarId, timeZone);
+      }
+
+      appointments.push(
+        ...(raw.events ?? []).map((event) => this.toAppointmentSummary(event, timeZone)),
+      );
     }
 
     appointments.sort((a, b) => this.appointmentSortKey(a) - this.appointmentSortKey(b));
@@ -436,12 +565,7 @@ export class GhlService {
       timeZone?: string;
     },
   ): Promise<GhlAppointmentSummary> {
-    await this.ensureCalendarScopes(userId);
     const locationId = await this.requireLocationId(userId);
-    const startTime = input.startTime.trim();
-    const endTime =
-      input.endTime?.trim() ||
-      this.addMinutesIso(startTime, input.durationMinutes ?? 30);
 
     const contactId =
       input.contactId?.trim() ||
@@ -450,6 +574,22 @@ export class GhlService {
       input.calendarId?.trim() ||
       (await this.resolveCalendarId(userId, locationId, input.calendarName));
 
+    const calendarRaw = await this.ghlRequest<{ calendar?: GhlRawCalendar } & GhlRawCalendar>(
+      userId,
+      'GET',
+      `/calendars/${calendarId}`,
+    );
+    const calendar = calendarRaw.calendar ?? calendarRaw;
+    const slotMinutes = this.calendarSlotMinutes(calendar);
+    const timeZone = this.resolveCalendarTimeZone(input.timeZone, calendar);
+    const { startTime, endTime } = this.buildGhlAppointmentRange(
+      input.startTime.trim(),
+      input.endTime?.trim(),
+      input.durationMinutes,
+      slotMinutes,
+      timeZone,
+    );
+
     const body: Record<string, unknown> = {
       locationId,
       calendarId,
@@ -457,10 +597,11 @@ export class GhlService {
       startTime,
       endTime,
       title: input.title?.trim() || 'Appointment',
+      appointmentStatus: 'confirmed',
+      ignoreDateRange: true,
       ignoreFreeSlotValidation: true,
     };
     if (input.notes?.trim()) body.description = input.notes.trim();
-    if (input.timeZone?.trim()) body.timeZone = input.timeZone.trim();
 
     const raw = await this.ghlRequest<{ id?: string; event?: GhlRawEvent } & GhlRawEvent>(
       userId,
@@ -479,11 +620,10 @@ export class GhlService {
       calendarId,
       contactId,
     });
-    return this.toAppointmentSummary(event);
+    return this.toAppointmentSummary(event, timeZone);
   }
 
   async cancelAppointment(userId: string, eventId: string): Promise<{ ok: true }> {
-    await this.ensureCalendarScopes(userId);
     await this.ghlRequest(userId, 'DELETE', `/calendars/events/${eventId}`);
     await this.audit(userId, 'ghl.appointment.cancel', 'success', { eventId });
     return { ok: true };
@@ -545,7 +685,7 @@ export class GhlService {
     }
 
     const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
-    const refreshedScopes = (refreshed.scope ?? '').split(' ').filter(Boolean);
+    const scopes = this.resolveStoredScopes(refreshed.scope, row.scopes);
     await this.prisma.integrationConnection.update({
       where: { userId_provider: { userId, provider: CrmProvider.GHL } },
       data: {
@@ -554,7 +694,7 @@ export class GhlService {
         refreshToken: encryptSecret(refreshed.refresh_token),
         expiresAt,
         locationId: refreshed.locationId ?? row.locationId,
-        scopes: refreshedScopes.length > 0 ? refreshedScopes : row.scopes,
+        scopes,
       },
     });
 
@@ -579,7 +719,7 @@ export class GhlService {
         Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
-        Version: GHL_API_VERSION,
+        Version: this.ghlApiVersion(path),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
@@ -595,6 +735,22 @@ export class GhlService {
     }
 
     return JSON.parse(text) as T;
+  }
+
+  private ghlApiVersion(path: string): string {
+    return path.startsWith('/calendars') ? GHL_CALENDAR_API_VERSION : GHL_API_VERSION;
+  }
+
+  private toCalendarSummary(calendar: GhlRawCalendar): GhlCalendarSummary {
+    return {
+      id: calendar.id,
+      name: calendar.name?.trim() || 'Unnamed calendar',
+      isActive: calendar.isActive,
+    };
+  }
+
+  private getConfiguredScopes(): string[] {
+    return (this.config.get<string>('GHL_SCOPES') || DEFAULT_SCOPES).split(' ').filter(Boolean);
   }
 
   private toContactSummary(contact: GhlRawContact): GhlContactSummary {
@@ -709,24 +865,220 @@ export class GhlService {
     return { startMs, endMs };
   }
 
-  private addMinutesIso(iso: string, minutes: number): string {
-    const time = Date.parse(iso);
-    if (Number.isNaN(time)) {
-      throw new BadRequestException('startTime is not a valid date');
-    }
-    return new Date(time + minutes * 60 * 1000).toISOString();
+  private resolveCalendarTimeZone(inputTimeZone: string | undefined, calendar: GhlRawCalendar): string {
+    const fromInput = inputTimeZone?.trim();
+    if (fromInput) return fromInput;
+    const fromCalendar = calendar.timezone?.trim() || calendar.selectedTimezone?.trim();
+    if (fromCalendar) return fromCalendar;
+    return this.config.get<string>('GHL_CALENDAR_TIMEZONE')?.trim() || 'UTC';
   }
 
-  private toAppointmentSummary(event: GhlRawEvent): GhlAppointmentSummary {
+  private calendarSlotMinutes(calendar: GhlRawCalendar): number {
+    const duration = calendar.slotDuration ?? 30;
+    const unit = (calendar.slotDurationUnit ?? 'mins').toLowerCase();
+    if (unit.startsWith('hour')) return Math.max(5, duration * 60);
+    return Math.max(5, duration);
+  }
+
+  private buildGhlAppointmentRange(
+    startTime: string,
+    endTime: string | undefined,
+    durationMinutes: number | undefined,
+    slotMinutes: number,
+    timeZone: string,
+  ): { startTime: string; endTime: string } {
+    const startMs = this.parseAppointmentTime(startTime);
+    const snappedStartMs = this.snapToCalendarSlot(startMs, slotMinutes, timeZone);
+
+    let endMs: number;
+    if (endTime) {
+      endMs = this.parseAppointmentTime(endTime);
+    } else {
+      const requestedMinutes = durationMinutes ?? slotMinutes;
+      const slotCount = Math.max(1, Math.round(requestedMinutes / slotMinutes));
+      endMs = snappedStartMs + slotCount * slotMinutes * 60 * 1000;
+    }
+
+    if (endMs <= snappedStartMs) {
+      endMs = snappedStartMs + slotMinutes * 60 * 1000;
+    }
+
+    const spanMinutes = (endMs - snappedStartMs) / (60 * 1000);
+    if (spanMinutes % slotMinutes !== 0) {
+      const slotCount = Math.max(1, Math.round(spanMinutes / slotMinutes));
+      endMs = snappedStartMs + slotCount * slotMinutes * 60 * 1000;
+    }
+
+    return {
+      startTime: this.formatGhlDateTime(snappedStartMs, timeZone),
+      endTime: this.formatGhlDateTime(endMs, timeZone),
+    };
+  }
+
+  private parseAppointmentTime(value: string): number {
+    const ms = Date.parse(value);
+    if (Number.isNaN(ms)) {
+      throw new BadRequestException('startTime is not a valid date');
+    }
+    return ms;
+  }
+
+  private snapToCalendarSlot(epochMs: number, slotMinutes: number, timeZone: string): number {
+    if (slotMinutes <= 0) return epochMs;
+
+    const wall = this.wallTimeParts(epochMs, timeZone);
+    let totalMinutes = wall.hour * 60 + wall.minute;
+    totalMinutes = Math.round(totalMinutes / slotMinutes) * slotMinutes;
+
+    let hour = Math.floor(totalMinutes / 60);
+    let minute = totalMinutes % 60;
+    let { year, month, day } = wall;
+
+    if (hour >= 24) {
+      hour -= 24;
+      const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
+      year = nextDay.getUTCFullYear();
+      month = nextDay.getUTCMonth() + 1;
+      day = nextDay.getUTCDate();
+    }
+
+    return this.zonedTimeToUtc(year, month, day, hour, minute, 0, timeZone);
+  }
+
+  private wallTimeParts(epochMs: number, timeZone: string) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(epochMs));
+
+    const part = (type: Intl.DateTimeFormatPart['type']) =>
+      Number(parts.find((p) => p.type === type)?.value ?? '0');
+
+    return {
+      year: part('year'),
+      month: part('month'),
+      day: part('day'),
+      hour: part('hour'),
+      minute: part('minute'),
+      second: part('second'),
+    };
+  }
+
+  private zonedTimeToUtc(
+    year: number,
+    month: number,
+    day: number,
+    hour: number,
+    minute: number,
+    second: number,
+    timeZone: string,
+  ): number {
+    let utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+    for (let i = 0; i < 4; i++) {
+      const wall = this.wallTimeParts(utcGuess, timeZone);
+      const desired = Date.UTC(year, month - 1, day, hour, minute, second);
+      const actual = Date.UTC(
+        wall.year,
+        wall.month - 1,
+        wall.day,
+        wall.hour,
+        wall.minute,
+        wall.second,
+      );
+      utcGuess += desired - actual;
+    }
+    return utcGuess;
+  }
+
+  /** GHL expects ISO 8601 with a numeric offset, e.g. 2026-05-27T14:00:00-04:00 (not UTC Z). */
+  private formatGhlDateTime(epochMs: number, timeZone: string): string {
+    const wall = this.wallTimeParts(epochMs, timeZone);
+    const y = String(wall.year).padStart(4, '0');
+    const mo = String(wall.month).padStart(2, '0');
+    const d = String(wall.day).padStart(2, '0');
+    const h = String(wall.hour).padStart(2, '0');
+    const mi = String(wall.minute).padStart(2, '0');
+    const s = String(wall.second).padStart(2, '0');
+    return `${y}-${mo}-${d}T${h}:${mi}:${s}${this.formatGhlOffset(epochMs, timeZone)}`;
+  }
+
+  private formatGhlOffset(epochMs: number, timeZone: string): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'longOffset',
+    }).formatToParts(new Date(epochMs));
+    const raw = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
+    const match = raw.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+    if (!match) return '+00:00';
+    const sign = match[1];
+    const hours = match[2].padStart(2, '0');
+    const minutes = (match[3] ?? '00').padStart(2, '0');
+    return `${sign}${hours}:${minutes}`;
+  }
+
+  private toAppointmentSummary(event: GhlRawEvent, timeZone?: string): GhlAppointmentSummary {
+    const tz = timeZone ?? (this.config.get<string>('GHL_CALENDAR_TIMEZONE')?.trim() || 'UTC');
     return {
       id: event.id,
       title: event.title?.trim() || 'Appointment',
-      startTime: event.startTime,
-      endTime: event.endTime,
+      startTime: this.normalizeEventTime(event.startTime, tz),
+      endTime: this.normalizeEventTime(event.endTime, tz),
       contactId: event.contactId,
       calendarId: event.calendarId,
       status: event.appointmentStatus,
     };
+  }
+
+  /**
+   * GHL may return epoch ms, ISO with offset, or naive ISO (UTC wall clock without Z).
+   * Normalize to ISO with offset in the calendar timezone for consistent client display.
+   */
+  private normalizeEventTime(value: unknown, timeZone: string): string | undefined {
+    if (value == null) return undefined;
+
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      if (typeof record.date === 'string') return this.normalizeEventTime(record.date, timeZone);
+      if (typeof record.value === 'string') return this.normalizeEventTime(record.value, timeZone);
+      if (typeof record.iso === 'string') return this.normalizeEventTime(record.iso, timeZone);
+    }
+
+    let epochMs: number | undefined;
+    if (typeof value === 'number') {
+      epochMs = value < 1e12 ? value * 1000 : value;
+    } else {
+      const raw = String(value).trim();
+      if (!raw) return undefined;
+      if (/^\d{10,13}$/.test(raw)) {
+        const n = Number(raw);
+        epochMs = raw.length <= 10 ? n * 1000 : n;
+      } else if (/[+-]\d{2}:\d{2}$/i.test(raw) || /[+-]\d{4}$/.test(raw)) {
+        const parsed = Date.parse(raw);
+        if (!Number.isNaN(parsed)) epochMs = parsed;
+        else return raw;
+      } else if (/Z$/i.test(raw)) {
+        const parsed = Date.parse(raw);
+        if (!Number.isNaN(parsed)) epochMs = parsed;
+        else return raw;
+      } else if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+        // Naive datetime from GHL — treat as UTC, then format in calendar TZ.
+        const parsed = Date.parse(raw.endsWith('Z') ? raw : `${raw}Z`);
+        epochMs = Number.isNaN(parsed) ? Date.parse(raw) : parsed;
+      } else {
+        const parsed = Date.parse(raw);
+        if (!Number.isNaN(parsed)) epochMs = parsed;
+        else return raw;
+      }
+    }
+
+    if (epochMs == null || Number.isNaN(epochMs)) return undefined;
+    return this.formatGhlDateTime(epochMs, timeZone);
   }
 
   private appointmentSortKey(appointment: GhlAppointmentSummary): number {
@@ -735,9 +1087,32 @@ export class GhlService {
     return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
   }
 
+  /** GHL may return scopes space- or comma-separated, or as one combined DB element. */
+  private parseScopes(scope?: string): string[] {
+    return (scope ?? '')
+      .split(/[\s,]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  private normalizeScopes(scopes: string[]): string[] {
+    return [...new Set(scopes.flatMap((entry) => this.parseScopes(entry)))];
+  }
+
+  /** Persist scopes from token + prior row; GHL often omits calendar scopes in the scope field. */
+  private resolveStoredScopes(tokenScope?: string, previous?: string[]): string[] {
+    const fromToken = this.parseScopes(tokenScope);
+    const merged = new Set([
+      ...fromToken,
+      ...this.normalizeScopes(previous ?? []),
+      ...this.getConfiguredScopes(),
+    ]);
+    return [...merged];
+  }
+
   private hasCalendarScopes(scopes: string[] | undefined): boolean {
     if (!scopes?.length) return false;
-    return scopes.some(
+    return this.normalizeScopes(scopes).some(
       (scope) =>
         scope === 'calendars.readonly' ||
         scope === 'calendars/events.readonly' ||
@@ -745,22 +1120,10 @@ export class GhlService {
     );
   }
 
-  private async ensureCalendarScopes(userId: string): Promise<void> {
-    const row = await this.prisma.integrationConnection.findUnique({
-      where: { userId_provider: { userId, provider: CrmProvider.GHL } },
-    });
-    if (!row?.enabled) {
-      throw new ForbiddenException('GHL is not connected');
-    }
-    if (!this.hasCalendarScopes(row.scopes)) {
-      throw new ForbiddenException(this.calendarReconnectMessage());
-    }
-  }
-
   private calendarReconnectMessage(): string {
     return (
       'Your GoHighLevel connection does not include calendar access. ' +
-      'In Profile, disconnect GHL and connect again so the app can request calendar scopes. ' +
+      'Go to Profile → Settings → Reconnect GoHighLevel so the app can request calendar scopes. ' +
       'Ensure backend GHL_SCOPES includes calendars.readonly and calendars/events.* scopes, then restart the server.'
     );
   }
@@ -772,6 +1135,11 @@ export class GhlService {
     }
     if (status === 401) {
       throw new UnauthorizedException('GHL session expired — please reconnect in Profile');
+    }
+    if (status === 422 && /invalid slot range/i.test(message)) {
+      throw new BadRequestException(
+        'That time is not a valid booking slot for this calendar. Try asking for free slots first, or pick a time that matches your calendar interval.',
+      );
     }
     throw new BadRequestException(`GHL API error (${status}): ${message}`);
   }

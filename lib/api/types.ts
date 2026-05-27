@@ -138,6 +138,29 @@ export type ListGhlCalendarEventsParams = {
   days?: number;
 };
 
+export type CreateGhlCalendarRequest = {
+  name: string;
+  description?: string;
+  isActive?: boolean;
+  options?: Record<string, unknown>;
+};
+
+export type UpdateGhlCalendarRequest = {
+  name?: string;
+  description?: string;
+  isActive?: boolean;
+  options?: Record<string, unknown>;
+};
+
+export type GhlCalendarFreeSlotsParams = {
+  startDate: number;
+  endDate: number;
+  timezone?: string;
+  userId?: string;
+};
+
+export type GhlCalendarFreeSlotsResponse = Record<string, unknown>;
+
 // ─── HubSpot OAuth ───────────────────────────────────────────────────────────
 
 export type HubspotAuthUrlResponse = {

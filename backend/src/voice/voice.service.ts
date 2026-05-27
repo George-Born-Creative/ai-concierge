@@ -24,6 +24,11 @@ const SUPPORTED_INTENTS = [
   'update_contact',
   'delete_contact',
   'list_calendars',
+  'get_calendar',
+  'create_calendar',
+  'update_calendar',
+  'delete_calendar',
+  'get_free_slots',
   'list_appointments',
   'create_appointment',
   'cancel_appointment',
@@ -69,6 +74,11 @@ Intent examples (informal → intent):
 - "add John Smith 555-1234", "put Sarah in", "save a contact for jane@test.com" → create_contact
 - "remove Sarah", "delete Mike from the list", "get rid of that contact" → delete_contact
 - "what calendars do I have", "show my calendars" → list_calendars
+- "open the sales calendar", "show calendar details" → get_calendar
+- "create a calendar called Sales", "add a new booking calendar" → create_calendar
+- "update the sales calendar", "rename my calendar" → update_calendar
+- "delete the test calendar" → delete_calendar
+- "what slots are free tomorrow", "show available times this week" → get_free_slots
 - "what's on my calendar", "any meetings tomorrow", "show upcoming appointments" → list_appointments
 - "book Sarah tomorrow at 2pm", "schedule a call with Mike Friday at 10", "set up a meeting with John" → create_appointment
 - "cancel Sarah's appointment", "remove tomorrow's meeting with Mike" → cancel_appointment
@@ -76,6 +86,11 @@ Intent examples (informal → intent):
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
 - create_contact: extract "name" (full name), or "firstName" + "lastName", plus "phone" and/or "email".
+- get_calendar: "calendarId" or "calendarName".
+- create_calendar: "name" (required), optional "description", "isActive".
+- update_calendar: "calendarId" or "calendarName", plus fields to change ("name", "description", "isActive").
+- delete_calendar: "calendarId" or "calendarName".
+- get_free_slots: "calendarId" or "calendarName"; "startDate" and "endDate" as Unix ms, or "days" ahead (max 31-day window); optional "timezone", "userId".
 - list_appointments: optional "startTime" / "endTime" as ISO 8601, or "days" as number of days ahead (default 14).
 - create_appointment: "contactName" or "name", "title", "calendarName" if mentioned, "startTime" as ISO 8601 (infer from spoken date/time), optional "endTime" or "durationMinutes" (default 30).
 - cancel_appointment: "query", "contactName", "title", and/or "startTime" to identify the booking.
