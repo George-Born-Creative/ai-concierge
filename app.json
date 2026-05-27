@@ -11,7 +11,6 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSContactsUsageDescription": "AI Concierge uses contacts to fetch, identify, create, and delete contacts from your commands.",
         "NSMicrophoneUsageDescription": "AI Concierge uses the microphone to record voice commands before sending them to chat."
       }
     },
@@ -32,8 +31,6 @@
         }
       ],
       "permissions": [
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS",
         "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {

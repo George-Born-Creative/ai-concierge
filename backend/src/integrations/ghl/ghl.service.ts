@@ -15,6 +15,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 const OAUTH_AUTHORIZE_URL = 'https://marketplace.gohighlevel.com/oauth/chooselocation';
 const OAUTH_TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
+const GHL_API_BASE = 'https://services.leadconnectorhq.com';
+const GHL_API_VERSION = '2023-02-21';
 // Must match scopes enabled in Marketplace → Advanced Settings → Auth.
 // Add conversations.* / opportunities.* to GHL_SCOPES only after selecting them in the app builder.
 const DEFAULT_SCOPES = 'contacts.readonly contacts.write';
@@ -47,6 +49,40 @@ export type GhlStatus = {
   locationId?: string | null;
   expiresAt?: string | null;
   scopes?: string[];
+};
+
+export type GhlContactSummary = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  dateAdded?: string;
+};
+
+export type GhlContactsListResult = {
+  contacts: GhlContactSummary[];
+  meta?: {
+    total?: number;
+    startAfterId?: string | null;
+  };
+};
+
+type GhlRawContact = {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  dateAdded?: string;
+};
+
+type GhlRawListResponse = {
+  contacts?: GhlRawContact[];
+  meta?: {
+    total?: number;
+    startAfterId?: string;
+  };
 };
 
 @Injectable()
@@ -172,6 +208,101 @@ export class GhlService {
     };
   }
 
+  // ── Contacts (GHL CRM) ────────────────────────────────────────────────────────
+
+  async listContacts(
+    userId: string,
+    limit = 10,
+    query?: string,
+  ): Promise<GhlContactsListResult> {
+    const { locationId } = await this.getValidAccessToken(userId);
+    if (!locationId) {
+      throw new BadRequestException('GHL location is missing — reconnect GoHighLevel');
+    }
+
+    const params = new URLSearchParams({
+      locationId,
+      limit: String(limit),
+    });
+    if (query?.trim()) {
+      params.set('query', query.trim());
+    }
+
+    const raw = await this.ghlRequest<GhlRawListResponse>(
+      userId,
+      'GET',
+      `/contacts/?${params.toString()}`,
+    );
+
+    const contacts = (raw.contacts ?? [])
+      .map((contact) => this.toContactSummary(contact))
+      .sort((a, b) => this.contactSortKey(b) - this.contactSortKey(a));
+
+    return {
+      contacts,
+      meta: raw.meta
+        ? { total: raw.meta.total, startAfterId: raw.meta.startAfterId ?? null }
+        : undefined,
+    };
+  }
+
+  async createContact(
+    userId: string,
+    input: {
+      firstName?: string;
+      lastName?: string;
+      name?: string;
+      email?: string;
+      phone?: string;
+    },
+  ): Promise<GhlContactSummary> {
+    const { locationId } = await this.getValidAccessToken(userId);
+    if (!locationId) {
+      throw new BadRequestException('GHL location is missing — reconnect GoHighLevel');
+    }
+
+    const email = input.email?.trim();
+    const phone = input.phone?.trim();
+    const name = input.name?.trim();
+    const firstName = input.firstName?.trim();
+    const lastName = input.lastName?.trim();
+
+    if (!email && !phone) {
+      throw new BadRequestException('email or phone is required');
+    }
+    if (!name && !firstName) {
+      throw new BadRequestException('name or firstName is required');
+    }
+
+    const body: Record<string, string> = { locationId };
+    if (name) body.name = name;
+    if (firstName) body.firstName = firstName;
+    if (lastName) body.lastName = lastName;
+    if (email) body.email = email;
+    if (phone) body.phone = phone;
+
+    const raw = await this.ghlRequest<{ contact?: GhlRawContact }>(
+      userId,
+      'POST',
+      '/contacts/',
+      body,
+    );
+
+    const contact = raw.contact;
+    if (!contact?.id) {
+      throw new BadRequestException('GHL did not return the created contact');
+    }
+
+    await this.audit(userId, 'ghl.contact.create', 'success', { contactId: contact.id });
+    return this.toContactSummary(contact);
+  }
+
+  async deleteContact(userId: string, contactId: string): Promise<{ ok: true }> {
+    await this.ghlRequest(userId, 'DELETE', `/contacts/${contactId}`);
+    await this.audit(userId, 'ghl.contact.delete', 'success', { contactId });
+    return { ok: true };
+  }
+
   async disconnect(userId: string): Promise<{ ok: true }> {
     const row = await this.prisma.integrationConnection.findUnique({
       where: { userId_provider: { userId, provider: CrmProvider.GHL } },
@@ -240,6 +371,71 @@ export class GhlService {
   }
 
   // ── HTTP helpers ────────────────────────────────────────────────────────────
+
+  private async ghlRequest<T>(
+    userId: string,
+    method: string,
+    path: string,
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    const { accessToken } = await this.getValidAccessToken(userId);
+    const res = await fetch(`${GHL_API_BASE}${path}`, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+        Version: GHL_API_VERSION,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      this.logger.warn(`GHL ${method} ${path} ${res.status}: ${text.slice(0, 300)}`);
+      throw new BadRequestException(`GHL API error (${res.status}): ${this.extractGhlError(text)}`);
+    }
+
+    if (!text) {
+      return {} as T;
+    }
+
+    return JSON.parse(text) as T;
+  }
+
+  private toContactSummary(contact: GhlRawContact): GhlContactSummary {
+    const name =
+      contact.name ||
+      [contact.firstName, contact.lastName].filter(Boolean).join(' ') ||
+      contact.email ||
+      contact.phone ||
+      'Unknown';
+
+    return {
+      id: contact.id,
+      name,
+      phone: contact.phone,
+      email: contact.email,
+      dateAdded: contact.dateAdded,
+    };
+  }
+
+  private contactSortKey(contact: GhlContactSummary): number {
+    if (!contact.dateAdded) return 0;
+    const time = new Date(contact.dateAdded).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  private extractGhlError(text: string): string {
+    try {
+      const body = JSON.parse(text) as { message?: string | string[] };
+      if (Array.isArray(body.message)) return body.message.join(', ');
+      if (typeof body.message === 'string') return body.message;
+    } catch {
+      // Fall through to raw text.
+    }
+    return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+  }
 
   private async exchangeCode(code: string): Promise<GhlTokenResponse> {
     const body = new URLSearchParams({

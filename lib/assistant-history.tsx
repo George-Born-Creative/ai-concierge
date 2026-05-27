@@ -228,7 +228,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             pending: true,
           });
 
-          const exec = await executeContactCommand(transcript);
+          const exec = await executeContactCommand(transcript, result.intent);
           updateEntry(entry.id, {
             response: exec.response,
             pending: false,
