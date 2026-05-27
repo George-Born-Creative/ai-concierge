@@ -9,6 +9,10 @@ import { PrismaService } from '../prisma/prisma.service';
 // before bothering OpenAI; the FileInterceptor also rejects above the same
 // limit.
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+// Force English transcription — avoids Whisper guessing Arabic/other locales on short clips.
+const VOICE_LANGUAGE = 'en';
+const WHISPER_PROMPT =
+  'English speech only. CRM voice commands about contacts, calendars, and appointments.';
 
 // Subset of intents the assistant produces. New intents land here when we
 // add new CRM actions. `unknown` is the fallback so the assistant never
@@ -19,6 +23,10 @@ const SUPPORTED_INTENTS = [
   'create_contact',
   'update_contact',
   'delete_contact',
+  'list_calendars',
+  'list_appointments',
+  'create_appointment',
+  'cancel_appointment',
   'create_note',
   'create_task',
   'create_opportunity',
@@ -41,6 +49,11 @@ export type TranscribeResult = {
 
 const NORMALIZER_SYSTEM_PROMPT = `You interpret casual spoken or typed commands for a GoHighLevel CRM assistant. Users speak in everyday English — not rigid command templates.
 
+Language (required):
+- Input is always English. Output must be English only.
+- The "notes" field and all entity string values must be in English — never Arabic or any other language.
+- If the transcript looks non-English, still infer the closest English CRM intent; do not echo foreign-language text in notes.
+
 Output JSON with this exact shape (no markdown, no commentary):
 {
   "intent": one of ${SUPPORTED_INTENTS.map((i) => `"${i}"`).join(', ')},
@@ -55,14 +68,21 @@ Intent examples (informal → intent):
 - "look up Sarah", "got anyone named Mike?", "find the guy with 555-1234" → find_contact
 - "add John Smith 555-1234", "put Sarah in", "save a contact for jane@test.com" → create_contact
 - "remove Sarah", "delete Mike from the list", "get rid of that contact" → delete_contact
+- "what calendars do I have", "show my calendars" → list_calendars
+- "what's on my calendar", "any meetings tomorrow", "show upcoming appointments" → list_appointments
+- "book Sarah tomorrow at 2pm", "schedule a call with Mike Friday at 10", "set up a meeting with John" → create_appointment
+- "cancel Sarah's appointment", "remove tomorrow's meeting with Mike" → cancel_appointment
 
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
 - create_contact: extract "name" (full name), or "firstName" + "lastName", plus "phone" and/or "email".
+- list_appointments: optional "startTime" / "endTime" as ISO 8601, or "days" as number of days ahead (default 14).
+- create_appointment: "contactName" or "name", "title", "calendarName" if mentioned, "startTime" as ISO 8601 (infer from spoken date/time), optional "endTime" or "durationMinutes" (default 30).
+- cancel_appointment: "query", "contactName", "title", and/or "startTime" to identify the booking.
 - Normalize phone to digits with optional leading +.
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
-- Pick "unknown" only when it is not a CRM/contact action at all.
+- Pick "unknown" only when it is not a CRM/contact/calendar action at all.
 - Never invent details the user did not say.`;
 
 @Injectable()
@@ -102,6 +122,8 @@ export class VoiceService {
       const whisper = await openai.audio.transcriptions.create({
         file: audioFile,
         model: 'whisper-1',
+        language: VOICE_LANGUAGE,
+        prompt: WHISPER_PROMPT,
       });
       transcript = whisper.text?.trim() ?? '';
     } catch (err) {
@@ -166,7 +188,10 @@ export class VoiceService {
         temperature: 0,
         messages: [
           { role: 'system', content: NORMALIZER_SYSTEM_PROMPT },
-          { role: 'user', content: text },
+          {
+            role: 'user',
+            content: `English command:\n${text}`,
+          },
         ],
       });
       const raw = completion.choices[0]?.message?.content ?? '{}';

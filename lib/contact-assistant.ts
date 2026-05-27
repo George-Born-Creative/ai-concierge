@@ -1,6 +1,6 @@
 import { ghlApi, voiceApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
-import type { GhlContactSummary, VoiceIntent } from '@/lib/api/types';
+import type { GhlAppointmentSummary, GhlContactSummary, VoiceIntent } from '@/lib/api/types';
 
 export type AssistantCommandStatus = 'success' | 'error';
 
@@ -9,11 +9,15 @@ export type AssistantCommandResult = {
   status: AssistantCommandStatus;
 };
 
-const CONTACT_INTENTS = new Set([
+const ASSISTANT_INTENTS = new Set([
   'list_contacts',
   'find_contact',
   'create_contact',
   'delete_contact',
+  'list_calendars',
+  'list_appointments',
+  'create_appointment',
+  'cancel_appointment',
 ]);
 
 export async function executeContactCommand(
@@ -24,7 +28,7 @@ export async function executeContactCommand(
 
   if (!normalized) {
     return {
-      response: 'Tell me what you want to do with your contacts.',
+      response: 'Tell me what you want to do with contacts or your calendar.',
       status: 'error',
     };
   }
@@ -61,7 +65,7 @@ export async function executeContactCommand(
 function shouldRunIntent(intent?: VoiceIntent): boolean {
   if (!intent) return false;
   if (intent.intent === 'unknown') return false;
-  return CONTACT_INTENTS.has(intent.intent);
+  return ASSISTANT_INTENTS.has(intent.intent);
 }
 
 async function executeFromIntent(
@@ -76,6 +80,14 @@ async function executeFromIntent(
       return createContactFromDetails(extractCreateDetails(intent.entities));
     case 'delete_contact':
       return deleteContactByQuery(extractSearchQuery(intent.entities));
+    case 'list_calendars':
+      return listCalendars();
+    case 'list_appointments':
+      return listUpcomingAppointments(extractAppointmentRange(intent.entities));
+    case 'create_appointment':
+      return createAppointmentFromDetails(extractAppointmentDetails(intent.entities));
+    case 'cancel_appointment':
+      return cancelAppointmentByQuery(extractAppointmentCancelQuery(intent.entities));
     default:
       return null;
   }
@@ -84,6 +96,21 @@ async function executeFromIntent(
 async function executeWithHeuristics(command: string): Promise<AssistantCommandResult> {
   const lower = command.toLowerCase();
 
+  if (looksLikeListCalendars(lower)) {
+    return listCalendars();
+  }
+  if (looksLikeListAppointments(lower)) {
+    return listUpcomingAppointments();
+  }
+  if (looksLikeBookAppointment(lower)) {
+    return {
+      response: 'Who should I book it with, and when? Something like "book Sarah tomorrow at 2pm".',
+      status: 'error',
+    };
+  }
+  if (looksLikeCancelAppointment(lower)) {
+    return cancelAppointmentByQuery(stripLeadPhrases(command, CANCEL_APPOINTMENT_LEADS));
+  }
   if (looksLikeList(lower)) {
     return listLatestContacts();
   }
@@ -99,7 +126,7 @@ async function executeWithHeuristics(command: string): Promise<AssistantCommandR
 
   return {
     response:
-      'I can list, look up, add, or remove contacts in GoHighLevel. Try something like "pull up my contacts" or "add Sarah 555-123-4567".',
+      'I can handle contacts and calendars in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", or "book Sarah tomorrow at 2pm".',
     status: 'error',
   };
 }
@@ -136,15 +163,47 @@ const DELETE_LEADS = [
 
 const CREATE_LEADS = [
   'create contact',
-  'create',
   'add contact',
-  'add',
   'new contact',
   'save contact',
-  'save',
   'put in',
   'register',
 ];
+
+const CANCEL_APPOINTMENT_LEADS = [
+  'cancel appointment',
+  'cancel meeting',
+  'cancel the meeting',
+  'cancel the appointment',
+  'remove appointment',
+  'remove meeting',
+  'delete appointment',
+  'delete meeting',
+  'cancel',
+];
+
+function looksLikeListCalendars(command: string) {
+  return /\bcalendar(s)?\b/.test(command) && /\b(list|show|what|my|which|got)\b/.test(command);
+}
+
+function looksLikeListAppointments(command: string) {
+  return (
+    /\b(appointment|meeting|schedule|calendar)\b/.test(command) &&
+    /\b(upcoming|today|tomorrow|this week|on my|what's|whats|show|list|any)\b/.test(command)
+  );
+}
+
+function looksLikeBookAppointment(command: string) {
+  return (
+    /\b(book|schedule|set up|setup|arrange|plan)\b/.test(command) &&
+    /\b(appointment|meeting|call|calendar)\b/.test(command)
+  );
+}
+
+function looksLikeCancelAppointment(command: string) {
+  return CANCEL_APPOINTMENT_LEADS.some((lead) => command.includes(lead)) &&
+    /\b(appointment|meeting|calendar|with)\b/.test(command);
+}
 
 function looksLikeList(command: string) {
   return (
@@ -155,15 +214,118 @@ function looksLikeList(command: string) {
 }
 
 function looksLikeCreate(command: string) {
-  return CREATE_LEADS.some((lead) => command.includes(lead));
+  if (looksLikeBookAppointment(command)) return false;
+  return CREATE_LEADS.some((lead) => command.includes(lead)) || command.startsWith('add ');
 }
 
 function looksLikeDelete(command: string) {
+  if (looksLikeCancelAppointment(command)) return false;
   return DELETE_LEADS.some((lead) => command.includes(lead));
 }
 
 function looksLikeFind(command: string) {
   return FIND_LEADS.some((lead) => command.includes(lead));
+}
+
+async function listCalendars(): Promise<AssistantCommandResult> {
+  const result = await ghlApi.listCalendars();
+
+  if (result.calendars.length === 0) {
+    return {
+      response: "You don't have any calendars set up in GoHighLevel yet.",
+      status: 'success',
+    };
+  }
+
+  return {
+    response: `Here are your calendars:\n${result.calendars.map(formatCalendar).join('\n')}`,
+    status: 'success',
+  };
+}
+
+async function listUpcomingAppointments(
+  range?: ReturnType<typeof extractAppointmentRange>,
+): Promise<AssistantCommandResult> {
+  const result = await ghlApi.listCalendarEvents({
+    startTime: range?.startTime,
+    endTime: range?.endTime,
+    days: range?.days ?? 14,
+  });
+
+  if (result.appointments.length === 0) {
+    return {
+      response: 'Nothing on the calendar for that window.',
+      status: 'success',
+    };
+  }
+
+  return {
+    response: `Here's what's coming up:\n${result.appointments
+      .slice(0, 10)
+      .map(formatAppointment)
+      .join('\n')}`,
+    status: 'success',
+  };
+}
+
+async function createAppointmentFromDetails(
+  details: ReturnType<typeof extractAppointmentDetails>,
+): Promise<AssistantCommandResult> {
+  if (!details.startTime) {
+    return {
+      response: 'When should it be? Give me a day and time, like "tomorrow at 2pm".',
+      status: 'error',
+    };
+  }
+  if (!details.contactName && !details.contactId) {
+    return {
+      response: 'Who is the appointment with?',
+      status: 'error',
+    };
+  }
+
+  const created = await ghlApi.createAppointment({
+    contactId: details.contactId,
+    contactName: details.contactName,
+    calendarId: details.calendarId,
+    calendarName: details.calendarName,
+    startTime: details.startTime,
+    endTime: details.endTime,
+    durationMinutes: details.durationMinutes,
+    title: details.title,
+    notes: details.notes,
+  });
+
+  return {
+    response: `Booked — ${created.title} ${formatWhen(created.startTime)}.`,
+    status: 'success',
+  };
+}
+
+async function cancelAppointmentByQuery(query: string): Promise<AssistantCommandResult> {
+  if (!query.trim()) {
+    return {
+      response: 'Which appointment should I cancel? A name or time helps.',
+      status: 'error',
+    };
+  }
+
+  const result = await ghlApi.listCalendarEvents({ days: 30 });
+  const matches = findMatchingAppointments(result.appointments, query);
+
+  if (matches.length === 0) {
+    return {
+      response: `Couldn't find an appointment matching "${query}".`,
+      status: 'error',
+    };
+  }
+
+  await ghlApi.cancelAppointment(matches[0].id);
+
+  return {
+    response: `Canceled ${matches[0].title} ${formatWhen(matches[0].startTime)}.`,
+    status: 'success',
+  };
 }
 
 async function listLatestContacts(): Promise<AssistantCommandResult> {
@@ -289,6 +451,53 @@ function extractSearchQuery(entities: VoiceIntent['entities']): string {
   return entityString(entities, 'phone', 'email') ?? '';
 }
 
+function extractAppointmentRange(entities: VoiceIntent['entities']) {
+  const days = entityNumber(entities, 'days');
+  return {
+    startTime: entityString(entities, 'startTime', 'start_time'),
+    endTime: entityString(entities, 'endTime', 'end_time'),
+    days: days ?? undefined,
+  };
+}
+
+function extractAppointmentDetails(entities: VoiceIntent['entities']) {
+  return {
+    contactId: entityString(entities, 'contactId', 'contact_id'),
+    contactName:
+      entityString(entities, 'contactName', 'contact_name') ||
+      buildNameFromEntities(entities) ||
+      entityString(entities, 'query', 'name'),
+    calendarId: entityString(entities, 'calendarId', 'calendar_id'),
+    calendarName: entityString(entities, 'calendarName', 'calendar_name'),
+    startTime: entityString(entities, 'startTime', 'start_time', 'datetime', 'dateTime'),
+    endTime: entityString(entities, 'endTime', 'end_time'),
+    durationMinutes: entityNumber(entities, 'durationMinutes', 'duration_minutes', 'duration'),
+    title: entityString(entities, 'title'),
+    notes: entityString(entities, 'notes', 'description'),
+  };
+}
+
+function extractAppointmentCancelQuery(entities: VoiceIntent['entities']) {
+  return (
+    entityString(entities, 'query') ||
+    entityString(entities, 'contactName', 'contact_name') ||
+    buildNameFromEntities(entities) ||
+    entityString(entities, 'title') ||
+    entityString(entities, 'startTime', 'start_time') ||
+    ''
+  );
+}
+
+function findMatchingAppointments(appointments: GhlAppointmentSummary[], query: string) {
+  const searchableQuery = normalizeSearch(query);
+  return appointments.filter((appointment) => {
+    const haystack = normalizeSearch(
+      [appointment.title, appointment.startTime, appointment.endTime].filter(Boolean).join(' '),
+    );
+    return haystack.includes(searchableQuery);
+  });
+}
+
 function extractCreateDetails(entities: VoiceIntent['entities']) {
   const email = entityString(entities, 'email')?.toLowerCase();
   const phone = entityString(entities, 'phone');
@@ -334,6 +543,21 @@ function entityString(
   return undefined;
 }
 
+function entityNumber(
+  entities: VoiceIntent['entities'],
+  ...keys: string[]
+): number | undefined {
+  for (const key of keys) {
+    const value = entities[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
 function stripLeadPhrases(command: string, leads: string[]) {
   let target = command.trim();
   const sorted = [...leads].sort((a, b) => b.length - a.length);
@@ -359,6 +583,28 @@ function formatContact(contact: GhlContactSummary) {
   return detail ? `· ${contact.name} — ${detail}` : `· ${contact.name}`;
 }
 
+function formatCalendar(calendar: { name: string; isActive?: boolean }) {
+  return calendar.isActive === false ? `· ${calendar.name} (inactive)` : `· ${calendar.name}`;
+}
+
+function formatAppointment(appointment: GhlAppointmentSummary) {
+  const when = formatWhen(appointment.startTime);
+  return when ? `· ${appointment.title} — ${when}` : `· ${appointment.title}`;
+}
+
+function formatWhen(iso?: string) {
+  if (!iso) return '';
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return iso;
+  return new Date(time).toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function normalizeSearch(value: string) {
   return value.toLowerCase().replace(/[^\p{L}\p{N}@]+/gu, '');
 }
@@ -370,11 +616,14 @@ function escapeRegExp(value: string) {
 function ghlErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 403) {
-      return 'Hook up GoHighLevel in Profile first, then I can work with your contacts.';
+      if (/calendar access|calendar scopes/i.test(error.message)) {
+        return error.message;
+      }
+      return 'Hook up GoHighLevel in Profile first, then I can work with your contacts and calendar.';
     }
     return error.message;
   }
   return error instanceof Error
     ? error.message
-    : 'Something went wrong while working with your contacts.';
+    : 'Something went wrong while working with GoHighLevel.';
 }

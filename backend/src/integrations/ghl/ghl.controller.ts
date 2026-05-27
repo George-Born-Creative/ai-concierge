@@ -18,6 +18,8 @@ import { ActiveSubscriptionGuard } from '../../common/guards/active-subscription
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GhlCallbackQueryDto } from './dto/callback.query.dto';
 import { CreateGhlContactDto } from './dto/create-contact.dto';
+import { CreateGhlAppointmentDto } from './dto/create-appointment.dto';
+import { ListCalendarEventsQueryDto } from './dto/list-calendar-events.query.dto';
 import { ListContactsQueryDto } from './dto/list-contacts.query.dto';
 import {
   handleGhlOAuthCallback,
@@ -73,6 +75,16 @@ export class GhlController {
     return this.ghl.disconnect(user.id);
   }
 
+  @Post('reconnect')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  reconnect(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('returnUrl') returnUrl?: string,
+  ) {
+    return this.ghl.reconnect(user.id, returnUrl);
+  }
+
   @Get('contacts')
   @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
   listContacts(
@@ -100,5 +112,40 @@ export class GhlController {
     @Param('id') contactId: string,
   ) {
     return this.ghl.deleteContact(user.id, contactId);
+  }
+
+  @Get('calendars')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  listCalendars(@CurrentUser() user: AuthenticatedUser) {
+    return this.ghl.listCalendars(user.id);
+  }
+
+  @Get('calendar-events')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  listCalendarEvents(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListCalendarEventsQueryDto,
+  ) {
+    return this.ghl.listCalendarEvents(user.id, query);
+  }
+
+  @Post('calendar-events')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  createAppointment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateGhlAppointmentDto,
+  ) {
+    return this.ghl.createAppointment(user.id, body);
+  }
+
+  @Delete('calendar-events/:id')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  cancelAppointment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') eventId: string,
+  ) {
+    return this.ghl.cancelAppointment(user.id, eventId);
   }
 }
