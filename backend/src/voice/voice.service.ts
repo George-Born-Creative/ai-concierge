@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CrmProvider } from '@prisma/client';
 import OpenAI, { APIError, toFile } from 'openai';
 
@@ -58,6 +59,14 @@ Language (required):
 - Input is always English. Output must be English only.
 - The "notes" field and all entity string values must be in English — never Arabic or any other language.
 - If the transcript looks non-English, still infer the closest English CRM intent; do not echo foreign-language text in notes.
+
+Calendar / date math (required):
+- Always use the proleptic Gregorian calendar (no Hijri, no Julian, no other system).
+- The user prompt includes a "Current date/time (Gregorian calendar)" block. Treat that as the authoritative "now" — do NOT rely on internal knowledge of today's date.
+- "today" = the date in the Now block. "tomorrow" = Now + 1 day. "yesterday" = Now - 1 day. "Friday" / "Monday" / etc. = the next occurrence of that weekday on or after Now. "next week" = +7 days. "in two weeks" = +14 days.
+- The year for any computed date MUST be the current Gregorian year (or the next one only if the date would otherwise be in the past). Never emit a year from before the Now block.
+- "startTime" and "endTime" entities must be ISO 8601 with the same UTC offset shown in the Now block (e.g. "2026-05-28T14:00:00+03:00"). Do not emit a bare date.
+- "9am" → "09:00". "2pm" → "14:00". If no time is given for an appointment, ask for one via needs_clarification — do not assume midnight.
 
 Output JSON with this exact shape (no markdown, no commentary):
 {
@@ -120,6 +129,7 @@ export class VoiceService {
   constructor(
     private readonly keys: OpenAIKeysService,
     private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
   ) {}
 
   // m4a (or any Whisper-supported format) → transcript → normalized JSON.
@@ -268,6 +278,13 @@ export class VoiceService {
     sessionContext?: SessionContextPayload | null,
   ): string {
     const parts: string[] = [];
+
+    // Anchor the LLM to the real current date so phrases like "tomorrow",
+    // "Friday", "next week" resolve against today (Gregorian) and not the
+    // model's stale training cutoff. Without this it routinely emits a
+    // startTime in the wrong year.
+    parts.push(this.buildNowContext());
+
     if (sessionContext && Object.keys(sessionContext).length > 0) {
       parts.push(`Session context JSON:\n${JSON.stringify(sessionContext)}`);
     }
@@ -283,6 +300,90 @@ export class VoiceService {
     }
     parts.push(`Latest English command:\n${text}`);
     return parts.join('\n\n');
+  }
+
+  /**
+   * Build a "now" block for the LLM. Uses the GHL calendar timezone when one
+   * is configured (so booking math matches what the calendar will accept);
+   * otherwise falls back to the server's timezone.
+   */
+  private buildNowContext(): string {
+    const timeZone =
+      this.config.get<string>('GHL_CALENDAR_TIMEZONE')?.trim() ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone ||
+      'UTC';
+
+    const now = new Date();
+
+    const dateParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'long',
+    }).formatToParts(now);
+
+    const get = (type: string) => dateParts.find((p) => p.type === type)?.value ?? '';
+    const year = get('year');
+    const month = get('month');
+    const day = get('day');
+    const weekday = get('weekday');
+
+    const timeParts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    const hour = timeParts.find((p) => p.type === 'hour')?.value ?? '00';
+    const minute = timeParts.find((p) => p.type === 'minute')?.value ?? '00';
+
+    const offsetMinutes = this.timeZoneOffsetMinutes(now, timeZone);
+    const offsetSign = offsetMinutes >= 0 ? '+' : '-';
+    const absOffset = Math.abs(offsetMinutes);
+    const offsetHH = String(Math.floor(absOffset / 60)).padStart(2, '0');
+    const offsetMM = String(absOffset % 60).padStart(2, '0');
+    const offset = `${offsetSign}${offsetHH}:${offsetMM}`;
+
+    return [
+      `Current date/time (Gregorian calendar):`,
+      `- Now (local): ${year}-${month}-${day}T${hour}:${minute}:00${offset}`,
+      `- Weekday: ${weekday}`,
+      `- IANA timezone: ${timeZone}`,
+      `- Use these as the reference for "today", "tomorrow", weekday names, and "next week".`,
+      `- All emitted "startTime" / "endTime" entities MUST be Gregorian ISO 8601 with this offset, e.g. "${year}-${month}-${day}T14:00:00${offset}". Never invent a different year.`,
+    ].join('\n');
+  }
+
+  /**
+   * Minutes east of UTC for the given IANA timezone at the given instant.
+   * Works without external deps by re-parsing the formatted output.
+   */
+  private timeZoneOffsetMinutes(date: Date, timeZone: string): number {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const parts = dtf.formatToParts(date);
+    const map: Record<string, string> = {};
+    for (const part of parts) {
+      if (part.type !== 'literal') map[part.type] = part.value;
+    }
+    const asUtc = Date.UTC(
+      Number(map.year),
+      Number(map.month) - 1,
+      Number(map.day),
+      Number(map.hour === '24' ? '00' : map.hour),
+      Number(map.minute),
+      Number(map.second),
+    );
+    return Math.round((asUtc - date.getTime()) / 60000);
   }
 
   private parseIntent(raw: string): TranscribeResult['intent'] {

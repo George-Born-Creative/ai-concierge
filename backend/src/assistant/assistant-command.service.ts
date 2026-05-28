@@ -2,8 +2,6 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 
 import { GhlService } from '../integrations/ghl/ghl.service';
 import {
-  buildNameFromEntities,
-  entityString,
   extractAppointmentCancelQuery,
   extractAppointmentDetails,
   extractAppointmentRange,
@@ -14,7 +12,7 @@ import {
   extractFreeSlotsDetails,
   extractSearchQuery,
   mergeSessionIntoEntities,
-  shouldRunIntent,
+  shouldRunIntent
 } from './assistant-command.helpers';
 import type {
   AssistantCommandResult,
