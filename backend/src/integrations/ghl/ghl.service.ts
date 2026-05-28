@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -31,6 +32,8 @@ const DEFAULT_SCOPES = [
   'calendars/groups.write',
   'calendars/resources.readonly',
   'calendars/resources.write',
+  'opportunities.readonly',
+  'opportunities.write',
 ].join(' ');
 const STATE_PURPOSE = 'ghl-oauth-state';
 const STATE_TTL = '10m';
@@ -63,6 +66,8 @@ export type GhlStatus = {
   scopes?: string[];
   /** False when the stored token was connected before calendar scopes were granted. */
   calendarScopesGranted?: boolean;
+  /** False when the stored token was connected before opportunity scopes were granted. */
+  opportunityScopesGranted?: boolean;
 };
 
 export type GhlContactSummary = {
@@ -150,6 +155,107 @@ type GhlRawEvent = {
 
 type GhlRawEventsResponse = {
   events?: GhlRawEvent[];
+};
+
+export type GhlOpportunityStatus = 'open' | 'won' | 'lost' | 'abandoned';
+export type GhlOpportunityStatusFilter = GhlOpportunityStatus | 'all';
+
+export type GhlPipelineStageSummary = {
+  id: string;
+  name: string;
+  position?: number;
+};
+
+export type GhlPipelineSummary = {
+  id: string;
+  name: string;
+  stages: GhlPipelineStageSummary[];
+};
+
+export type GhlPipelinesListResult = {
+  pipelines: GhlPipelineSummary[];
+};
+
+export type GhlOpportunitySummary = {
+  id: string;
+  name: string;
+  monetaryValue?: number;
+  status: GhlOpportunityStatus;
+  pipelineId: string;
+  pipelineStageId?: string;
+  pipelineStageName?: string;
+  contactId?: string;
+  contactName?: string;
+  assignedTo?: string;
+  source?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type GhlOpportunitiesListResult = {
+  opportunities: GhlOpportunitySummary[];
+  meta?: {
+    total?: number;
+    nextPageUrl?: string | null;
+  };
+};
+
+type GhlRawPipelineStage = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  position?: number;
+  showInFunnel?: boolean;
+  showInPieChart?: boolean;
+};
+
+type GhlRawPipeline = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  stages?: GhlRawPipelineStage[];
+};
+
+type GhlRawPipelinesResponse = {
+  pipelines?: GhlRawPipeline[];
+};
+
+type GhlRawOpportunityContact = {
+  id?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+};
+
+type GhlRawOpportunity = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  monetaryValue?: number | string;
+  status?: string;
+  pipelineId?: string;
+  pipelineStageId?: string;
+  pipelineStageName?: string;
+  contactId?: string;
+  contact?: GhlRawOpportunityContact;
+  assignedTo?: string;
+  source?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  dateAdded?: string;
+  dateUpdated?: string;
+};
+
+type GhlRawOpportunitiesResponse = {
+  opportunities?: GhlRawOpportunity[];
+  meta?: {
+    total?: number;
+    nextPageUrl?: string | null;
+    startAfter?: number | string;
+    startAfterId?: string | null;
+  };
 };
 
 @Injectable()
@@ -282,6 +388,7 @@ export class GhlService {
       expiresAt: row.expiresAt?.toISOString() ?? null,
       scopes,
       calendarScopesGranted: this.hasCalendarScopes(scopes),
+      opportunityScopesGranted: this.hasOpportunityScopes(scopes),
     };
   }
 
@@ -629,6 +736,265 @@ export class GhlService {
     return { ok: true };
   }
 
+  // ── Opportunities ───────────────────────────────────────────────────────────
+
+  async listPipelines(userId: string): Promise<GhlPipelinesListResult> {
+    await this.requireOpportunityScopes(userId);
+    const locationId = await this.requireLocationId(userId);
+
+    const raw = await this.ghlRequest<GhlRawPipelinesResponse>(
+      userId,
+      'GET',
+      `/opportunities/pipelines?${new URLSearchParams({ locationId }).toString()}`,
+    );
+
+    return {
+      pipelines: (raw.pipelines ?? [])
+        .map((pipeline) => this.toPipelineSummary(pipeline))
+        .filter((pipeline): pipeline is GhlPipelineSummary => Boolean(pipeline.id)),
+    };
+  }
+
+  async listOpportunities(
+    userId: string,
+    input: {
+      pipelineId?: string;
+      pipelineStageId?: string;
+      status?: GhlOpportunityStatusFilter;
+      query?: string;
+      contactId?: string;
+      assignedTo?: string;
+      campaignId?: string;
+      order?: 'added_asc' | 'added_desc' | 'updated_asc' | 'updated_desc';
+      limit?: number;
+      page?: number;
+    } = {},
+  ): Promise<GhlOpportunitiesListResult> {
+    await this.requireOpportunityScopes(userId);
+    const locationId = await this.requireLocationId(userId);
+
+    // GHL /opportunities/search expects snake_case params and uses `q` for the
+    // free-text search field (see SDK `searchOpportunity`).
+    const params = new URLSearchParams({
+      location_id: locationId,
+      limit: String(input.limit ?? 20),
+    });
+    if (input.pipelineId?.trim()) params.set('pipeline_id', input.pipelineId.trim());
+    if (input.pipelineStageId?.trim()) {
+      params.set('pipeline_stage_id', input.pipelineStageId.trim());
+    }
+    if (input.status && input.status !== 'all') params.set('status', input.status);
+    if (input.query?.trim()) params.set('q', input.query.trim());
+    if (input.contactId?.trim()) params.set('contact_id', input.contactId.trim());
+    if (input.assignedTo?.trim()) params.set('assigned_to', input.assignedTo.trim());
+    if (input.campaignId?.trim()) params.set('campaignId', input.campaignId.trim());
+    if (input.order) params.set('order', input.order);
+    if (input.page && input.page > 1) params.set('page', String(input.page));
+
+    const raw = await this.ghlRequest<GhlRawOpportunitiesResponse>(
+      userId,
+      'GET',
+      `/opportunities/search?${params.toString()}`,
+    );
+
+    return {
+      opportunities: (raw.opportunities ?? [])
+        .map((opportunity) => this.toOpportunitySummary(opportunity))
+        .filter((opportunity): opportunity is GhlOpportunitySummary => Boolean(opportunity.id)),
+      meta: raw.meta
+        ? {
+            total: raw.meta.total,
+            nextPageUrl: raw.meta.nextPageUrl ?? null,
+          }
+        : undefined,
+    };
+  }
+
+  async getOpportunity(userId: string, opportunityId: string): Promise<GhlOpportunitySummary> {
+    await this.requireOpportunityScopes(userId);
+    const id = opportunityId?.trim();
+    if (!id) {
+      throw new BadRequestException('opportunityId is required');
+    }
+
+    const raw = await this.ghlRequest<{ opportunity?: GhlRawOpportunity } & GhlRawOpportunity>(
+      userId,
+      'GET',
+      `/opportunities/${id}`,
+    );
+    const opportunity = raw.opportunity ?? raw;
+    if (!opportunity.id && !opportunity._id) {
+      throw new NotFoundException('Opportunity not found');
+    }
+    return this.toOpportunitySummary(opportunity);
+  }
+
+  async createOpportunity(
+    userId: string,
+    input: {
+      pipelineId: string;
+      name: string;
+      pipelineStageId?: string;
+      status?: GhlOpportunityStatus;
+      monetaryValue?: number;
+      contactId?: string;
+      assignedTo?: string;
+      source?: string;
+    },
+  ): Promise<GhlOpportunitySummary> {
+    await this.requireOpportunityScopes(userId);
+    const locationId = await this.requireLocationId(userId);
+
+    const name = input.name?.trim();
+    const pipelineId = input.pipelineId?.trim();
+    const contactId = input.contactId?.trim();
+    if (!name) {
+      throw new BadRequestException('name is required');
+    }
+    if (!pipelineId) {
+      throw new BadRequestException('pipelineId is required');
+    }
+    // GHL rejects opportunity creation without a contactId. Surface a clean
+    // error here rather than letting the API return a 422.
+    if (!contactId) {
+      throw new BadRequestException('contactId is required to create an opportunity');
+    }
+
+    const body: Record<string, unknown> = {
+      locationId,
+      pipelineId,
+      name,
+      contactId,
+      status: input.status ?? 'open',
+    };
+    if (input.pipelineStageId?.trim()) body.pipelineStageId = input.pipelineStageId.trim();
+    if (typeof input.monetaryValue === 'number') body.monetaryValue = input.monetaryValue;
+    if (input.assignedTo?.trim()) body.assignedTo = input.assignedTo.trim();
+    if (input.source?.trim()) body.source = input.source.trim();
+
+    const raw = await this.ghlRequest<{ opportunity?: GhlRawOpportunity } & GhlRawOpportunity>(
+      userId,
+      'POST',
+      '/opportunities/',
+      body,
+    );
+    const opportunity = raw.opportunity ?? raw;
+    if (!opportunity.id && !opportunity._id) {
+      throw new BadRequestException('GHL did not return the created opportunity');
+    }
+
+    const summary = this.toOpportunitySummary(opportunity);
+    await this.audit(userId, 'ghl.opportunity.create', 'success', {
+      opportunityId: summary.id,
+      pipelineId,
+    });
+    return summary;
+  }
+
+  async updateOpportunity(
+    userId: string,
+    opportunityId: string,
+    input: {
+      name?: string;
+      pipelineId?: string;
+      pipelineStageId?: string;
+      status?: GhlOpportunityStatus;
+      monetaryValue?: number;
+      assignedTo?: string;
+      source?: string;
+    },
+  ): Promise<GhlOpportunitySummary> {
+    await this.requireOpportunityScopes(userId);
+    const id = opportunityId?.trim();
+    if (!id) {
+      throw new BadRequestException('opportunityId is required');
+    }
+
+    const body: Record<string, unknown> = {};
+    if (input.name?.trim()) body.name = input.name.trim();
+    if (input.pipelineId?.trim()) body.pipelineId = input.pipelineId.trim();
+    if (input.pipelineStageId?.trim()) body.pipelineStageId = input.pipelineStageId.trim();
+    if (input.status) body.status = input.status;
+    if (typeof input.monetaryValue === 'number') body.monetaryValue = input.monetaryValue;
+    if (input.assignedTo?.trim()) body.assignedTo = input.assignedTo.trim();
+    if (input.source?.trim()) body.source = input.source.trim();
+
+    if (Object.keys(body).length === 0) {
+      throw new BadRequestException('Provide at least one field to update');
+    }
+
+    const raw = await this.ghlRequest<{ opportunity?: GhlRawOpportunity } & GhlRawOpportunity>(
+      userId,
+      'PUT',
+      `/opportunities/${id}`,
+      body,
+    );
+    const opportunity = raw.opportunity ?? raw;
+    if (!opportunity.id && !opportunity._id) {
+      throw new BadRequestException('GHL did not return the updated opportunity');
+    }
+
+    const summary = this.toOpportunitySummary(opportunity);
+    await this.audit(userId, 'ghl.opportunity.update', 'success', {
+      opportunityId: summary.id,
+      fields: Object.keys(body),
+    });
+    return summary;
+  }
+
+  async updateOpportunityStatus(
+    userId: string,
+    opportunityId: string,
+    status: GhlOpportunityStatus,
+    lostReasonId?: string,
+  ): Promise<GhlOpportunitySummary> {
+    await this.requireOpportunityScopes(userId);
+    const id = opportunityId?.trim();
+    if (!id) {
+      throw new BadRequestException('opportunityId is required');
+    }
+
+    const body: Record<string, unknown> = { status };
+    if (lostReasonId?.trim()) body.lostReasonId = lostReasonId.trim();
+
+    const raw = await this.ghlRequest<{ opportunity?: GhlRawOpportunity } & GhlRawOpportunity>(
+      userId,
+      'PUT',
+      `/opportunities/${id}/status`,
+      body,
+    );
+    const opportunity = raw.opportunity ?? raw;
+    if (!opportunity.id && !opportunity._id) {
+      // Some GHL responses for this endpoint return only `{ success: true }`.
+      // Fetch the latest record so callers always get a full summary back.
+      const refreshed = await this.getOpportunity(userId, id);
+      await this.audit(userId, 'ghl.opportunity.status', 'success', {
+        opportunityId: refreshed.id,
+        status,
+      });
+      return refreshed;
+    }
+
+    const summary = this.toOpportunitySummary(opportunity);
+    await this.audit(userId, 'ghl.opportunity.status', 'success', {
+      opportunityId: summary.id,
+      status,
+    });
+    return summary;
+  }
+
+  async deleteOpportunity(userId: string, opportunityId: string): Promise<{ ok: true }> {
+    await this.requireOpportunityScopes(userId);
+    const id = opportunityId?.trim();
+    if (!id) {
+      throw new BadRequestException('opportunityId is required');
+    }
+
+    await this.ghlRequest(userId, 'DELETE', `/opportunities/${id}`);
+    await this.audit(userId, 'ghl.opportunity.delete', 'success', { opportunityId: id });
+    return { ok: true };
+  }
+
   async disconnect(userId: string): Promise<{ ok: true }> {
     const row = await this.prisma.integrationConnection.findUnique({
       where: { userId_provider: { userId, provider: CrmProvider.GHL } },
@@ -727,7 +1093,7 @@ export class GhlService {
     const text = await res.text();
     if (!res.ok) {
       this.logger.warn(`GHL ${method} ${path} ${res.status}: ${text.slice(0, 300)}`);
-      this.throwGhlHttpError(res.status, text);
+      this.throwGhlHttpError(res.status, text, path);
     }
 
     if (!text) {
@@ -747,6 +1113,71 @@ export class GhlService {
       name: calendar.name?.trim() || 'Unnamed calendar',
       isActive: calendar.isActive,
     };
+  }
+
+  private toPipelineSummary(pipeline: GhlRawPipeline): GhlPipelineSummary {
+    const id = (pipeline.id ?? pipeline._id ?? '').trim();
+    const stages: GhlPipelineStageSummary[] = [];
+    for (const stage of pipeline.stages ?? []) {
+      const stageId = (stage.id ?? stage._id ?? '').trim();
+      if (!stageId) continue;
+      const summary: GhlPipelineStageSummary = {
+        id: stageId,
+        name: stage.name?.trim() || 'Unnamed stage',
+      };
+      if (typeof stage.position === 'number') summary.position = stage.position;
+      stages.push(summary);
+    }
+
+    return {
+      id,
+      name: pipeline.name?.trim() || 'Unnamed pipeline',
+      stages,
+    };
+  }
+
+  private toOpportunitySummary(opportunity: GhlRawOpportunity): GhlOpportunitySummary {
+    const id = (opportunity.id ?? opportunity._id ?? '').trim();
+    const contactName = opportunity.contact
+      ? opportunity.contact.name?.trim() ||
+        [opportunity.contact.firstName, opportunity.contact.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() ||
+        opportunity.contact.email?.trim() ||
+        opportunity.contact.phone?.trim() ||
+        undefined
+      : undefined;
+
+    const monetaryValue =
+      typeof opportunity.monetaryValue === 'string'
+        ? Number(opportunity.monetaryValue)
+        : opportunity.monetaryValue;
+
+    return {
+      id,
+      name: opportunity.name?.trim() || 'Untitled opportunity',
+      monetaryValue:
+        typeof monetaryValue === 'number' && !Number.isNaN(monetaryValue) ? monetaryValue : undefined,
+      status: this.normalizeOpportunityStatus(opportunity.status),
+      pipelineId: opportunity.pipelineId ?? '',
+      pipelineStageId: opportunity.pipelineStageId,
+      pipelineStageName: opportunity.pipelineStageName?.trim() || undefined,
+      contactId: opportunity.contactId ?? opportunity.contact?.id,
+      contactName,
+      assignedTo: opportunity.assignedTo,
+      source: opportunity.source,
+      createdAt: opportunity.createdAt ?? opportunity.dateAdded,
+      updatedAt: opportunity.updatedAt ?? opportunity.dateUpdated,
+    };
+  }
+
+  private normalizeOpportunityStatus(value: string | undefined): GhlOpportunityStatus {
+    const normalized = value?.trim().toLowerCase();
+    if (normalized === 'won' || normalized === 'lost' || normalized === 'abandoned') {
+      return normalized;
+    }
+    return 'open';
   }
 
   private getConfiguredScopes(): string[] {
@@ -1120,6 +1551,16 @@ export class GhlService {
     );
   }
 
+  private hasOpportunityScopes(scopes: string[] | undefined): boolean {
+    if (!scopes?.length) return false;
+    return this.normalizeScopes(scopes).some(
+      (scope) =>
+        scope === 'opportunities.readonly' ||
+        scope === 'opportunities.write' ||
+        scope.startsWith('opportunities.'),
+    );
+  }
+
   private calendarReconnectMessage(): string {
     return (
       'Your GoHighLevel connection does not include calendar access. ' +
@@ -1128,10 +1569,33 @@ export class GhlService {
     );
   }
 
-  private throwGhlHttpError(status: number, text: string): never {
+  private opportunityReconnectMessage(): string {
+    return (
+      'Your GoHighLevel connection does not include opportunities access. ' +
+      'Go to Profile → Settings → Reconnect GoHighLevel so the app can request opportunity scopes. ' +
+      'Ensure backend GHL_SCOPES includes opportunities.readonly and opportunities.write, then restart the server.'
+    );
+  }
+
+  private async requireOpportunityScopes(userId: string): Promise<void> {
+    const row = await this.prisma.integrationConnection.findUnique({
+      where: { userId_provider: { userId, provider: CrmProvider.GHL } },
+    });
+    if (!row || !row.enabled) {
+      throw new ForbiddenException('GHL is not connected');
+    }
+    if (!this.hasOpportunityScopes(row.scopes)) {
+      throw new BadRequestException(this.opportunityReconnectMessage());
+    }
+  }
+
+  private throwGhlHttpError(status: number, text: string, path?: string): never {
     const message = this.extractGhlError(text);
     if (status === 401 && /not authorized for this scope/i.test(message)) {
-      throw new ForbiddenException(this.calendarReconnectMessage());
+      throw new ForbiddenException(this.scopeMismatchMessage(path));
+    }
+    if (status === 403 && /scope/i.test(message)) {
+      throw new ForbiddenException(this.scopeMismatchMessage(path));
     }
     if (status === 401) {
       throw new UnauthorizedException('GHL session expired — please reconnect in Profile');
@@ -1142,6 +1606,41 @@ export class GhlService {
       );
     }
     throw new BadRequestException(`GHL API error (${status}): ${message}`);
+  }
+
+  /**
+   * Picks the right "reconnect with these scopes" message based on which API
+   * surface the failing request hit. GHL returns the same generic "not
+   * authorized for this scope" error for every kind of scope mismatch, so the
+   * path is the only signal we have.
+   */
+  private scopeMismatchMessage(path?: string): string {
+    if (!path) return this.genericReconnectMessage();
+    if (/^\/opportunities(\b|\/|\?)/.test(path) || /pipelines/i.test(path)) {
+      return this.opportunityReconnectMessage();
+    }
+    if (/^\/calendars(\b|\/|\?)/.test(path)) {
+      return this.calendarReconnectMessage();
+    }
+    if (/^\/contacts(\b|\/|\?)/.test(path)) {
+      return this.contactsReconnectMessage();
+    }
+    return this.genericReconnectMessage();
+  }
+
+  private contactsReconnectMessage(): string {
+    return (
+      'Your GoHighLevel connection does not include contact access. ' +
+      'Go to Profile → Settings → Reconnect GoHighLevel so the app can request contact scopes. ' +
+      'Ensure backend GHL_SCOPES includes contacts.readonly and contacts.write, then restart the server.'
+    );
+  }
+
+  private genericReconnectMessage(): string {
+    return (
+      'Your GoHighLevel connection is missing a scope this action needs. ' +
+      'Go to Profile → Settings → Reconnect GoHighLevel and approve all the requested permissions, then try again.'
+    );
   }
 
   private extractGhlError(text: string): string {

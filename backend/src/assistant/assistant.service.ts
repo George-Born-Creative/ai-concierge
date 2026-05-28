@@ -1,10 +1,24 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AssistantMessageSource, AssistantMessageStatus, Prisma } from '@prisma/client';
 
+import { ConversationService } from '../conversation/conversation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VoiceService } from '../voice/voice.service';
 import { AssistantCommandService } from './assistant-command.service';
-import type { AssistantSessionContext } from './assistant.types';
+import {
+  isFollowUpAnswer,
+  isPendingIntentValid,
+  isPositiveConfirmation,
+  isSkipAnswer,
+  looksLikeQuestion,
+  parseMonetaryAnswer,
+} from './assistant-command.helpers';
+import type {
+  AssistantCommandResult,
+  AssistantSessionContext,
+  PendingIntent,
+  VoiceIntentPayload,
+} from './assistant.types';
 import { RunAssistantCommandDto } from './dto/run-command.dto';
 
 const HISTORY_LIMIT = 15;
@@ -15,6 +29,7 @@ export class AssistantService {
     private readonly prisma: PrismaService,
     private readonly commands: AssistantCommandService,
     private readonly voice: VoiceService,
+    private readonly conversation: ConversationService,
   ) {}
 
   async listConversations(userId: string) {
@@ -122,49 +137,271 @@ export class AssistantService {
       .map((m) => ({ command: m.command, response: m.response }));
 
     const sessionContext = (conversation.context as AssistantSessionContext | null) ?? {};
+    const pending2 = isPendingIntentValid(sessionContext.pendingIntent ?? null)
+      ? sessionContext.pendingIntent ?? null
+      : null;
+
+    // The user might be (a) answering a pending question, (b) asking a brand-new
+    // CRM action, or (c) just chatting / asking a tangent question. We resolve
+    // those three paths in that priority order.
+    const tangent = pending2 ? looksLikeQuestion(text) : false;
 
     let intent = dto.intent;
-    if (!intent) {
+    const synthesized =
+      pending2 && !tangent ? this.synthesizePendingIntent(pending2, text) : null;
+    if (synthesized) {
+      intent = synthesized;
+    } else if (!tangent && !intent) {
       try {
         intent = await this.voice.interpretWithContext(userId, text, historyTurns, sessionContext);
       } catch {
-        // Command service will use heuristics.
+        // Command service will use heuristics or we'll route to chat below.
       }
     }
 
-    const result = await this.commands.execute(userId, text, intent, sessionContext);
+    // Route: actionable intent → executor; otherwise → conversational chat.
+    const hasActionableIntent = !!intent && intent.intent !== 'unknown';
+    let result: AssistantCommandResult;
+    if (!tangent && hasActionableIntent) {
+      result = await this.commands.execute(userId, text, intent, sessionContext);
+    } else {
+      result = await this.respondConversationally(userId, text, historyTurns, pending2, intent);
+    }
 
     const status =
       result.status === 'error'
         ? AssistantMessageStatus.error
         : AssistantMessageStatus.success;
 
-    const updated = await this.prisma.assistantMessage.update({
-      where: { id: pending.id },
-      data: {
-        response: result.response,
-        status,
-        intent: result.intent ? (result.intent as object) : undefined,
-        pending: false,
-      },
-    });
+    // The pending row could have been deleted while we were calling the LLM /
+    // GHL (e.g. user cleared the conversation mid-flight). Update if possible;
+    // otherwise recreate the message so the user still sees a reply.
+    const updateData = {
+      response: result.response,
+      status,
+      intent: result.intent ? (result.intent as object) : undefined,
+      pending: false,
+    };
+    let updated: Awaited<ReturnType<typeof this.prisma.assistantMessage.update>>;
+    try {
+      updated = await this.prisma.assistantMessage.update({
+        where: { id: pending.id },
+        data: updateData,
+      });
+    } catch (err) {
+      if (!this.isMissingRecordError(err)) throw err;
+      const stillExists = await this.prisma.assistantConversation.findFirst({
+        where: { id: conversationId, userId },
+      });
+      if (!stillExists) {
+        // Both the pending row AND the conversation were deleted. Return a
+        // transient reply so the client doesn't get a 500.
+        return this.buildTransientMessageDto(pending.id, text, result, source, dto);
+      }
+      updated = await this.prisma.assistantMessage.create({
+        data: {
+          conversationId,
+          command: text,
+          source,
+          transcript: dto.transcript,
+          voiceUri: dto.voiceUri,
+          ...updateData,
+        },
+      });
+    }
 
     const contextPatch = result.contextPatch ?? {};
-    const mergedContext = { ...sessionContext, ...contextPatch };
+    const mergedContext: AssistantSessionContext = { ...sessionContext, ...contextPatch };
+    if (result.pendingIntent) {
+      mergedContext.pendingIntent = result.pendingIntent;
+    } else if (result.clearPendingIntent) {
+      mergedContext.pendingIntent = null;
+    } else if (result.status === 'success' && !result.preservePendingIntent) {
+      mergedContext.pendingIntent = null;
+    }
     const title =
       conversation.title ??
       (text.length > 60 ? `${text.slice(0, 57)}…` : text);
 
-    await this.prisma.assistantConversation.update({
-      where: { id: conversationId },
-      data: {
-        title: conversation.title ? conversation.title : title,
-        context: mergedContext as Prisma.InputJsonValue,
-        updatedAt: new Date(),
-      },
-    });
+    try {
+      await this.prisma.assistantConversation.update({
+        where: { id: conversationId },
+        data: {
+          title: conversation.title ? conversation.title : title,
+          context: mergedContext as Prisma.InputJsonValue,
+          updatedAt: new Date(),
+        },
+      });
+    } catch (err) {
+      if (!this.isMissingRecordError(err)) throw err;
+      // Conversation was deleted — nothing left to update. Reply is already
+      // built; let the response flow back to the client.
+    }
 
     return this.toMessageDto(updated);
+  }
+
+  private isMissingRecordError(err: unknown): boolean {
+    return (
+      err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025'
+    );
+  }
+
+  private buildTransientMessageDto(
+    id: string,
+    text: string,
+    result: AssistantCommandResult,
+    source: AssistantMessageSource,
+    dto: RunAssistantCommandDto,
+  ) {
+    return this.toMessageDto({
+      id,
+      command: text,
+      response: result.response,
+      status:
+        result.status === 'error'
+          ? AssistantMessageStatus.error
+          : AssistantMessageStatus.success,
+      source,
+      transcript: dto.transcript ?? null,
+      intent: result.intent ?? null,
+      voiceUri: dto.voiceUri ?? null,
+      pending: false,
+      createdAt: new Date(),
+    });
+  }
+
+  /**
+   * Conversational fallback: produce a natural reply via ChatGPT. Preserves an
+   * in-flight pending intent so a tangent doesn't drop the user's workflow.
+   */
+  private async respondConversationally(
+    userId: string,
+    text: string,
+    historyTurns: { command: string; response: string }[],
+    pending: PendingIntent | null,
+    intent: VoiceIntentPayload | undefined,
+  ): Promise<AssistantCommandResult> {
+    // Flatten the prior turns into role-based messages for the chat completion.
+    const chatHistory = historyTurns.flatMap((turn) => [
+      { role: 'user' as const, content: turn.command },
+      { role: 'assistant' as const, content: turn.response },
+    ]);
+
+    try {
+      const reply = await this.conversation.respond({
+        userId,
+        userMessage: text,
+        history: chatHistory,
+        pendingIntent: pending,
+      });
+      return {
+        response: reply,
+        status: 'success',
+        intent,
+        preservePendingIntent: true,
+      };
+    } catch {
+      return {
+        response: pending?.question
+          ? `I'm here. We were on: ${pending.question}`
+          : "I'm here — what would you like to do?",
+        status: 'success',
+        intent,
+        preservePendingIntent: true,
+      };
+    }
+  }
+
+  /**
+   * Given a live pending task and the latest user message, build an intent
+   * payload that re-runs the same intent with the new field filled in. Returns
+   * null when the message doesn't look like a follow-up answer (e.g. user
+   * started a brand-new command), so the LLM is given the chance to take over.
+   */
+  private synthesizePendingIntent(
+    pending: PendingIntent,
+    text: string,
+  ): VoiceIntentPayload | null {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+
+    const merged = { ...pending.entities };
+    const nextMissing = pending.missing[0];
+
+    // Positive confirmation with nothing left to gather → just re-run.
+    if (isPositiveConfirmation(trimmed) && pending.missing.length === 0) {
+      return {
+        intent: pending.intent,
+        confidence: 0.95,
+        entities: merged,
+        needs_clarification: false,
+        notes: null,
+      };
+    }
+
+    // Treat short, non-command replies as the answer to the pending question.
+    if (!isFollowUpAnswer(trimmed)) return null;
+    if (!nextMissing) {
+      // No specific field expected but it looks like a follow-up — just re-run.
+      return {
+        intent: pending.intent,
+        confidence: 0.85,
+        entities: merged,
+        needs_clarification: false,
+        notes: null,
+      };
+    }
+
+    switch (nextMissing) {
+      case 'name':
+      case 'opportunityName':
+        merged.name = trimmed;
+        break;
+      case 'pipelineName':
+      case 'pipelineId':
+        merged.pipelineName = trimmed;
+        // The new name supersedes any prior pipelineId guess.
+        delete merged.pipelineId;
+        break;
+      case 'pipelineStageName':
+      case 'pipelineStageId':
+        merged.pipelineStageName = trimmed;
+        break;
+      case 'contactName':
+        merged.contactName = trimmed;
+        delete merged.contactId;
+        break;
+      case 'monetaryValue': {
+        const parsed = parseMonetaryAnswer(trimmed);
+        if (parsed === 'skip') {
+          merged.monetaryValueSkipped = true;
+          delete merged.monetaryValue;
+        } else if (parsed === null) {
+          // Couldn't read it — let the executor re-ask the same question.
+          return null;
+        } else {
+          merged.monetaryValue = parsed;
+          delete merged.monetaryValueSkipped;
+        }
+        break;
+      }
+      default:
+        // Generic string slot.
+        if (isSkipAnswer(trimmed)) {
+          // leave as-is; executor will skip this optional field
+        } else {
+          merged[nextMissing] = trimmed;
+        }
+    }
+
+    return {
+      intent: pending.intent,
+      confidence: 0.95,
+      entities: merged,
+      needs_clarification: false,
+      notes: null,
+    };
   }
 
   private async requireConversation(userId: string, conversationId: string) {

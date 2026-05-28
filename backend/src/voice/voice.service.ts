@@ -33,9 +33,15 @@ const SUPPORTED_INTENTS = [
   'list_appointments',
   'create_appointment',
   'cancel_appointment',
+  'list_pipelines',
+  'list_opportunities',
+  'find_opportunity',
+  'create_opportunity',
+  'update_opportunity',
+  'update_opportunity_status',
+  'delete_opportunity',
   'create_note',
   'create_task',
-  'create_opportunity',
   'create_deal',
   'log_call',
   'unknown',
@@ -91,6 +97,13 @@ Intent examples (informal → intent):
 - "what's on my calendar", "any meetings tomorrow", "show upcoming appointments" → list_appointments
 - "book Sarah tomorrow at 2pm", "schedule a call with Mike Friday at 10", "set up a meeting with John" → create_appointment
 - "cancel Sarah's appointment", "remove tomorrow's meeting with Mike" → cancel_appointment
+- "what pipelines do I have", "show my sales pipelines" → list_pipelines
+- "show my opportunities", "list open deals", "what's in the Sales pipeline" → list_opportunities
+- "find the website redesign opportunity", "look up John's deal" → find_opportunity
+- "create an opportunity called Website Redesign for John Smith worth 2500 in Sales Pipeline", "add a deal worth $2500 for John", "put Website Redesign into Sales Pipeline", "create a sales opportunity for John Smith" → create_opportunity
+- "rename the Acme deal", "update opportunity Website Redesign to 3500", "move the John deal to Negotiation stage" → update_opportunity
+- "mark the Acme deal won", "set the Website Redesign opportunity to lost", "move that opportunity to abandoned" → update_opportunity_status
+- "delete the Acme opportunity", "remove the John Smith deal" → delete_opportunity
 
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
@@ -103,6 +116,13 @@ Entity rules:
 - list_appointments: optional "startTime" / "endTime" as ISO 8601, or "days" as number of days ahead (default 14).
 - create_appointment: "contactName" or "name", "title", "calendarName" if mentioned, "startTime" as ISO 8601 (infer from spoken date/time), optional "endTime" or "durationMinutes" (default 30).
 - cancel_appointment: "query", "contactName", "title", and/or "startTime" to identify the booking.
+- list_opportunities: optional "pipelineName"/"pipelineId", "pipelineStageName"/"pipelineStageId", "status" (open/won/lost/abandoned/all), "contactName"/"contactId", "query", "limit".
+- find_opportunity: put the search target in "query" — the user's words (deal/opportunity name, contact mentioned, or phrase). Optional "pipelineName".
+- create_opportunity: "contactName" or "contactId" (REQUIRED — GHL won't accept an opportunity without a contact; extract from "for X", "with X", "X's deal"), "name" (the opportunity title — usually the phrase after "called"/"named", or the noun phrase the user is creating), "pipelineName" or "pipelineId" (the pipeline the deal lives in, REQUIRED), optional "pipelineStageName"/"pipelineStageId", optional "monetaryValue" (number — extract from "worth 2500", "5000 dollars", "$2.5k"; ALSO accept obvious typos / mishearings like "wars 2500", "wort 2500", "wert 2500" as monetary value), optional "status" (default "open"), optional "assignedTo", optional "source". When some required fields are missing, still emit intent "create_opportunity" with the fields you have AND set needs_clarification = true asking ONE specific missing field.
+- update_opportunity: "opportunityId"/"opportunityName"/"query" to identify which; plus any of "name", "pipelineName"/"pipelineId", "pipelineStageName"/"pipelineStageId", "status", "monetaryValue", "assignedTo", "source".
+- update_opportunity_status: "opportunityId"/"opportunityName"/"query" to identify; "status" required (open/won/lost/abandoned); optional "lostReasonId" when status is "lost".
+- delete_opportunity: "opportunityId"/"opportunityName"/"query".
+- For any opportunity intent that refers to "it" / "that deal" / "the opportunity", reuse lastOpportunityId/lastOpportunityName/lastPipelineId/lastPipelineName from session context.
 - Normalize phone to digits with optional leading +.
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
@@ -110,9 +130,11 @@ Entity rules:
 - Never invent details the user did not say.
 
 Conversation context (when provided):
-- Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them").
-- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId when the user refers to "that" or "them".
-- If the latest message is a follow-up, merge missing entities from session context rather than asking again.
+- Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them", "that deal", "it").
+- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName when the user refers to "that" / "them" / "it".
+- If session context has a "pendingIntent" object, the backend is in the middle of collecting fields for it. Treat the latest user message as the answer to "pendingIntent.missing[0]" (the next missing field) and re-emit the SAME intent name with all previous entities plus the new piece. Do NOT switch intents.
+- If the latest message is a short follow-up answer (e.g. "Sales", "$2500", "tomorrow at 2", "John Smith", "yes", "sure", "go ahead", "do it"), look at the LAST assistant turn — if it was a clarification question, re-emit the ORIGINAL intent (e.g. create_opportunity) with all previously known entities PLUS the new piece of information the user just provided. Do not ask the same question again, and do not switch intents.
+- Treat "yes", "yeah", "yep", "sure", "ok", "okay", "right", "correct", "proceed", "continue", "go ahead", "do it", "sounds good" as positive confirmation of the most recent proposed action — re-emit that action's intent with all known entities and needs_clarification = false.
 - Still set needs_clarification when a required field cannot be inferred from history or session.`;
 
 export type ConversationHistoryTurn = {
@@ -120,7 +142,7 @@ export type ConversationHistoryTurn = {
   response: string;
 };
 
-export type SessionContextPayload = Record<string, string | undefined>;
+export type SessionContextPayload = Record<string, unknown>;
 
 @Injectable()
 export class VoiceService {

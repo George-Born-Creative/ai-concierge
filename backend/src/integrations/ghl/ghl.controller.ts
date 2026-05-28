@@ -22,8 +22,12 @@ import { CreateGhlContactDto } from './dto/create-contact.dto';
 import { CalendarFreeSlotsQueryDto } from './dto/calendar-free-slots.query.dto';
 import { CreateGhlAppointmentDto } from './dto/create-appointment.dto';
 import { CreateGhlCalendarDto } from './dto/create-calendar.dto';
+import { CreateGhlOpportunityDto } from './dto/create-opportunity.dto';
 import { ListCalendarEventsQueryDto } from './dto/list-calendar-events.query.dto';
+import { ListGhlOpportunitiesQueryDto } from './dto/list-opportunities.query.dto';
 import { UpdateGhlCalendarDto } from './dto/update-calendar.dto';
+import { UpdateGhlOpportunityDto } from './dto/update-opportunity.dto';
+import { UpdateGhlOpportunityStatusDto } from './dto/update-opportunity-status.dto';
 import { ListContactsQueryDto } from './dto/list-contacts.query.dto';
 import {
   handleGhlOAuthCallback,
@@ -201,5 +205,76 @@ export class GhlController {
     @Param('id') eventId: string,
   ) {
     return this.ghl.cancelAppointment(user.id, eventId);
+  }
+
+  @Get('pipelines')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  listPipelines(@CurrentUser() user: AuthenticatedUser) {
+    return this.ghl.listPipelines(user.id);
+  }
+
+  @Get('opportunities')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  listOpportunities(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListGhlOpportunitiesQueryDto,
+  ) {
+    return this.ghl.listOpportunities(user.id, query);
+  }
+
+  @Post('opportunities')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  createOpportunity(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateGhlOpportunityDto,
+  ) {
+    return this.ghl.createOpportunity(user.id, body);
+  }
+
+  @Put('opportunities/:id/status')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  updateOpportunityStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') opportunityId: string,
+    @Body() body: UpdateGhlOpportunityStatusDto,
+  ) {
+    return this.ghl.updateOpportunityStatus(
+      user.id,
+      opportunityId,
+      body.status,
+      body.lostReasonId,
+    );
+  }
+
+  @Get('opportunities/:id')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  getOpportunity(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') opportunityId: string,
+  ) {
+    return this.ghl.getOpportunity(user.id, opportunityId);
+  }
+
+  @Put('opportunities/:id')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  updateOpportunity(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') opportunityId: string,
+    @Body() body: UpdateGhlOpportunityDto,
+  ) {
+    return this.ghl.updateOpportunity(user.id, opportunityId, body);
+  }
+
+  @Delete('opportunities/:id')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  deleteOpportunity(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') opportunityId: string,
+  ) {
+    return this.ghl.deleteOpportunity(user.id, opportunityId);
   }
 }
