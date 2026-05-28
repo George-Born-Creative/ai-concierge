@@ -1,5 +1,9 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 
+import type {
+  GhlOpportunitySummary,
+  GhlPipelineSummary,
+} from '../integrations/ghl/ghl.service';
 import { GhlService } from '../integrations/ghl/ghl.service';
 import {
   extractAppointmentCancelQuery,
@@ -10,14 +14,20 @@ import {
   extractCalendarUpdateDetails,
   extractCreateDetails,
   extractFreeSlotsDetails,
+  extractOpportunityCreateDetails,
+  extractOpportunityListDetails,
+  extractOpportunityQuery,
+  extractOpportunityStatusDetails,
+  extractOpportunityUpdateDetails,
   extractSearchQuery,
   mergeSessionIntoEntities,
-  shouldRunIntent
+  pendingIntentExpiry,
+  shouldRunIntent,
 } from './assistant-command.helpers';
 import type {
   AssistantCommandResult,
   AssistantSessionContext,
-  VoiceIntentPayload,
+  VoiceIntentPayload
 } from './assistant.types';
 
 @Injectable()
@@ -97,6 +107,32 @@ export class AssistantCommandService {
         return this.createAppointmentFromDetails(userId, extractAppointmentDetails(intent.entities));
       case 'cancel_appointment':
         return this.cancelAppointmentByQuery(userId, extractAppointmentCancelQuery(intent.entities));
+      case 'list_pipelines':
+        return this.listPipelines(userId);
+      case 'list_opportunities':
+        return this.listOpportunitiesFromDetails(
+          userId,
+          extractOpportunityListDetails(intent.entities),
+        );
+      case 'find_opportunity':
+        return this.findOpportunityByQuery(userId, extractOpportunityQuery(intent.entities));
+      case 'create_opportunity':
+        return this.createOpportunityFromDetails(
+          userId,
+          extractOpportunityCreateDetails(intent.entities),
+        );
+      case 'update_opportunity':
+        return this.updateOpportunityFromDetails(
+          userId,
+          extractOpportunityUpdateDetails(intent.entities),
+        );
+      case 'update_opportunity_status':
+        return this.updateOpportunityStatusFromDetails(
+          userId,
+          extractOpportunityStatusDetails(intent.entities),
+        );
+      case 'delete_opportunity':
+        return this.deleteOpportunityByQuery(userId, extractOpportunityQuery(intent.entities));
       default:
         return null;
     }
@@ -113,9 +149,18 @@ export class AssistantCommandService {
     if (/\b(contacts?|people|leads|clients)\b/.test(lower) && /\b(list|show|pull up|get|see|recent|latest|my|all|who)\b/.test(lower)) {
       return this.listLatestContacts(userId);
     }
+    if (/\bpipelines?\b/.test(lower) && /\b(list|show|what|my|which|got)\b/.test(lower)) {
+      return this.listPipelines(userId);
+    }
+    if (/\b(opportunit(y|ies)|deals?)\b/.test(lower) && /\b(list|show|what|my|recent|open|won|lost)\b/.test(lower)) {
+      return this.listOpportunitiesFromDetails(
+        userId,
+        extractOpportunityListDetails({ limit: 10 }),
+      );
+    }
     return {
       response:
-        'I can handle contacts and calendars in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", or "book Sarah tomorrow at 2pm".',
+        'I can handle contacts, calendars, appointments, and opportunities in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", "book Sarah tomorrow at 2pm", "show my pipelines", or "create an opportunity Website Redesign for John Smith worth 2500 in Sales".',
       status: 'error',
     };
   }
@@ -373,6 +418,553 @@ export class AssistantCommandService {
     };
   }
 
+  // ── Opportunities & pipelines ──────────────────────────────────────────────
+
+  private async listPipelines(userId: string): Promise<AssistantCommandResult> {
+    const { pipelines } = await this.ghl.listPipelines(userId);
+    if (pipelines.length === 0) {
+      return {
+        response: "You don't have any pipelines set up in GoHighLevel yet.",
+        status: 'success',
+        clearPendingIntent: true,
+      };
+    }
+    return {
+      response: `Your pipelines:\n${pipelines.map((p) => this.formatPipeline(p)).join('\n')}`,
+      status: 'success',
+      contextPatch: { lastPipelineId: pipelines[0].id, lastPipelineName: pipelines[0].name },
+      clearPendingIntent: true,
+    };
+  }
+
+  private async listOpportunitiesFromDetails(
+    userId: string,
+    details: ReturnType<typeof extractOpportunityListDetails>,
+  ): Promise<AssistantCommandResult> {
+    const { pipelineId, pipelineName } = await this.resolvePipelineRef(
+      userId,
+      details.pipelineId,
+      details.pipelineName,
+    );
+    const pipelineStageId = await this.resolvePipelineStageId(
+      userId,
+      pipelineId,
+      details.pipelineStageId,
+      details.pipelineStageName,
+    );
+
+    const contactId =
+      details.contactId ||
+      (details.contactName ? await this.tryResolveContactId(userId, details.contactName) : undefined);
+
+    const result = await this.ghl.listOpportunities(userId, {
+      pipelineId,
+      pipelineStageId,
+      contactId,
+      status: details.status,
+      query: details.query,
+      limit: details.limit ?? 10,
+    });
+
+    if (result.opportunities.length === 0) {
+      return {
+        response: pipelineName
+          ? `No opportunities in "${pipelineName}".`
+          : 'No opportunities matched.',
+        status: 'success',
+        clearPendingIntent: true,
+      };
+    }
+    const top = result.opportunities[0];
+    return {
+      response: `Opportunities:\n${result.opportunities
+        .slice(0, 10)
+        .map((o) => this.formatOpportunity(o))
+        .join('\n')}`,
+      status: 'success',
+      contextPatch: this.opportunityContextPatch(top, pipelineName),
+      clearPendingIntent: true,
+    };
+  }
+
+  private async findOpportunityByQuery(
+    userId: string,
+    query: string,
+  ): Promise<AssistantCommandResult> {
+    if (!query.trim()) {
+      return {
+        response: 'Which opportunity? Give me a name or part of it.',
+        status: 'error',
+      };
+    }
+    const matches = await this.findMatchingOpportunities(userId, query);
+    if (matches.length === 0) {
+      return { response: `No opportunity matches "${query}".`, status: 'error' };
+    }
+    const top = matches[0];
+    return {
+      response:
+        matches.length === 1
+          ? `Found it:\n${this.formatOpportunity(top)}`
+          : `Found ${matches.length} matches:\n${matches.slice(0, 5).map((o) => this.formatOpportunity(o)).join('\n')}`,
+      status: 'success',
+      contextPatch: this.opportunityContextPatch(top),
+      clearPendingIntent: true,
+    };
+  }
+
+  /**
+   * Multi-turn create flow.
+   * Required, asked in order: name → monetaryValue → pipelineName.
+   * When a field is missing, returns a pendingIntent so the next user message
+   * is interpreted as the answer to that specific question — without losing
+   * the entities we already have.
+   */
+  private async createOpportunityFromDetails(
+    userId: string,
+    details: ReturnType<typeof extractOpportunityCreateDetails>,
+  ): Promise<AssistantCommandResult> {
+    const knownEntities: Record<string, string | number | boolean | null> = {};
+    if (details.name?.trim()) knownEntities.name = details.name.trim();
+    if (details.pipelineId?.trim()) knownEntities.pipelineId = details.pipelineId.trim();
+    if (details.pipelineName?.trim()) knownEntities.pipelineName = details.pipelineName.trim();
+    if (details.pipelineStageId?.trim())
+      knownEntities.pipelineStageId = details.pipelineStageId.trim();
+    if (details.pipelineStageName?.trim())
+      knownEntities.pipelineStageName = details.pipelineStageName.trim();
+    if (details.contactId?.trim()) knownEntities.contactId = details.contactId.trim();
+    if (details.contactName?.trim()) knownEntities.contactName = details.contactName.trim();
+    if (typeof details.monetaryValue === 'number') knownEntities.monetaryValue = details.monetaryValue;
+    if (details.monetaryValueSkipped) knownEntities.monetaryValueSkipped = true;
+    if (details.status) knownEntities.status = details.status;
+    if (details.assignedTo?.trim()) knownEntities.assignedTo = details.assignedTo.trim();
+    if (details.source?.trim()) knownEntities.source = details.source.trim();
+
+    // Field gather order — change here to reorder the conversational flow.
+    // contactName comes first because GHL requires a contactId on opportunity
+    // create and we resolve contactId from the name.
+    const requiredOrder: Array<'contact' | 'name' | 'monetaryValue' | 'pipeline'> = [
+      'contact',
+      'name',
+      'monetaryValue',
+      'pipeline',
+    ];
+    const missing: string[] = [];
+    for (const field of requiredOrder) {
+      if (field === 'contact' && !knownEntities.contactId && !knownEntities.contactName) {
+        missing.push('contactName');
+      }
+      if (field === 'name' && !knownEntities.name) missing.push('name');
+      if (
+        field === 'monetaryValue' &&
+        typeof knownEntities.monetaryValue !== 'number' &&
+        !knownEntities.monetaryValueSkipped
+      ) {
+        missing.push('monetaryValue');
+      }
+      if (field === 'pipeline' && !knownEntities.pipelineId && !knownEntities.pipelineName) {
+        missing.push('pipelineName');
+      }
+    }
+
+    if (missing.length > 0) {
+      const next = missing[0];
+      const question = this.questionForField(next, knownEntities);
+      return {
+        response: question,
+        status: 'error',
+        pendingIntent: {
+          intent: 'create_opportunity',
+          entities: knownEntities,
+          missing,
+          question,
+          expiresAt: pendingIntentExpiry(),
+        },
+      };
+    }
+
+    // All required info collected — resolve and create.
+    const resolvedPipeline = await this.resolvePipelineRef(
+      userId,
+      typeof knownEntities.pipelineId === 'string' ? knownEntities.pipelineId : undefined,
+      typeof knownEntities.pipelineName === 'string' ? knownEntities.pipelineName : undefined,
+    );
+    if (!resolvedPipeline.pipelineId) {
+      // Pipeline name didn't match anything — list options and re-ask.
+      const { pipelines } = await this.ghl.listPipelines(userId);
+      if (pipelines.length === 0) {
+        return {
+          response:
+            'No pipelines in GoHighLevel yet — create one in the GHL dashboard before adding opportunities.',
+          status: 'error',
+          clearPendingIntent: true,
+        };
+      }
+      const names = pipelines.map((p) => `· ${p.name}`).join('\n');
+      const stillKnown = { ...knownEntities };
+      delete stillKnown.pipelineId;
+      delete stillKnown.pipelineName;
+      const question = `I couldn't find a pipeline matching "${knownEntities.pipelineName ?? ''}". Which one should I use?\n${names}`;
+      return {
+        response: question,
+        status: 'error',
+        pendingIntent: {
+          intent: 'create_opportunity',
+          entities: stillKnown,
+          missing: ['pipelineName'],
+          question,
+          expiresAt: pendingIntentExpiry(),
+        },
+      };
+    }
+
+    const pipelineStageId = await this.resolvePipelineStageId(
+      userId,
+      resolvedPipeline.pipelineId,
+      typeof knownEntities.pipelineStageId === 'string' ? knownEntities.pipelineStageId : undefined,
+      typeof knownEntities.pipelineStageName === 'string'
+        ? knownEntities.pipelineStageName
+        : undefined,
+    );
+
+    let contactId =
+      typeof knownEntities.contactId === 'string' ? knownEntities.contactId : undefined;
+    if (!contactId && typeof knownEntities.contactName === 'string') {
+      contactId = await this.tryResolveContactId(userId, knownEntities.contactName);
+    }
+    if (!contactId) {
+      // GHL requires a contactId — re-ask with a clearer prompt rather than
+      // letting GHL reject the request with its 422.
+      const stillKnown = { ...knownEntities };
+      delete stillKnown.contactId;
+      const givenName =
+        typeof knownEntities.contactName === 'string' ? knownEntities.contactName : '';
+      const question = givenName
+        ? `I couldn't find a contact matching "${givenName}". Give me a full name, phone, or email — or say "create new contact ${givenName}" first.`
+        : 'Who is the opportunity for? Give me a contact name, phone, or email.';
+      // Drop the unmatched contactName so the next reply replaces it.
+      delete stillKnown.contactName;
+      return {
+        response: question,
+        status: 'error',
+        pendingIntent: {
+          intent: 'create_opportunity',
+          entities: stillKnown,
+          missing: ['contactName'],
+          question,
+          expiresAt: pendingIntentExpiry(),
+        },
+      };
+    }
+
+    const created = await this.ghl.createOpportunity(userId, {
+      pipelineId: resolvedPipeline.pipelineId,
+      pipelineStageId,
+      name: String(knownEntities.name),
+      status:
+        typeof knownEntities.status === 'string'
+          ? (knownEntities.status as 'open' | 'won' | 'lost' | 'abandoned')
+          : undefined,
+      monetaryValue:
+        typeof knownEntities.monetaryValue === 'number' ? knownEntities.monetaryValue : undefined,
+      contactId,
+      assignedTo: typeof knownEntities.assignedTo === 'string' ? knownEntities.assignedTo : undefined,
+      source: typeof knownEntities.source === 'string' ? knownEntities.source : undefined,
+    });
+    // Preserve the resolved contactId on the summary so the success message
+    // can reference the contact even if GHL doesn't echo the name back.
+    if (!created.contactId) created.contactId = contactId;
+
+    const bits = [
+      created.contactName ? `for ${created.contactName}` : null,
+      typeof created.monetaryValue === 'number'
+        ? `worth ${this.formatMoney(created.monetaryValue)}`
+        : null,
+      resolvedPipeline.pipelineName ? `in ${resolvedPipeline.pipelineName}` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return {
+      response: `Created opportunity "${created.name}"${bits ? ` ${bits}` : ''}.`,
+      status: 'success',
+      contextPatch: this.opportunityContextPatch(created, resolvedPipeline.pipelineName),
+      clearPendingIntent: true,
+    };
+  }
+
+  private async updateOpportunityFromDetails(
+    userId: string,
+    details: ReturnType<typeof extractOpportunityUpdateDetails>,
+  ): Promise<AssistantCommandResult> {
+    const target = await this.resolveOpportunityTarget(userId, {
+      opportunityId: details.opportunityId,
+      opportunityName: details.opportunityName,
+      query: details.query,
+    });
+    if (target.kind === 'missing') return target.result;
+
+    const pipelineResolved = await this.resolvePipelineRef(
+      userId,
+      details.pipelineId,
+      details.pipelineName,
+    );
+    const pipelineStageId = await this.resolvePipelineStageId(
+      userId,
+      pipelineResolved.pipelineId ?? target.opportunity.pipelineId,
+      details.pipelineStageId,
+      details.pipelineStageName,
+    );
+
+    const updated = await this.ghl.updateOpportunity(userId, target.opportunity.id, {
+      name: details.name,
+      pipelineId: pipelineResolved.pipelineId,
+      pipelineStageId,
+      status: details.status,
+      monetaryValue: details.monetaryValue,
+      assignedTo: details.assignedTo,
+      source: details.source,
+    });
+
+    return {
+      response: `Updated "${updated.name}".`,
+      status: 'success',
+      contextPatch: this.opportunityContextPatch(updated, pipelineResolved.pipelineName),
+      clearPendingIntent: true,
+    };
+  }
+
+  private async updateOpportunityStatusFromDetails(
+    userId: string,
+    details: ReturnType<typeof extractOpportunityStatusDetails>,
+  ): Promise<AssistantCommandResult> {
+    if (!details.status) {
+      return {
+        response: 'What status? Use open, won, lost, or abandoned.',
+        status: 'error',
+      };
+    }
+    const target = await this.resolveOpportunityTarget(userId, {
+      opportunityId: details.opportunityId,
+      opportunityName: details.opportunityName,
+      query: details.query,
+    });
+    if (target.kind === 'missing') return target.result;
+
+    const updated = await this.ghl.updateOpportunityStatus(
+      userId,
+      target.opportunity.id,
+      details.status,
+      details.lostReasonId,
+    );
+
+    return {
+      response: `Marked "${updated.name}" as ${updated.status}.`,
+      status: 'success',
+      contextPatch: this.opportunityContextPatch(updated),
+      clearPendingIntent: true,
+    };
+  }
+
+  private async deleteOpportunityByQuery(
+    userId: string,
+    query: string,
+  ): Promise<AssistantCommandResult> {
+    if (!query.trim()) {
+      return {
+        response: 'Which opportunity should I remove? Give me a name.',
+        status: 'error',
+      };
+    }
+    const target = await this.resolveOpportunityTarget(userId, { query });
+    if (target.kind === 'missing') return target.result;
+
+    await this.ghl.deleteOpportunity(userId, target.opportunity.id);
+    return {
+      response: `Removed opportunity "${target.opportunity.name}".`,
+      status: 'success',
+      clearPendingIntent: true,
+    };
+  }
+
+  private questionForField(
+    field: string,
+    known: Record<string, string | number | boolean | null>,
+  ): string {
+    switch (field) {
+      case 'contactName':
+        return known.name
+          ? `Who is the opportunity "${known.name}" for? Give me a contact name, phone, or email.`
+          : 'Who is the opportunity for? Give me a contact name, phone, or email.';
+      case 'name':
+        return known.contactName
+          ? `What would you like to name the opportunity for ${known.contactName}?`
+          : 'What would you like to name the opportunity?';
+      case 'monetaryValue':
+        return known.name
+          ? `What's the value of "${known.name}"? (You can say a number, "$2500", "2.5k", or "skip".)`
+          : "What's the opportunity value? (You can say a number, \"$2500\", \"2.5k\", or \"skip\".)";
+      case 'pipelineName':
+      case 'pipelineId':
+        return known.name
+          ? `Which pipeline should I place "${known.name}" in?`
+          : 'Which pipeline should I place it in?';
+      default:
+        return `I still need: ${field}.`;
+    }
+  }
+
+  private async resolvePipelineRef(
+    userId: string,
+    pipelineId: string | undefined,
+    pipelineName: string | undefined,
+  ): Promise<{ pipelineId?: string; pipelineName?: string; pipeline?: GhlPipelineSummary }> {
+    if (pipelineId?.trim()) {
+      const { pipelines } = await this.ghl.listPipelines(userId);
+      const match = pipelines.find((p) => p.id === pipelineId.trim());
+      return {
+        pipelineId: pipelineId.trim(),
+        pipelineName: match?.name ?? pipelineName,
+        pipeline: match,
+      };
+    }
+    if (!pipelineName?.trim()) {
+      return {};
+    }
+    const { pipelines } = await this.ghl.listPipelines(userId);
+    if (pipelines.length === 0) {
+      return {};
+    }
+    const target = pipelineName.trim().toLowerCase();
+    const match =
+      pipelines.find((p) => p.name.toLowerCase() === target) ??
+      pipelines.find((p) => p.name.toLowerCase().includes(target));
+    return match
+      ? { pipelineId: match.id, pipelineName: match.name, pipeline: match }
+      : {};
+  }
+
+  private async resolvePipelineStageId(
+    userId: string,
+    pipelineId: string | undefined,
+    stageId: string | undefined,
+    stageName: string | undefined,
+  ): Promise<string | undefined> {
+    if (stageId?.trim()) return stageId.trim();
+    if (!stageName?.trim() || !pipelineId) return undefined;
+    const { pipelines } = await this.ghl.listPipelines(userId);
+    const pipeline = pipelines.find((p) => p.id === pipelineId);
+    if (!pipeline) return undefined;
+    const target = stageName.trim().toLowerCase();
+    const match =
+      pipeline.stages.find((s) => s.name.toLowerCase() === target) ??
+      pipeline.stages.find((s) => s.name.toLowerCase().includes(target));
+    return match?.id;
+  }
+
+  private async resolveOpportunityTarget(
+    userId: string,
+    input: { opportunityId?: string; opportunityName?: string; query?: string },
+  ): Promise<
+    | { kind: 'ok'; opportunity: GhlOpportunitySummary }
+    | { kind: 'missing'; result: AssistantCommandResult }
+  > {
+    if (input.opportunityId?.trim()) {
+      const opportunity = await this.ghl.getOpportunity(userId, input.opportunityId.trim());
+      return { kind: 'ok', opportunity };
+    }
+    const query = input.opportunityName?.trim() || input.query?.trim() || '';
+    if (!query) {
+      return {
+        kind: 'missing',
+        result: { response: 'Which opportunity? Give me a name.', status: 'error' },
+      };
+    }
+    const matches = await this.findMatchingOpportunities(userId, query);
+    if (matches.length === 0) {
+      return {
+        kind: 'missing',
+        result: { response: `No opportunity matches "${query}".`, status: 'error' },
+      };
+    }
+    if (matches.length > 1) {
+      return {
+        kind: 'missing',
+        result: {
+          response: `Which one?\n${matches.slice(0, 5).map((o) => this.formatOpportunity(o)).join('\n')}`,
+          status: 'error',
+        },
+      };
+    }
+    return { kind: 'ok', opportunity: matches[0] };
+  }
+
+  private async findMatchingOpportunities(
+    userId: string,
+    query: string,
+  ): Promise<GhlOpportunitySummary[]> {
+    const trimmed = query.trim();
+    const result = await this.ghl.listOpportunities(userId, {
+      query: trimmed,
+      limit: 20,
+    });
+    const normalized = this.normalizeSearch(trimmed);
+    const filtered = result.opportunities.filter((opp) => {
+      const haystack = this.normalizeSearch(
+        [opp.name, opp.contactName].filter(Boolean).join(' '),
+      );
+      return haystack.includes(normalized);
+    });
+    return filtered.length > 0 ? filtered : result.opportunities;
+  }
+
+  private async tryResolveContactId(
+    userId: string,
+    contactName: string,
+  ): Promise<string | undefined> {
+    const matches = await this.findMatchingContacts(userId, contactName);
+    return matches[0]?.id;
+  }
+
+  private opportunityContextPatch(
+    opportunity: GhlOpportunitySummary,
+    pipelineName?: string,
+  ): AssistantSessionContext {
+    return {
+      lastOpportunityId: opportunity.id,
+      lastOpportunityName: opportunity.name,
+      lastPipelineId: opportunity.pipelineId,
+      lastPipelineName: pipelineName ?? undefined,
+      lastPipelineStageId: opportunity.pipelineStageId,
+      lastContactId: opportunity.contactId,
+      lastContactName: opportunity.contactName,
+    };
+  }
+
+  private formatPipeline(pipeline: GhlPipelineSummary): string {
+    const stageNames = pipeline.stages.map((s) => s.name).slice(0, 4).join(', ');
+    return stageNames
+      ? `· ${pipeline.name} — stages: ${stageNames}${pipeline.stages.length > 4 ? ', …' : ''}`
+      : `· ${pipeline.name}`;
+  }
+
+  private formatOpportunity(opportunity: GhlOpportunitySummary): string {
+    const bits: string[] = [];
+    if (opportunity.contactName) bits.push(opportunity.contactName);
+    if (typeof opportunity.monetaryValue === 'number') {
+      bits.push(this.formatMoney(opportunity.monetaryValue));
+    }
+    if (opportunity.status) bits.push(opportunity.status);
+    if (opportunity.pipelineStageName) bits.push(opportunity.pipelineStageName);
+    const detail = bits.filter(Boolean).join(' · ');
+    return detail ? `· ${opportunity.name} — ${detail}` : `· ${opportunity.name}`;
+  }
+
+  private formatMoney(value: number): string {
+    if (!Number.isFinite(value)) return String(value);
+    return `$${value.toLocaleString('en-US')}`;
+  }
+
   private async findMatchingContacts(userId: string, query: string) {
     const result = await this.ghl.listContacts(userId, 20, query);
     const searchableQuery = this.normalizeSearch(query);
@@ -481,8 +1073,17 @@ export class AssistantCommandService {
   private ghlErrorMessage(error: unknown): string {
     if (error instanceof ForbiddenException) {
       const message = error.message;
-      if (/calendar access|calendar scopes/i.test(message)) return message;
-      return 'Hook up GoHighLevel in Profile first, then I can work with your contacts and calendar.';
+      // Anything that already looks like a friendly "reconnect with X scope"
+      // message should pass straight through — the service builds those per
+      // API surface (calendar / opportunities / contacts / generic scope).
+      if (
+        /calendar access|calendar scopes|opportunities access|opportunity scopes|contact access|contact scopes|missing a scope/i.test(
+          message,
+        )
+      ) {
+        return message;
+      }
+      return 'Hook up GoHighLevel in Profile first, then I can work with your contacts, calendar, and opportunities.';
     }
     if (error instanceof Error) return error.message;
     return 'Something went wrong while working with GoHighLevel.';
