@@ -5,6 +5,7 @@ import {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react';
 
@@ -92,6 +93,13 @@ type AssistantHistoryContextValue = {
     conversationId?: string,
   ) => Promise<AssistantHistoryEntry>;
   addVoiceMessage: (voiceUri: string, chatId?: string) => AssistantHistoryEntry;
+  /**
+   * Marks every pending message in the given chat as cancelled. The
+   * underlying network request keeps running (we can't abort GHL writes
+   * cleanly), but its eventual response is dropped so the UI stays as
+   * "Cancelled."
+   */
+  cancelPendingMessages: (chatId: string) => void;
 };
 
 const AssistantHistoryContext = createContext<AssistantHistoryContextValue | null>(null);
@@ -102,6 +110,10 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     activeChatId: null,
     loading: true,
   });
+  // Optimistic message ids that the user cancelled. We can't abort the
+  // server-side write cleanly, but we can drop the eventual response so the UI
+  // doesn't suddenly fill in the answer after the user said "stop".
+  const cancelledIdsRef = useRef<Set<string>>(new Set());
 
   const refreshChats = useCallback(async () => {
     const token = getToken();
@@ -266,6 +278,11 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
 
   const applyServerMessage = useCallback(
     (chatId: string, message: AssistantMessage, optimisticId?: string) => {
+      // If the user cancelled this optimistic message, drop the server reply.
+      if (optimisticId && cancelledIdsRef.current.has(optimisticId)) {
+        cancelledIdsRef.current.delete(optimisticId);
+        return null;
+      }
       const entry = mapMessage(message);
       setState((s) => {
         const chats = [...s.chats];
@@ -358,6 +375,10 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
 
       try {
         const result = await assistantApi.runCommand(chatId, { text: command, source });
+        if (cancelledIdsRef.current.has(optimisticId)) {
+          cancelledIdsRef.current.delete(optimisticId);
+          return { ...optimistic, response: 'Cancelled.', status: 'error' as const, pending: false };
+        }
         setState((s) => {
           const chats = s.chats.map((chat) => {
             if (chat.id !== chatId) return chat;
@@ -370,6 +391,10 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         });
         return mapMessage(result);
       } catch (err) {
+        if (cancelledIdsRef.current.has(optimisticId)) {
+          cancelledIdsRef.current.delete(optimisticId);
+          return { ...optimistic, response: 'Cancelled.', status: 'error' as const, pending: false };
+        }
         const response =
           err instanceof ApiError
             ? err.message
@@ -440,6 +465,10 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
 
         try {
           const transcribed = await voiceApi.transcribe(voiceUri);
+          if (cancelledIdsRef.current.has(optimisticId)) {
+            cancelledIdsRef.current.delete(optimisticId);
+            return;
+          }
           const transcript = transcribed.transcript?.trim() ?? '';
 
           if (!transcript) {
@@ -494,8 +523,16 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             voiceUri,
             intent: transcribed.intent,
           });
+          if (cancelledIdsRef.current.has(optimisticId)) {
+            cancelledIdsRef.current.delete(optimisticId);
+            return;
+          }
           applyServerMessage(convId, result, optimisticId);
         } catch (err) {
+          if (cancelledIdsRef.current.has(optimisticId)) {
+            cancelledIdsRef.current.delete(optimisticId);
+            return;
+          }
           const message =
             err instanceof ApiError
               ? err.message
@@ -525,6 +562,28 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     [appendOptimistic, applyServerMessage, ensureConversationId],
   );
 
+  const cancelPendingMessages = useCallback((chatId: string) => {
+    setState((s) => {
+      let touched = false;
+      const chats = s.chats.map((chat) => {
+        if (chat.id !== chatId) return chat;
+        const messages = chat.messages.map((m) => {
+          if (!m.pending) return m;
+          cancelledIdsRef.current.add(m.id);
+          touched = true;
+          return {
+            ...m,
+            response: 'Cancelled.',
+            status: 'error' as const,
+            pending: false,
+          };
+        });
+        return { ...chat, messages };
+      });
+      return touched ? { ...s, chats } : s;
+    });
+  }, []);
+
   const value = useMemo<AssistantHistoryContextValue>(
     () => ({
       chats: state.chats,
@@ -540,6 +599,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       refreshChats,
       runCommand,
       addVoiceMessage,
+      cancelPendingMessages,
     }),
     [
       state.chats,
@@ -555,6 +615,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       refreshChats,
       runCommand,
       addVoiceMessage,
+      cancelPendingMessages,
     ],
   );
 

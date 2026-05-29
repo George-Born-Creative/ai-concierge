@@ -36,6 +36,7 @@ export default function ChatScreen() {
     activeChatId,
     activeMessages,
     addVoiceMessage,
+    cancelPendingMessages,
     createChat,
     deleteMessage,
     openChat,
@@ -44,6 +45,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [voiceActivity, setVoiceActivity] = useState<ChatVoiceActivity>('idle');
+  const hasPendingMessage = isRunning || activeMessages.some((m) => m.pending);
   const commandHandledKey = useRef<string | null>(null);
   const voiceHandledKey = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -145,7 +147,7 @@ export default function ChatScreen() {
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>AI Concierge</Text>
-            <Text style={styles.title}>Contact chat</Text>
+            <Text style={styles.title}>Chat</Text>
           </View>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>D</Text>
@@ -167,10 +169,10 @@ export default function ChatScreen() {
                 <View style={[styles.dot, styles.yellowDot]} />
                 <View style={[styles.dot, styles.greenDot]} />
               </View>
-              <Text style={styles.heroTitle}>Ask me to manage contacts</Text>
+              <Text style={styles.heroTitle}>How can I help?</Text>
               <Text style={styles.heroText}>
-                I can list latest contacts, identify people, fetch a contact, create one, or delete
-                one.
+                Ask me about your contacts, calendar, appointments, pipelines, or opportunities —
+                or just chat.
               </Text>
             </View>
           ) : (
@@ -201,22 +203,31 @@ export default function ChatScreen() {
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder="Say or type a contact command"
+            placeholder="Say or type a command"
             placeholderTextColor="#80868B"
             style={styles.input}
             returnKeyType="send"
             onSubmitEditing={() => submitCommand(input)}
           />
-          <Pressable
-            style={[styles.sendButton, (!input.trim() || isRunning) && styles.disabledButton]}
-            onPress={() => submitCommand(input)}
-            disabled={!input.trim() || isRunning}>
-            {isRunning ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
+          {hasPendingMessage ? (
+            <Pressable
+              style={styles.stopButton}
+              onPress={() => {
+                const chatId = paramOne(params.conversationId) ?? activeChatId;
+                if (chatId) cancelPendingMessages(chatId);
+                setIsRunning(false);
+              }}
+              accessibilityLabel="Stop processing">
+              <MaterialIcons name="stop" size={22} color="#FFFFFF" />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.sendButton, !input.trim() && styles.disabledButton]}
+              onPress={() => submitCommand(input)}
+              disabled={!input.trim()}>
               <MaterialIcons name="send" size={22} color="#FFFFFF" />
-            )}
-          </Pressable>
+            </Pressable>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -253,6 +264,7 @@ function CommandBubble({
   onDelete?: () => void;
 }) {
   const userText = voiceUserText(entry);
+  const timeLabel = formatMessageTime(entry.createdAt);
 
   return (
     <Pressable
@@ -260,29 +272,43 @@ function CommandBubble({
       onLongPress={onDelete}
       delayLongPress={400}
       disabled={!onDelete || entry.pending}>
-      <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
-        <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
-        <Text style={styles.userText} selectable>
-          {userText}
-        </Text>
+      <View>
+        <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
+          <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
+          <Text style={styles.userText} selectable>
+            {userText}
+          </Text>
+        </View>
+        {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
       </View>
       {entry.pending ? (
-        <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
-          <View style={styles.pendingRow}>
-            <ActivityIndicator size="small" color="#1A73E8" />
-            <Text style={styles.pendingText}>{entry.response}</Text>
+        <View>
+          <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
+            <View style={styles.pendingRow}>
+              <ActivityIndicator size="small" color="#1A73E8" />
+              <Text style={styles.pendingText}>{entry.response}</Text>
+            </View>
           </View>
         </View>
       ) : (
-        <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
-          <Text style={styles.bubbleLabel}>Response</Text>
-          <Text style={styles.assistantText} selectable>
-            {entry.response}
-          </Text>
+        <View>
+          <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
+            <Text style={styles.bubbleLabel}>Response</Text>
+            <Text style={styles.assistantText} selectable>
+              {entry.response}
+            </Text>
+          </View>
+          {timeLabel ? <Text style={styles.assistantTimestamp}>{timeLabel}</Text> : null}
         </View>
       )}
     </Pressable>
   );
+}
+
+function formatMessageTime(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function voiceUserText(entry: AssistantHistoryEntry): string {
@@ -514,7 +540,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 48,
   },
+  stopButton: {
+    alignItems: 'center',
+    backgroundColor: '#EA4335',
+    borderRadius: 24,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
   disabledButton: {
     opacity: 0.45,
+  },
+  userTimestamp: {
+    alignSelf: 'flex-end',
+    color: '#80868B',
+    fontSize: 11,
+    marginTop: 4,
+    marginRight: 4,
+  },
+  assistantTimestamp: {
+    alignSelf: 'flex-start',
+    color: '#80868B',
+    fontSize: 11,
+    marginTop: 4,
+    marginLeft: 4,
   },
 });
