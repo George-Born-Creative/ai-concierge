@@ -212,6 +212,24 @@ export type AssistantConversationSummary = {
   updatedAt: string;
   messageCount: number;
   preview: string | null;
+  status: 'success' | 'error' | 'pending';
+  source: 'text' | 'voice' | null;
+};
+
+export type AssistantConversationBucketKey =
+  | 'today'
+  | 'yesterday'
+  | 'last7'
+  | 'older';
+
+export type AssistantConversationGroup = {
+  key: AssistantConversationBucketKey;
+  label: string;
+  conversations: AssistantConversationSummary[];
+};
+
+export type AssistantConversationGroupsResponse = {
+  groups: AssistantConversationGroup[];
 };
 
 export type AssistantMessage = {

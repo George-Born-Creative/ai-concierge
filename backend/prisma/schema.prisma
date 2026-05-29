@@ -134,6 +134,10 @@ model AssistantConversation {
   userId    String
   title     String?
   context   Json?
+  // Denormalised pointers to the latest message so the conversation list
+  // can render status / source icons without a JOIN per row.
+  lastMessageStatus AssistantMessageStatus?
+  lastMessageSource AssistantMessageSource?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

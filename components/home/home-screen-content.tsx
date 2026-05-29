@@ -1,25 +1,30 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 const featureCards = [
   {
     icon: 'record-voice-over',
     title: 'Voice commands',
     description: 'Hold the mic and ask AI-Concierge to handle contact tasks hands free.',
+    href: null,
   },
   {
     icon: 'contacts',
     title: 'Contact actions',
     description: 'List, identify, create, fetch, and delete contacts from one assistant flow.',
+    href: null,
   },
   {
     icon: 'history',
     title: 'Activity history',
-    description: 'Review previous commands and responses whenever you need context.',
+    description: 'Review previous chats grouped by Today, Yesterday, and earlier.',
+    href: '/chats',
   },
 ] as const;
 
 export function HomeScreenContent() {
+  const router = useRouter();
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.content}>
@@ -37,17 +42,40 @@ export function HomeScreenContent() {
         </Text>
 
         <View style={styles.cardsGrid}>
-          {featureCards.map((card) => (
-            <View key={card.title} style={styles.featureCard}>
-              <View style={styles.cardIcon}>
-                <MaterialIcons name={card.icon} size={24} color="#1A73E8" />
+          {featureCards.map((card) => {
+            const inner = (
+              <>
+                <View style={styles.cardIcon}>
+                  <MaterialIcons name={card.icon} size={24} color="#1A73E8" />
+                </View>
+                <View style={styles.cardCopy}>
+                  <Text style={styles.cardTitle}>{card.title}</Text>
+                  <Text style={styles.cardDescription}>{card.description}</Text>
+                </View>
+                {card.href ? (
+                  <MaterialIcons name="chevron-right" size={22} color="#BDC1C6" />
+                ) : null}
+              </>
+            );
+            if (card.href) {
+              return (
+                <Pressable
+                  key={card.title}
+                  style={({ pressed }) => [
+                    styles.featureCard,
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  onPress={() => router.push(card.href)}>
+                  {inner}
+                </Pressable>
+              );
+            }
+            return (
+              <View key={card.title} style={styles.featureCard}>
+                {inner}
               </View>
-              <View style={styles.cardCopy}>
-                <Text style={styles.cardTitle}>{card.title}</Text>
-                <Text style={styles.cardDescription}>{card.description}</Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </View>
     </SafeAreaView>

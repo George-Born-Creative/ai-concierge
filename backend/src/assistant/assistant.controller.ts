@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 
@@ -21,8 +22,11 @@ export class AssistantController {
   constructor(private readonly assistant: AssistantService) {}
 
   @Get('conversations')
-  listConversations(@CurrentUser() user: AuthenticatedUser) {
-    return this.assistant.listConversations(user.id);
+  listConversations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('tz') tz?: string,
+  ) {
+    return this.assistant.listConversations(user.id, tz);
   }
 
   @Post('conversations')

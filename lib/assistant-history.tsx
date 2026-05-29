@@ -11,7 +11,11 @@ import {
 
 import { assistantApi, voiceApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
-import type { AssistantMessage, VoiceIntent } from '@/lib/api/types';
+import type {
+  AssistantConversationBucketKey,
+  AssistantMessage,
+  VoiceIntent,
+} from '@/lib/api/types';
 import { getToken, subscribeSession } from '@/lib/session';
 
 export type AssistantCommandStatus = 'success' | 'error';
@@ -36,10 +40,21 @@ export type AssistantChat = {
   updatedAt: string;
   messages: AssistantHistoryEntry[];
   messageCount?: number;
+  preview?: string | null;
+  lastStatus?: 'success' | 'error' | 'pending';
+  lastSource?: 'text' | 'voice' | null;
+};
+
+export type AssistantChatGroup = {
+  key: AssistantConversationBucketKey;
+  label: string;
+  /** Conversation ids in this bucket, ordered most-recent first. */
+  conversationIds: string[];
 };
 
 type AssistantState = {
   chats: AssistantChat[];
+  groups: AssistantChatGroup[];
   activeChatId: string | null;
   loading: boolean;
 };
@@ -77,6 +92,7 @@ function mapConversation(conv: {
 
 type AssistantHistoryContextValue = {
   chats: AssistantChat[];
+  chatGroups: AssistantChatGroup[];
   activeChatId: string | null;
   activeMessages: AssistantHistoryEntry[];
   loading: boolean;
@@ -107,6 +123,7 @@ const AssistantHistoryContext = createContext<AssistantHistoryContextValue | nul
 export function AssistantHistoryProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<AssistantState>({
     chats: [],
+    groups: [],
     activeChatId: null,
     loading: true,
   });
@@ -118,34 +135,43 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
   const refreshChats = useCallback(async () => {
     const token = getToken();
     if (!token) {
-      setState({ chats: [], activeChatId: null, loading: false });
+      setState({ chats: [], groups: [], activeChatId: null, loading: false });
       return;
     }
 
     try {
-      const summaries = await assistantApi.listConversations();
+      const { groups } = await assistantApi.listConversations();
+      // Flatten preserving group order so the existing chat-by-id lookup keeps
+      // working without any callsite changes elsewhere.
+      const summaries = groups.flatMap((g) => g.conversations);
       setState((s) => {
         const existing = new Map(s.chats.map((chat) => [chat.id, chat]));
         const chats: AssistantChat[] = summaries.map((summary) => {
           const prior = existing.get(summary.id);
-          if (prior && prior.messages.length > 0) {
-            return {
-              ...prior,
-              title: summary.title,
-              updatedAt: summary.updatedAt,
-            };
-          }
-          return {
+          const base: AssistantChat = {
             id: summary.id,
             title: summary.title,
             createdAt: summary.createdAt,
             updatedAt: summary.updatedAt,
             messages: prior?.messages ?? [],
             messageCount: summary.messageCount,
+            preview: summary.preview,
+            lastStatus: summary.status,
+            lastSource: summary.source,
           };
+          if (prior && prior.messages.length > 0) {
+            return { ...base, messages: prior.messages };
+          }
+          return base;
         });
+        const chatGroups: AssistantChatGroup[] = groups.map((g) => ({
+          key: g.key,
+          label: g.label,
+          conversationIds: g.conversations.map((c) => c.id),
+        }));
         return {
           chats,
+          groups: chatGroups,
           activeChatId: s.activeChatId,
           loading: false,
         };
@@ -199,6 +225,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       messages: [],
     };
     setState((s) => ({
+      ...s,
       chats: [...s.chats, placeholder],
       activeChatId: placeholderId,
       loading: false,
@@ -212,7 +239,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           ? { ...chat, messages: row.messages, updatedAt: row.updatedAt }
           : row,
       );
-      return { chats, activeChatId: chat.id, loading: false };
+      return { ...s, chats, activeChatId: chat.id, loading: false };
     });
     return chat.id;
   }, []);
@@ -234,17 +261,23 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     await assistantApi.deleteConversation(chatId);
     setState((s) => {
       const chats = s.chats.filter((c) => c.id !== chatId);
+      const groups = s.groups
+        .map((g) => ({
+          ...g,
+          conversationIds: g.conversationIds.filter((id) => id !== chatId),
+        }))
+        .filter((g) => g.conversationIds.length > 0);
       let activeChatId = s.activeChatId;
       if (activeChatId === chatId) {
         activeChatId = chats[chats.length - 1]?.id ?? null;
       }
-      return { chats, activeChatId, loading: false };
+      return { ...s, chats, groups, activeChatId, loading: false };
     });
   }, []);
 
   const clearAllChats = useCallback(async () => {
     await assistantApi.clearConversations();
-    setState({ chats: [], activeChatId: null, loading: false });
+    setState({ chats: [], groups: [], activeChatId: null, loading: false });
   }, []);
 
   const deleteMessage = useCallback(async (chatId: string, messageId: string) => {
@@ -295,7 +328,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             updatedAt: entry.createdAt,
             messages: [entry],
           });
-          return { chats, activeChatId: chatId, loading: false };
+          return { ...s, chats, activeChatId: chatId, loading: false };
         }
 
         const chat = chats[idx];
@@ -314,7 +347,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           messages,
           updatedAt: entry.createdAt,
         };
-        return { chats, activeChatId: chatId, loading: false };
+        return { ...s, chats, activeChatId: chatId, loading: false };
       });
       return entry;
     },
@@ -333,7 +366,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           updatedAt: entry.createdAt,
           messages: [entry],
         });
-        return { chats, activeChatId: chatId, loading: false };
+        return { ...s, chats, activeChatId: chatId, loading: false };
       }
       const chat = chats[idx];
       chats[idx] = {
@@ -341,7 +374,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         messages: [...chat.messages, entry],
         updatedAt: entry.createdAt,
       };
-      return { chats, activeChatId: chatId, loading: false };
+      return { ...s, chats, activeChatId: chatId, loading: false };
     });
   }, []);
 
@@ -587,6 +620,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
   const value = useMemo<AssistantHistoryContextValue>(
     () => ({
       chats: state.chats,
+      chatGroups: state.groups,
       activeChatId: state.activeChatId,
       activeMessages,
       loading: state.loading,
@@ -603,6 +637,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     }),
     [
       state.chats,
+      state.groups,
       state.activeChatId,
       state.loading,
       activeMessages,

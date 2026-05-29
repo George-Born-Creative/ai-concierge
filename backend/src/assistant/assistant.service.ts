@@ -13,6 +13,12 @@ import {
   looksLikeQuestion,
   parseMonetaryAnswer,
 } from './assistant-command.helpers';
+import {
+  bucketByDate,
+  CONVERSATION_BUCKET_LABELS,
+  CONVERSATION_BUCKET_ORDER,
+  type ConversationBucketKey,
+} from './conversation-buckets';
 import type {
   AssistantCommandResult,
   AssistantSessionContext,
@@ -32,7 +38,7 @@ export class AssistantService {
     private readonly conversation: ConversationService,
   ) {}
 
-  async listConversations(userId: string) {
+  async listConversations(userId: string, timeZone?: string) {
     const rows = await this.prisma.assistantConversation.findMany({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
@@ -40,19 +46,47 @@ export class AssistantService {
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
+          select: { command: true, pending: true },
         },
         _count: { select: { messages: true } },
       },
     });
 
-    return rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-      messageCount: row._count.messages,
-      preview: row.messages[0]?.command ?? null,
-    }));
+    const summaries = rows.map((row) => {
+      const lastMessage = row.messages[0];
+      // status: 'pending' if there's a live in-flight message, otherwise the
+      // cached lastMessageStatus, falling back to 'success' for empty chats.
+      const status: 'success' | 'error' | 'pending' = lastMessage?.pending
+        ? 'pending'
+        : (row.lastMessageStatus ?? 'success');
+      return {
+        id: row.id,
+        title: row.title,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        messageCount: row._count.messages,
+        preview: trimPreview(lastMessage?.command ?? null),
+        status,
+        source: row.lastMessageSource ?? null,
+      };
+    });
+
+    const now = new Date();
+    const buckets = new Map<ConversationBucketKey, typeof summaries>();
+    for (const summary of summaries) {
+      const key = bucketByDate(new Date(summary.updatedAt), now, timeZone);
+      const existing = buckets.get(key);
+      if (existing) existing.push(summary);
+      else buckets.set(key, [summary]);
+    }
+
+    const groups = CONVERSATION_BUCKET_ORDER.flatMap((key) => {
+      const conversations = buckets.get(key);
+      if (!conversations || conversations.length === 0) return [];
+      return [{ key, label: CONVERSATION_BUCKET_LABELS[key], conversations }];
+    });
+
+    return { groups };
   }
 
   async createConversation(userId: string) {
@@ -98,7 +132,11 @@ export class AssistantService {
     });
     await this.prisma.assistantConversation.update({
       where: { id: conversationId },
-      data: { updatedAt: latest?.createdAt ?? new Date() },
+      data: {
+        updatedAt: latest?.createdAt ?? new Date(),
+        lastMessageStatus: latest?.status ?? null,
+        lastMessageSource: latest?.source ?? null,
+      },
     });
 
     return { ok: true as const };
@@ -121,6 +159,17 @@ export class AssistantService {
         pending: true,
       },
     });
+
+    // Reflect the pending row on the conversation so the chat list can show
+    // a "running" indicator immediately.
+    await this.prisma.assistantConversation
+      .update({
+        where: { id: conversationId },
+        data: { lastMessageStatus: null, lastMessageSource: source },
+      })
+      .catch((err) => {
+        if (!this.isMissingRecordError(err)) throw err;
+      });
 
     const history = await this.prisma.assistantMessage.findMany({
       where: {
@@ -230,6 +279,8 @@ export class AssistantService {
           title: conversation.title ? conversation.title : title,
           context: mergedContext as Prisma.InputJsonValue,
           updatedAt: new Date(),
+          lastMessageStatus: status,
+          lastMessageSource: source,
         },
       });
     } catch (err) {
@@ -463,4 +514,13 @@ export class AssistantService {
       createdAt: message.createdAt.toISOString(),
     };
   }
+}
+
+const PREVIEW_MAX = 140;
+function trimPreview(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length <= PREVIEW_MAX) return trimmed;
+  return `${trimmed.slice(0, PREVIEW_MAX - 1)}…`;
 }
