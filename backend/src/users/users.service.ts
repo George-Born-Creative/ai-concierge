@@ -1,5 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import * as argon2 from 'argon2';
 
+import { UpdateProfileDto } from '../auth/dto/update-profile.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -37,5 +45,66 @@ export class UsersService {
       hasOpenAIKey: Boolean(user.openaiKey),
       openAIKeyLast4: user.openaiKey?.last4 ?? null,
     };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const trimmedName = dto.name?.trim();
+    const normalizedEmail = dto.email?.trim().toLowerCase();
+    const newPassword = dto.newPassword;
+    const currentPassword = dto.currentPassword;
+
+    const hasNameChange = typeof trimmedName === 'string' && trimmedName.length > 0;
+    const hasEmailChange = typeof normalizedEmail === 'string' && normalizedEmail.length > 0;
+    const hasPasswordChange = typeof newPassword === 'string' && newPassword.length > 0;
+
+    if (!hasNameChange && !hasEmailChange && !hasPasswordChange) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const data: { name?: string; email?: string; passwordHash?: string } = {};
+
+    if (hasNameChange && trimmedName !== user.name) {
+      data.name = trimmedName;
+    }
+
+    if (hasEmailChange && normalizedEmail !== user.email.toLowerCase()) {
+      const collision = await this.prisma.user.findUnique({
+        where: { email: normalizedEmail },
+      });
+      if (collision && collision.id !== user.id) {
+        throw new ConflictException('Another account already uses that email');
+      }
+      data.email = normalizedEmail;
+    }
+
+    if (hasPasswordChange) {
+      if (!currentPassword) {
+        throw new BadRequestException('Current password is required to set a new one');
+      }
+      const valid = await argon2.verify(user.passwordHash, currentPassword);
+      if (!valid) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
+      const sameAsOld = await argon2
+        .verify(user.passwordHash, newPassword)
+        .catch(() => false);
+      if (sameAsOld) {
+        throw new BadRequestException('New password must be different from the current one');
+      }
+      data.passwordHash = await argon2.hash(newPassword);
+    }
+
+    if (Object.keys(data).length === 0) {
+      // All provided fields matched existing values — return current profile.
+      return this.getProfile(userId);
+    }
+
+    await this.prisma.user.update({ where: { id: userId }, data });
+    return this.getProfile(userId);
   }
 }

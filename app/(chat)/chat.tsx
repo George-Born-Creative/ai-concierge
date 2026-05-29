@@ -2,7 +2,6 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -20,6 +19,7 @@ import {
   ChatVoiceActivity,
   ChatVoiceWaveOverlay,
 } from '@/components/chat/chat-voice-wave-overlay';
+import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
 import { useToast } from '@/lib/toast';
 
@@ -36,14 +36,17 @@ export default function ChatScreen() {
     activeChatId,
     activeMessages,
     addVoiceMessage,
+    cancelPendingMessages,
     createChat,
     deleteMessage,
+    loading: historyLoading,
     openChat,
     runCommand,
   } = useAssistantHistory();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [voiceActivity, setVoiceActivity] = useState<ChatVoiceActivity>('idle');
+  const hasPendingMessage = isRunning || activeMessages.some((m) => m.pending);
   const commandHandledKey = useRef<string | null>(null);
   const voiceHandledKey = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -145,7 +148,7 @@ export default function ChatScreen() {
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>AI Concierge</Text>
-            <Text style={styles.title}>Contact chat</Text>
+            <Text style={styles.title}>Chat</Text>
           </View>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>D</Text>
@@ -159,7 +162,9 @@ export default function ChatScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={scrollToBottom}>
-          {activeMessages.length === 0 && !isRunning ? (
+          {historyLoading && activeMessages.length === 0 ? (
+            <ChatSkeleton />
+          ) : activeMessages.length === 0 && !isRunning ? (
             <View style={styles.heroCard}>
               <View style={styles.assistantMark}>
                 <View style={[styles.dot, styles.blueDot]} />
@@ -167,10 +172,10 @@ export default function ChatScreen() {
                 <View style={[styles.dot, styles.yellowDot]} />
                 <View style={[styles.dot, styles.greenDot]} />
               </View>
-              <Text style={styles.heroTitle}>Ask me to manage contacts</Text>
+              <Text style={styles.heroTitle}>How can I help?</Text>
               <Text style={styles.heroText}>
-                I can list latest contacts, identify people, fetch a contact, create one, or delete
-                one.
+                Ask me about your contacts, calendar, appointments, pipelines, or opportunities —
+                or just chat.
               </Text>
             </View>
           ) : (
@@ -201,22 +206,31 @@ export default function ChatScreen() {
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder="Say or type a contact command"
+            placeholder="Say or type a command"
             placeholderTextColor="#80868B"
             style={styles.input}
             returnKeyType="send"
             onSubmitEditing={() => submitCommand(input)}
           />
-          <Pressable
-            style={[styles.sendButton, (!input.trim() || isRunning) && styles.disabledButton]}
-            onPress={() => submitCommand(input)}
-            disabled={!input.trim() || isRunning}>
-            {isRunning ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
+          {hasPendingMessage ? (
+            <Pressable
+              style={styles.stopButton}
+              onPress={() => {
+                const chatId = paramOne(params.conversationId) ?? activeChatId;
+                if (chatId) cancelPendingMessages(chatId);
+                setIsRunning(false);
+              }}
+              accessibilityLabel="Stop processing">
+              <MaterialIcons name="stop" size={22} color="#FFFFFF" />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.sendButton, !input.trim() && styles.disabledButton]}
+              onPress={() => submitCommand(input)}
+              disabled={!input.trim()}>
               <MaterialIcons name="send" size={22} color="#FFFFFF" />
-            )}
-          </Pressable>
+            </Pressable>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -253,6 +267,7 @@ function CommandBubble({
   onDelete?: () => void;
 }) {
   const userText = voiceUserText(entry);
+  const timeLabel = formatMessageTime(entry.createdAt);
 
   return (
     <Pressable
@@ -260,29 +275,64 @@ function CommandBubble({
       onLongPress={onDelete}
       delayLongPress={400}
       disabled={!onDelete || entry.pending}>
-      <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
-        <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
-        <Text style={styles.userText} selectable>
-          {userText}
-        </Text>
+      <View>
+        <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
+          <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
+          <Text style={styles.userText} selectable>
+            {userText}
+          </Text>
+        </View>
+        {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
       </View>
       {entry.pending ? (
-        <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
-          <View style={styles.pendingRow}>
-            <ActivityIndicator size="small" color="#1A73E8" />
-            <Text style={styles.pendingText}>{entry.response}</Text>
+        <View>
+          <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
+            <Text style={styles.bubbleLabel}>{entry.response || 'Working on it…'}</Text>
+            <SkeletonLines lines={3} lineHeight={11} gap={8} lastLineWidth="55%" />
           </View>
         </View>
       ) : (
-        <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
-          <Text style={styles.bubbleLabel}>Response</Text>
-          <Text style={styles.assistantText} selectable>
-            {entry.response}
-          </Text>
+        <View>
+          <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
+            <Text style={styles.bubbleLabel}>Response</Text>
+            <Text style={styles.assistantText} selectable>
+              {entry.response}
+            </Text>
+          </View>
+          {timeLabel ? <Text style={styles.assistantTimestamp}>{timeLabel}</Text> : null}
         </View>
       )}
     </Pressable>
   );
+}
+
+function ChatSkeleton() {
+  return (
+    <View style={{ gap: 18 }}>
+      {[0, 1, 2].map((i) => (
+        <View key={i} style={styles.commandGroup}>
+          <View style={styles.skeletonUserBubble}>
+            <Skeleton width="70%" height={12} radius={6} style={{ backgroundColor: '#94B6F2' }} />
+            <Skeleton
+              width="45%"
+              height={12}
+              radius={6}
+              style={{ backgroundColor: '#94B6F2', marginTop: 8 }}
+            />
+          </View>
+          <View style={styles.skeletonAssistantBubble}>
+            <SkeletonLines lines={3} lineHeight={11} gap={8} lastLineWidth="60%" />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function formatMessageTime(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function voiceUserText(entry: AssistantHistoryEntry): string {
@@ -464,11 +514,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 23,
   },
-  pendingRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
   pendingUserBubble: {
     opacity: 0.95,
   },
@@ -476,11 +521,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFF',
     borderColor: '#D2E3FC',
   },
-  pendingText: {
-    color: '#5F6368',
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 22,
+  skeletonUserBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#1A73E8',
+    borderRadius: 14,
+    maxWidth: '70%',
+    minWidth: 180,
+    opacity: 0.85,
+    padding: 14,
+  },
+  skeletonAssistantBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E8EAED',
+    borderRadius: 14,
+    borderWidth: 1,
+    maxWidth: '85%',
+    minWidth: 220,
+    padding: 14,
   },
   assistantText: {
     color: '#202124',
@@ -514,7 +572,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 48,
   },
+  stopButton: {
+    alignItems: 'center',
+    backgroundColor: '#EA4335',
+    borderRadius: 24,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
   disabledButton: {
     opacity: 0.45,
+  },
+  userTimestamp: {
+    alignSelf: 'flex-end',
+    color: '#80868B',
+    fontSize: 11,
+    marginTop: 4,
+    marginRight: 4,
+  },
+  assistantTimestamp: {
+    alignSelf: 'flex-start',
+    color: '#80868B',
+    fontSize: 11,
+    marginTop: 4,
+    marginLeft: 4,
   },
 });

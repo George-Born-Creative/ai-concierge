@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
@@ -24,12 +25,17 @@ const assistantCapabilities = [
   {
     icon: 'contacts' as const,
     title: 'Contacts',
-    description: 'Create, identify, list, and delete contacts via voice or text.',
+    description: 'Create, identify, list, update, and delete contacts via voice or text.',
   },
   {
     icon: 'event-available' as const,
     title: 'Calendars & appointments',
     description: 'Browse calendars, list upcoming events, and book new appointments.',
+  },
+  {
+    icon: 'monetization-on' as const,
+    title: 'Opportunities & pipelines',
+    description: 'List pipelines, create and move opportunities across stages from a chat command.',
   },
   {
     icon: 'record-voice-over' as const,
@@ -39,11 +45,6 @@ const assistantCapabilities = [
 ];
 
 const upcomingFeatures = [
-  {
-    icon: 'monetization-on' as const,
-    title: 'Opportunities & pipelines',
-    description: 'Move deals across stages and create opportunities from a chat command.',
-  },
   {
     icon: 'auto-fix-high' as const,
     title: 'Workflows & automations',
@@ -195,7 +196,11 @@ export function ProfileScreenContent() {
           {/* Status pills directly under the profile image. */}
           <View style={styles.statusRow}>
             {loadingStatuses && !crmStatus && openAIConnected == null ? (
-              <ActivityIndicator size="small" color="#1A73E8" />
+              <>
+                <Skeleton width={140} height={26} radius={999} />
+                <Skeleton width={120} height={26} radius={999} />
+                <Skeleton width={90} height={26} radius={999} />
+              </>
             ) : (
               <>
                 <StatusPill
@@ -220,43 +225,53 @@ export function ProfileScreenContent() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Connections</Text>
 
-          <ConnectionRow
-            icon="hub"
-            title={crmLabel}
-            value={
-              crmStatus?.connected
-                ? crmStatus.detail ?? 'Connected — contacts & calendars enabled'
-                : 'Not connected — open Settings to connect'
-            }
-            statusLabel={crmStatus?.connected ? 'Connected' : 'Off'}
-            tone={crmStatus?.connected ? 'success' : 'muted'}
-          />
+          {loadingStatuses && !crmStatus && openAIConnected == null ? (
+            <>
+              <ConnectionRowSkeleton />
+              <ConnectionRowSkeleton />
+              <ConnectionRowSkeleton />
+            </>
+          ) : (
+            <>
+              <ConnectionRow
+                icon="hub"
+                title={crmLabel}
+                value={
+                  crmStatus?.connected
+                    ? crmStatus.detail ?? 'Connected — contacts & calendars enabled'
+                    : 'Not connected — open Settings to connect'
+                }
+                statusLabel={crmStatus?.connected ? 'Connected' : 'Off'}
+                tone={crmStatus?.connected ? 'success' : 'muted'}
+              />
 
-          <ConnectionRow
-            icon="vpn-key"
-            title="OpenAI API key"
-            value={
-              openAIConnected
-                ? openAIKeyLast4
-                  ? `Current key ···${openAIKeyLast4}`
-                  : 'Stored securely'
-                : 'Add a key to enable transcription & intent parsing'
-            }
-            statusLabel={openAIConnected ? 'Connected' : 'Not set'}
-            tone={openAIConnected ? 'success' : 'muted'}
-          />
+              <ConnectionRow
+                icon="vpn-key"
+                title="OpenAI API key"
+                value={
+                  openAIConnected
+                    ? openAIKeyLast4
+                      ? `Current key ···${openAIKeyLast4}`
+                      : 'Stored securely'
+                    : 'Add a key to enable transcription & intent parsing'
+                }
+                statusLabel={openAIConnected ? 'Connected' : 'Not set'}
+                tone={openAIConnected ? 'success' : 'muted'}
+              />
 
-          <ConnectionRow
-            icon="workspace-premium"
-            title="Subscription"
-            value={
-              user?.plan
-                ? `${user.plan.name} (${humanizePlanStatus(user.plan.status)})`
-                : 'No active plan — pick one in Plans'
-            }
-            statusLabel={user?.plan ? humanizePlanStatus(user.plan.status) : 'None'}
-            tone={user?.plan ? planTone(user.plan.status) : 'muted'}
-          />
+              <ConnectionRow
+                icon="workspace-premium"
+                title="Subscription"
+                value={
+                  user?.plan
+                    ? `${user.plan.name} (${humanizePlanStatus(user.plan.status)})`
+                    : 'No active plan — pick one in Plans'
+                }
+                statusLabel={user?.plan ? humanizePlanStatus(user.plan.status) : 'None'}
+                tone={user?.plan ? planTone(user.plan.status) : 'muted'}
+              />
+            </>
+          )}
         </View>
 
         {/* ── Assistant scope ───────────────────────────────────────────────── */}
@@ -399,6 +414,21 @@ function ConnectionRow({
           {statusLabel}
         </Text>
       </View>
+    </View>
+  );
+}
+
+function ConnectionRowSkeleton() {
+  return (
+    <View style={styles.connectionRow}>
+      <View style={styles.connectionIcon}>
+        <Skeleton width={22} height={22} radius={6} />
+      </View>
+      <View style={styles.capabilityCopy}>
+        <Skeleton width="55%" height={14} radius={6} />
+        <Skeleton width="85%" height={11} radius={6} style={{ marginTop: 8 }} />
+      </View>
+      <Skeleton width={56} height={22} radius={999} />
     </View>
   );
 }

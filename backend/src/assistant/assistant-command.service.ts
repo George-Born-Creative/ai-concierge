@@ -12,6 +12,7 @@ import {
   extractCalendarCreateDetails,
   extractCalendarQuery,
   extractCalendarUpdateDetails,
+  extractContactUpdateDetails,
   extractCreateDetails,
   extractFreeSlotsDetails,
   extractOpportunityCreateDetails,
@@ -87,6 +88,11 @@ export class AssistantCommandService {
         return this.findContactByQuery(userId, extractSearchQuery(intent.entities));
       case 'create_contact':
         return this.createContactFromDetails(userId, extractCreateDetails(intent.entities));
+      case 'update_contact':
+        return this.updateContactFromDetails(
+          userId,
+          extractContactUpdateDetails(intent.entities),
+        );
       case 'delete_contact':
         return this.deleteContactByQuery(userId, extractSearchQuery(intent.entities));
       case 'list_calendars':
@@ -223,6 +229,78 @@ export class AssistantCommandService {
       response: `Added ${created.name}${bits ? ` (${bits})` : ''} to GoHighLevel.`,
       status: 'success',
       contextPatch: { lastContactId: created.id, lastContactName: created.name },
+    };
+  }
+
+  private async updateContactFromDetails(
+    userId: string,
+    details: ReturnType<typeof extractContactUpdateDetails>,
+  ): Promise<AssistantCommandResult> {
+    // Resolve which contact to update.
+    //
+    // IMPORTANT: an explicit name in the user's message ALWAYS wins over a
+    // contactId carried over from session context (the previous turn's
+    // `lastContactId`). Otherwise saying "update Jordan Smith" right after
+    // looking at "Random Contact" would update Random Contact.
+    //
+    // Only fall back to the session contactId when the user gave no name at
+    // all (e.g. follow-up like "update their phone to ...").
+    const query = details.query?.trim();
+    let contactId: string | undefined;
+    let resolvedName: string | undefined;
+
+    if (query) {
+      const matches = await this.findMatchingContacts(userId, query);
+      if (matches.length === 0) {
+        return { response: `No contact matches "${query}".`, status: 'error' };
+      }
+      if (matches.length > 1) {
+        return {
+          response: `Which one should I update?\n${matches.slice(0, 5).map((c) => this.formatContact(c)).join('\n')}`,
+          status: 'error',
+        };
+      }
+      contactId = matches[0].id;
+      resolvedName = matches[0].name;
+    } else if (details.contactId) {
+      contactId = details.contactId;
+    } else {
+      return {
+        response: 'Who should I update? Give me a name, phone, or email.',
+        status: 'error',
+      };
+    }
+
+    // Build the patch from the "new*" fields the LLM extracted.
+    const patch: {
+      firstName?: string;
+      lastName?: string;
+      name?: string;
+      phone?: string;
+      email?: string;
+    } = {};
+    if (details.newFirstName) patch.firstName = details.newFirstName;
+    if (details.newLastName) patch.lastName = details.newLastName;
+    if (details.newName) patch.name = details.newName;
+    if (details.newPhone) patch.phone = details.newPhone;
+    if (details.newEmail) patch.email = details.newEmail;
+
+    if (Object.keys(patch).length === 0) {
+      return {
+        response: `What should I update on ${resolvedName ?? 'this contact'}? (phone, email, or name)`,
+        status: 'error',
+      };
+    }
+
+    const updated = await this.ghl.updateContact(userId, contactId, patch);
+    const changed = Object.entries(patch)
+      .map(([k, v]) => `${k} → ${v}`)
+      .join(', ');
+    return {
+      response: `Updated ${updated.name} (${changed}).`,
+      status: 'success',
+      contextPatch: { lastContactId: updated.id, lastContactName: updated.name },
+      clearPendingIntent: true,
     };
   }
 

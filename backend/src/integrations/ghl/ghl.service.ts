@@ -487,6 +487,47 @@ export class GhlService {
     return { ok: true };
   }
 
+  async updateContact(
+    userId: string,
+    contactId: string,
+    input: {
+      firstName?: string;
+      lastName?: string;
+      name?: string;
+      email?: string;
+      phone?: string;
+    },
+  ): Promise<GhlContactSummary> {
+    if (!contactId?.trim()) {
+      throw new BadRequestException('contactId is required');
+    }
+    const body: Record<string, string> = {};
+    if (input.firstName?.trim()) body.firstName = input.firstName.trim();
+    if (input.lastName?.trim()) body.lastName = input.lastName.trim();
+    if (input.name?.trim()) body.name = input.name.trim();
+    if (input.email?.trim()) body.email = input.email.trim();
+    if (input.phone?.trim()) body.phone = input.phone.trim();
+    if (Object.keys(body).length === 0) {
+      throw new BadRequestException('Nothing to update — give me a field like phone, email, or name.');
+    }
+
+    const raw = await this.ghlRequest<{ contact?: GhlRawContact } & GhlRawContact>(
+      userId,
+      'PUT',
+      `/contacts/${contactId.trim()}`,
+      body,
+    );
+    const contact = raw.contact ?? raw;
+    if (!contact?.id) {
+      throw new BadRequestException('GHL did not return the updated contact');
+    }
+    await this.audit(userId, 'ghl.contact.update', 'success', {
+      contactId,
+      fields: Object.keys(body),
+    });
+    return this.toContactSummary(contact);
+  }
+
   // ── Calendars (GHL) ───────────────────────────────────────────────────────────
 
   async listCalendars(userId: string): Promise<GhlCalendarsListResult> {

@@ -242,6 +242,25 @@ export function extractCreateDetails(
   };
 }
 
+export function extractContactUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    contactId: entityString(entities, 'contactId', 'contact_id'),
+    // The thing we're searching for. We deliberately do NOT use the new
+    // first/last/email/phone values here — those are the values we want to
+    // SET, not the search target.
+    query:
+      entityString(entities, 'query', 'contactName', 'contact_name') ||
+      buildNameFromEntities(entities),
+    newName: entityString(entities, 'newName', 'new_name'),
+    newFirstName: entityString(entities, 'newFirstName', 'new_first_name'),
+    newLastName: entityString(entities, 'newLastName', 'new_last_name'),
+    newPhone: entityString(entities, 'newPhone', 'new_phone', 'phone'),
+    newEmail: entityString(entities, 'newEmail', 'new_email', 'email')?.toLowerCase(),
+  };
+}
+
 const OPPORTUNITY_STATUSES = ['open', 'won', 'lost', 'abandoned'] as const;
 export type OpportunityStatus = (typeof OPPORTUNITY_STATUSES)[number];
 const OPPORTUNITY_STATUS_FILTERS = ['open', 'won', 'lost', 'abandoned', 'all'] as const;
@@ -426,6 +445,7 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'list_contacts',
     'find_contact',
     'create_contact',
+    'update_contact',
     'delete_contact',
     'list_calendars',
     'get_calendar',
