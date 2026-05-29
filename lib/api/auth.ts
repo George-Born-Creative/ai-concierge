@@ -24,3 +24,17 @@ export async function signOut(): Promise<void> {
 export async function getMe(): Promise<User> {
   return apiRequest<User>('/auth/me');
 }
+
+export type UpdateProfileRequest = {
+  name?: string;
+  email?: string;
+  currentPassword?: string;
+  newPassword?: string;
+};
+
+export async function updateMe(data: UpdateProfileRequest): Promise<User> {
+  return apiRequest<User>('/auth/me', {
+    method: 'PATCH',
+    body: data,
+  });
+}

@@ -2,7 +2,6 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -20,6 +19,7 @@ import {
   ChatVoiceActivity,
   ChatVoiceWaveOverlay,
 } from '@/components/chat/chat-voice-wave-overlay';
+import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
 import { useToast } from '@/lib/toast';
 
@@ -39,6 +39,7 @@ export default function ChatScreen() {
     cancelPendingMessages,
     createChat,
     deleteMessage,
+    loading: historyLoading,
     openChat,
     runCommand,
   } = useAssistantHistory();
@@ -161,7 +162,9 @@ export default function ChatScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={scrollToBottom}>
-          {activeMessages.length === 0 && !isRunning ? (
+          {historyLoading && activeMessages.length === 0 ? (
+            <ChatSkeleton />
+          ) : activeMessages.length === 0 && !isRunning ? (
             <View style={styles.heroCard}>
               <View style={styles.assistantMark}>
                 <View style={[styles.dot, styles.blueDot]} />
@@ -284,10 +287,8 @@ function CommandBubble({
       {entry.pending ? (
         <View>
           <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
-            <View style={styles.pendingRow}>
-              <ActivityIndicator size="small" color="#1A73E8" />
-              <Text style={styles.pendingText}>{entry.response}</Text>
-            </View>
+            <Text style={styles.bubbleLabel}>{entry.response || 'Working on it…'}</Text>
+            <SkeletonLines lines={3} lineHeight={11} gap={8} lastLineWidth="55%" />
           </View>
         </View>
       ) : (
@@ -302,6 +303,29 @@ function CommandBubble({
         </View>
       )}
     </Pressable>
+  );
+}
+
+function ChatSkeleton() {
+  return (
+    <View style={{ gap: 18 }}>
+      {[0, 1, 2].map((i) => (
+        <View key={i} style={styles.commandGroup}>
+          <View style={styles.skeletonUserBubble}>
+            <Skeleton width="70%" height={12} radius={6} style={{ backgroundColor: '#94B6F2' }} />
+            <Skeleton
+              width="45%"
+              height={12}
+              radius={6}
+              style={{ backgroundColor: '#94B6F2', marginTop: 8 }}
+            />
+          </View>
+          <View style={styles.skeletonAssistantBubble}>
+            <SkeletonLines lines={3} lineHeight={11} gap={8} lastLineWidth="60%" />
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -490,11 +514,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 23,
   },
-  pendingRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-  },
   pendingUserBubble: {
     opacity: 0.95,
   },
@@ -502,11 +521,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFF',
     borderColor: '#D2E3FC',
   },
-  pendingText: {
-    color: '#5F6368',
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 22,
+  skeletonUserBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#1A73E8',
+    borderRadius: 14,
+    maxWidth: '70%',
+    minWidth: 180,
+    opacity: 0.85,
+    padding: 14,
+  },
+  skeletonAssistantBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E8EAED',
+    borderRadius: 14,
+    borderWidth: 1,
+    maxWidth: '85%',
+    minWidth: 220,
+    padding: 14,
   },
   assistantText: {
     color: '#202124',

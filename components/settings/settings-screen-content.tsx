@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ghlApi, openaiApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import type { GhlStatusResponse, OpenAIKeyStatus } from '@/lib/api/types';
@@ -129,265 +130,430 @@ export function SettingsScreenContent() {
     <SafeAreaView style={styles.screen}>
       <PageHeader title="Settings" showBack onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.subtitle}>
-          Manage your CRM connection, OpenAI key, and assistant preferences.
+        {/* ── Account group ─────────────────────────────────────────────────── */}
+        <SectionLabel>Account</SectionLabel>
+        <Group>
+          <Row
+            icon="person"
+            iconBg="#E8F0FE"
+            iconColor="#1A73E8"
+            title="Edit profile"
+            subtitle={currentUser?.name ?? currentUser?.email ?? 'Update your name, email, or password'}
+            onPress={() => router.push('/edit-profile')}
+          />
+          <Divider />
+          <Row
+            icon="vpn-key"
+            iconBg="#E8F0FE"
+            iconColor="#1A73E8"
+            title="OpenAI API key"
+            subtitle={
+              loadingOpenai
+                ? 'Checking…'
+                : hasOpenaiKey
+                  ? openaiStatus?.last4
+                    ? `Connected · ···${openaiStatus.last4}`
+                    : 'Connected'
+                  : 'Add a key to enable transcription & intent parsing'
+            }
+            right={
+              loadingOpenai ? (
+                <Skeleton width={56} height={20} radius={999} />
+              ) : (
+                <StatusPill
+                  label={hasOpenaiKey ? 'Connected' : 'Not set'}
+                  tone={hasOpenaiKey ? 'success' : 'muted'}
+                />
+              )
+            }
+            onPress={handleManageOpenaiKey}
+          />
+        </Group>
+        {openaiStatus?.quotaWarning ? (
+          <InfoBanner
+            tone="warning"
+            icon="warning"
+            text="This OpenAI key looks low on quota. Rotate to a fresh key to keep voice commands working."
+          />
+        ) : null}
+
+        {/* ── Integrations group ────────────────────────────────────────────── */}
+        <SectionLabel>Integrations</SectionLabel>
+        <Group>
+          <Row
+            icon="hub"
+            iconBg="#E8F0FE"
+            iconColor="#1A73E8"
+            title="GoHighLevel"
+            subtitle={
+              loadingStatus
+                ? 'Checking…'
+                : connected
+                  ? status?.locationId
+                    ? `Location ${status.locationId}`
+                    : 'Contacts, calendar & opportunities enabled'
+                  : 'Tap to connect your account'
+            }
+            right={
+              loadingStatus ? (
+                <Skeleton width={70} height={20} radius={999} />
+              ) : (
+                <StatusPill
+                  label={connected ? 'Connected' : 'Not connected'}
+                  tone={connected ? 'success' : 'muted'}
+                />
+              )
+            }
+            onPress={() => void handleReconnect()}
+            disabled={submitting || loadingStatus}
+            showChevron={false}
+          />
+          <Divider />
+          <Row
+            icon="swap-horiz"
+            iconBg="#E8F0FE"
+            iconColor="#1A73E8"
+            title="CRM provider"
+            subtitle="Switch between GoHighLevel and HubSpot"
+            right={
+              <Text style={styles.rowValue} numberOfLines={1}>
+                {crmProviderLabel}
+              </Text>
+            }
+            onPress={handleSwitchCrm}
+          />
+        </Group>
+
+        {connected && status?.calendarScopesGranted === false ? (
+          <InfoBanner
+            tone="warning"
+            icon="warning"
+            text="Calendar scopes are missing on this token. Tap Reconnect to approve calendar access."
+          />
+        ) : connected && calendarReady && !loadingStatus ? null : null}
+
+        {/* ── Integration actions ───────────────────────────────────────────── */}
+        <View style={styles.actionStack}>
+          <Pressable
+            style={[styles.primaryButton, submitting && styles.buttonDisabled]}
+            onPress={() => void handleReconnect()}
+            disabled={submitting || loadingStatus}>
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                {connected ? 'Reconnect GoHighLevel' : 'Connect GoHighLevel'}
+              </Text>
+            )}
+          </Pressable>
+
+          {connected ? (
+            <Pressable
+              style={[styles.dangerButton, submitting && styles.buttonDisabled]}
+              onPress={() => void handleDisconnect()}
+              disabled={submitting || loadingStatus}>
+              <Text style={styles.dangerButtonText}>Disconnect</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        <Text style={styles.helpText}>
+          Reconnect after enabling new scopes in the GHL Marketplace (for example Calendars or
+          Opportunities). This clears the old token and opens the authorisation screen again.
         </Text>
 
-        {/* ── GoHighLevel ─────────────────────────────────────────────────── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialIcons name="hub" size={28} color="#1A73E8" />
-            <View style={styles.cardCopy}>
-              <Text style={styles.cardTitle}>GoHighLevel</Text>
-              {loadingStatus ? (
-                <ActivityIndicator size="small" color="#1A73E8" style={styles.inlineSpinner} />
-              ) : (
-                <Text style={[styles.statusText, connected ? styles.statusOn : styles.statusOff]}>
-                  {connected ? 'Connected' : 'Not connected'}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          {connected && status?.locationId ? (
-            <Text style={styles.detailText}>Location {status.locationId}</Text>
-          ) : null}
-
-          {connected && status?.calendarScopesGranted === false ? (
-            <View style={styles.warningBox}>
-              <MaterialIcons name="warning" size={20} color="#E37400" />
-              <Text style={styles.warningText}>
-                Calendar scopes are missing on this token. Tap Reconnect to approve calendar access.
-              </Text>
-            </View>
-          ) : null}
-
-          {connected && calendarReady ? (
-            <Text style={styles.detailText}>Contacts and calendar access are enabled.</Text>
-          ) : null}
-
-          <View style={styles.actions}>
-            <Pressable
-              style={[styles.primaryButton, submitting && styles.buttonDisabled]}
-              onPress={() => void handleReconnect()}
-              disabled={submitting || loadingStatus}>
-              {submitting ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {connected ? 'Reconnect GoHighLevel' : 'Connect GoHighLevel'}
-                </Text>
-              )}
-            </Pressable>
-
-            {connected ? (
-              <Pressable
-                style={[styles.secondaryButton, submitting && styles.buttonDisabled]}
-                onPress={() => void handleDisconnect()}
-                disabled={submitting || loadingStatus}>
-                <Text style={styles.secondaryButtonText}>Disconnect</Text>
-              </Pressable>
-            ) : null}
-          </View>
-
-          <Text style={styles.helpText}>
-            Reconnect after enabling new scopes in the GHL Marketplace (for example Calendars).
-            This clears the old token and opens the authorization screen again.
-          </Text>
-        </View>
-
-        {/* ── OpenAI key ──────────────────────────────────────────────────── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialIcons name="vpn-key" size={28} color="#1A73E8" />
-            <View style={styles.cardCopy}>
-              <Text style={styles.cardTitle}>OpenAI API key</Text>
-              {loadingOpenai ? (
-                <ActivityIndicator size="small" color="#1A73E8" style={styles.inlineSpinner} />
-              ) : (
-                <Text
-                  style={[styles.statusText, hasOpenaiKey ? styles.statusOn : styles.statusOff]}>
-                  {hasOpenaiKey ? 'Connected' : 'Not set'}
-                </Text>
-              )}
-            </View>
-          </View>
-
-          {hasOpenaiKey && openaiStatus?.last4 ? (
-            <Text style={styles.detailText}>Current key ···{openaiStatus.last4}</Text>
-          ) : (
-            <Text style={styles.detailText}>
-              Add a personal key to enable voice transcription and intent parsing.
-            </Text>
-          )}
-
-          {openaiStatus?.quotaWarning ? (
-            <View style={styles.warningBox}>
-              <MaterialIcons name="warning" size={20} color="#E37400" />
-              <Text style={styles.warningText}>
-                This key looks low on quota. Rotate to a fresh key to keep voice commands working.
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.actions}>
-            <Pressable style={styles.primaryButton} onPress={handleManageOpenaiKey}>
-              <Text style={styles.primaryButtonText}>
-                {hasOpenaiKey ? 'Rotate OpenAI key' : 'Add OpenAI key'}
-              </Text>
-            </Pressable>
-          </View>
-
-          <Text style={styles.helpText}>
-            Your key is stored encrypted on the server and only used for your transcriptions.
-          </Text>
-        </View>
-
-        {/* ── Switch CRM ──────────────────────────────────────────────────── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialIcons name="swap-horiz" size={28} color="#1A73E8" />
-            <View style={styles.cardCopy}>
-              <Text style={styles.cardTitle}>CRM provider</Text>
-              <Text style={[styles.statusText, styles.statusOn]}>{crmProviderLabel}</Text>
-            </View>
-          </View>
-
-          <Text style={styles.detailText}>
-            Switch between GoHighLevel and HubSpot. The assistant will use the active provider
-            for all contact, calendar, and (soon) opportunity commands.
-          </Text>
-
-          <View style={styles.actions}>
-            <Pressable style={styles.secondaryNeutralButton} onPress={handleSwitchCrm}>
-              <Text style={styles.secondaryNeutralButtonText}>Switch CRM</Text>
-            </Pressable>
-          </View>
-        </View>
+        {/* ── About ─────────────────────────────────────────────────────────── */}
+        <SectionLabel>About</SectionLabel>
+        <Group>
+          <Row
+            icon="info"
+            iconBg="#F1F3F4"
+            iconColor="#5F6368"
+            title="AI Concierge"
+            subtitle="Voice & text CRM assistant"
+            right={<Text style={styles.rowValue}>v1.0</Text>}
+            showChevron={false}
+            disabled
+          />
+        </Group>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─── Reusable row primitives ──────────────────────────────────────────────────
+
+function SectionLabel({ children }: { children: string }) {
+  return <Text style={styles.sectionLabel}>{children.toUpperCase()}</Text>;
+}
+
+function Group({ children }: { children: React.ReactNode }) {
+  return <View style={styles.group}>{children}</View>;
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
+type RowProps = {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  iconBg: string;
+  iconColor: string;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  onPress?: () => void;
+  disabled?: boolean;
+  showChevron?: boolean;
+};
+
+function Row({
+  icon,
+  iconBg,
+  iconColor,
+  title,
+  subtitle,
+  right,
+  onPress,
+  disabled,
+  showChevron = true,
+}: RowProps) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        pressed && !disabled ? styles.rowPressed : null,
+        disabled ? styles.rowDisabled : null,
+      ]}
+      onPress={onPress}
+      disabled={disabled || !onPress}>
+      <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>
+        <MaterialIcons name={icon} size={20} color={iconColor} />
+      </View>
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.rowSubtitle} numberOfLines={2}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {right ? <View style={styles.rowRight}>{right}</View> : null}
+      {showChevron ? (
+        <MaterialIcons name="chevron-right" size={22} color="#BDC1C6" />
+      ) : null}
+    </Pressable>
+  );
+}
+
+type PillTone = 'success' | 'muted' | 'warning';
+
+function StatusPill({ label, tone }: { label: string; tone: PillTone }) {
+  const s = PILL[tone];
+  return (
+    <View style={[styles.pill, { backgroundColor: s.bg, borderColor: s.border }]}>
+      <View style={[styles.pillDot, { backgroundColor: s.fg }]} />
+      <Text style={[styles.pillText, { color: s.fg }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function InfoBanner({
+  tone,
+  icon,
+  text,
+}: {
+  tone: 'warning' | 'info';
+  icon: keyof typeof MaterialIcons.glyphMap;
+  text: string;
+}) {
+  const palette =
+    tone === 'warning'
+      ? { bg: '#FEF7E0', border: '#FCE8B2', fg: '#5F4400', icon: '#B06000' }
+      : { bg: '#E8F0FE', border: '#C6DAFC', fg: '#174EA6', icon: '#1A73E8' };
+  return (
+    <View
+      style={[
+        styles.banner,
+        { backgroundColor: palette.bg, borderColor: palette.border },
+      ]}>
+      <MaterialIcons name={icon} size={18} color={palette.icon} />
+      <Text style={[styles.bannerText, { color: palette.fg }]}>{text}</Text>
+    </View>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const PILL: Record<PillTone, { bg: string; border: string; fg: string }> = {
+  success: { bg: '#E6F4EA', border: '#B7E1C0', fg: '#1E8E3E' },
+  muted: { bg: '#F1F3F4', border: '#E0E3E7', fg: '#5F6368' },
+  warning: { bg: '#FEF7E0', border: '#FCE8B2', fg: '#B06000' },
+};
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F8FAFF',
+    backgroundColor: '#F2F4F8',
   },
   content: {
     paddingHorizontal: 16,
-    paddingBottom: 40,
-    paddingTop: 18,
+    paddingBottom: 48,
+    paddingTop: 8,
   },
-  subtitle: {
-    color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 20,
+
+  // ── Section labels & groups ──
+  sectionLabel: {
+    color: '#80868B',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    marginBottom: 8,
+    marginLeft: 4,
+    marginTop: 22,
   },
-  card: {
+  group: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
     borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 14,
-    padding: 18,
+    overflow: 'hidden',
   },
-  cardHeader: {
+  divider: {
+    backgroundColor: '#EEF0F3',
+    height: 1,
+    marginLeft: 60,
+  },
+
+  // ── Row ──
+  row: {
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row',
-    gap: 14,
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
-  cardCopy: {
+  rowPressed: {
+    backgroundColor: '#F6F8FB',
+  },
+  rowDisabled: {
+    opacity: 0.85,
+  },
+  rowIcon: {
+    alignItems: 'center',
+    borderRadius: 10,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  rowCopy: {
     flex: 1,
   },
-  cardTitle: {
+  rowTitle: {
     color: '#202124',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '600',
   },
-  statusText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 4,
+  rowSubtitle: {
+    color: '#5F6368',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
   },
-  statusOn: {
-    color: '#34A853',
+  rowRight: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'flex-end',
+    maxWidth: 160,
   },
-  statusOff: {
-    color: '#80868B',
-  },
-  inlineSpinner: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  detailText: {
+  rowValue: {
     color: '#5F6368',
     fontSize: 14,
-    lineHeight: 20,
-    marginTop: 12,
+    fontWeight: '500',
   },
-  warningBox: {
+
+  // ── Pill ──
+  pill: {
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  pillDot: {
+    borderRadius: 4,
+    height: 6,
+    width: 6,
+  },
+  pillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // ── Banner ──
+  banner: {
     alignItems: 'flex-start',
-    backgroundColor: '#FEF7E0',
     borderRadius: 12,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
-    marginTop: 12,
+    marginTop: 10,
     padding: 12,
   },
-  warningText: {
-    color: '#5F4400',
+  bannerText: {
     flex: 1,
     fontSize: 13,
-    lineHeight: 19,
+    lineHeight: 18,
   },
-  actions: {
+
+  // ── Action buttons ──
+  actionStack: {
     gap: 10,
-    marginTop: 18,
+    marginTop: 14,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 14,
+    minHeight: 50,
+    justifyContent: 'center',
   },
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  secondaryButton: {
+  dangerButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#FAD2CF',
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingVertical: 14,
+    minHeight: 50,
+    justifyContent: 'center',
   },
-  secondaryButtonText: {
+  dangerButtonText: {
     color: '#EA4335',
     fontSize: 16,
     fontWeight: '600',
   },
-  secondaryNeutralButton: {
-    alignItems: 'center',
-    backgroundColor: '#F1F3F4',
-    borderRadius: 12,
-    paddingVertical: 14,
-  },
-  secondaryNeutralButtonText: {
-    color: '#1A73E8',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   buttonDisabled: {
-    opacity: 0.65,
+    opacity: 0.6,
   },
+
   helpText: {
     color: '#80868B',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 16,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 12,
+    paddingHorizontal: 4,
   },
 });
