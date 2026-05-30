@@ -175,6 +175,64 @@ export type HubspotStatusResponse = {
   scopes?: string[];
 };
 
+// ─── HubSpot CRM resources ───────────────────────────────────────────────────
+
+/**
+ * HubSpot pagination wrapper. `after` is an opaque cursor returned by the
+ * backend (mirrors HubSpot's `paging.next.after`); pass it back as `?after=`
+ * on the next request, or `null` when there's no more data.
+ */
+export type HubspotPaginated<T> = {
+  results: T[];
+  after: string | null;
+};
+
+export type HubspotContactSummary = {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  /** Display name with email/Unnamed contact fallbacks resolved server-side. */
+  name: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  lifecycleStage?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type HubspotDealSummary = {
+  id: string;
+  name: string;
+  amount?: number | null;
+  pipeline?: string;
+  stage?: string;
+  closeDate?: string;
+  ownerId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type HubspotCompanySummary = {
+  id: string;
+  name: string;
+  domain?: string;
+  industry?: string;
+  city?: string;
+  country?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ListHubspotParams = {
+  limit?: number;
+  after?: string;
+};
+
+export type SearchHubspotContactsParams = ListHubspotParams & {
+  q: string;
+};
+
 // ─── OpenAI key vault ────────────────────────────────────────────────────────
 
 export type SaveOpenAIKeyRequest = {

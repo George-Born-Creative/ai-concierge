@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -51,6 +52,12 @@ type StatePayload = {
   sub: string;
   purpose: typeof STATE_PURPOSE;
   nonce: string;
+  /**
+   * Optional deep link the mobile app expects the OAuth flow to return to.
+   * Carried through state so we can support both `aiconcierge://` (dev/prod
+   * client) and `exp://...` (Expo Go) without baking the URL into config.
+   */
+  returnUrl?: string;
 };
 
 export type HubspotStatus = {
@@ -72,13 +79,18 @@ export class HubspotService {
 
   // ── OAuth: build the authorize URL the mobile app opens in a browser ────────
 
-  buildAuthUrl(userId: string): { url: string; state: string } {
+  buildAuthUrl(userId: string, returnUrl?: string): { url: string; state: string } {
     const clientId = this.requireConfig('HUBSPOT_CLIENT_ID');
     const redirectUri = this.requireConfig('HUBSPOT_REDIRECT_URI');
     const scopes = this.config.get<string>('HUBSPOT_SCOPES') || DEFAULT_SCOPES;
 
     const state = this.jwt.sign(
-      { sub: userId, purpose: STATE_PURPOSE, nonce: randomBytes(8).toString('hex') } satisfies StatePayload,
+      {
+        sub: userId,
+        purpose: STATE_PURPOSE,
+        nonce: randomBytes(8).toString('hex'),
+        returnUrl: returnUrl ? this.validateReturnUrl(returnUrl) : undefined,
+      } satisfies StatePayload,
       { expiresIn: STATE_TTL },
     );
 
@@ -92,9 +104,27 @@ export class HubspotService {
     return { url: `${OAUTH_AUTHORIZE_URL}?${params.toString()}`, state };
   }
 
+  /**
+   * Decode the `returnUrl` baked into a state JWT. Used by the public callback
+   * route, which has no JwtAuthGuard, so it can route the redirect back to the
+   * app even when the state is later rejected as expired during exchange.
+   */
+  resolveReturnUrl(state: string): string {
+    try {
+      const payload = this.jwt.verify<StatePayload>(state);
+      if (payload.returnUrl) return payload.returnUrl;
+    } catch {
+      // Fall through to the default scheme link.
+    }
+    return `${this.getDeepLinkScheme()}://oauth/hubspot`;
+  }
+
   // ── OAuth: exchange code → tokens, introspect for portal id, persist ────────
 
-  async handleCallback(code: string, state: string): Promise<{ userId: string }> {
+  async handleCallback(
+    code: string,
+    state: string,
+  ): Promise<{ userId: string; returnUrl: string }> {
     let payload: StatePayload;
     try {
       payload = this.jwt.verify<StatePayload>(state);
@@ -108,6 +138,8 @@ export class HubspotService {
     }
 
     const userId = payload.sub;
+    const returnUrl =
+      payload.returnUrl ?? `${this.getDeepLinkScheme()}://oauth/hubspot`;
 
     const tokens = await this.exchangeCode(code);
     const introspect = await this.introspect(tokens.access_token);
@@ -140,7 +172,7 @@ export class HubspotService {
 
     await this.audit(userId, 'hubspot.connect', 'success', { portalId, scopes });
 
-    return { userId };
+    return { userId, returnUrl };
   }
 
   // ── Status / disconnect ─────────────────────────────────────────────────────
@@ -172,6 +204,15 @@ export class HubspotService {
       await this.audit(userId, 'hubspot.disconnect', 'success');
     }
     return { ok: true };
+  }
+
+  /** Clears stored tokens, then returns a fresh OAuth URL. */
+  async reconnect(
+    userId: string,
+    returnUrl?: string,
+  ): Promise<{ url: string; state: string }> {
+    await this.disconnect(userId);
+    return this.buildAuthUrl(userId, returnUrl);
   }
 
   // ── Refresh-token flow (exported for future CRM call sites) ─────────────────
@@ -281,6 +322,19 @@ export class HubspotService {
 
   getDeepLinkScheme(): string {
     return this.config.get<string>('APP_DEEP_LINK_SCHEME') || 'aiconcierge';
+  }
+
+  private validateReturnUrl(url: string): string {
+    const trimmed = url.trim();
+    if (!/^aiconcierge:\/\//i.test(trimmed) && !/^exp:\/\//i.test(trimmed)) {
+      throw new BadRequestException(
+        'returnUrl must use aiconcierge:// or exp:// scheme',
+      );
+    }
+    if (!/\/oauth\/hubspot/i.test(trimmed)) {
+      throw new BadRequestException('returnUrl must point to /oauth/hubspot');
+    }
+    return trimmed.split('?')[0] ?? trimmed;
   }
 
   private requireConfig(key: string): string {
