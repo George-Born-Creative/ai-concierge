@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,20 +14,48 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ghlApi, openaiApi } from '@/lib/api';
+import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
-import type { GhlStatusResponse, OpenAIKeyStatus } from '@/lib/api/types';
+import type {
+  CrmProvider,
+  GhlStatusResponse,
+  HubspotStatusResponse,
+  OpenAIKeyStatus,
+} from '@/lib/api/types';
 import { getOAuthReturnUrl, useCrmOAuth } from '@/lib/oauth';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
+// Provider-aware copy + the api module + which `getStatus()` shape we expect.
+// Everything else in this screen reads from the same primitives so a future
+// third provider would be a one-line addition here.
+type ProviderMeta = {
+  label: string;
+  api: typeof ghlApi | typeof hubspotApi;
+};
+
+const PROVIDER_META: Record<CrmProvider, ProviderMeta> = {
+  ghl: { label: 'GoHighLevel', api: ghlApi },
+  hubspot: { label: 'HubSpot', api: hubspotApi },
+};
+
+type CrmStatus = GhlStatusResponse | HubspotStatusResponse;
+
 export function SettingsScreenContent() {
   const router = useRouter();
   const { show } = useToast();
+
+  const currentUser = getUser();
+  // Default to GHL when the session has no provider yet (signed in but no
+  // plan/integration). Settings is reachable from the home screen so we
+  // shouldn't crash on a brand-new account.
+  const provider: CrmProvider = currentUser?.provider ?? 'ghl';
+  const meta = PROVIDER_META[provider];
+
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [connected, setConnected] = useState(false);
-  const [status, setStatus] = useState<GhlStatusResponse | null>(null);
+  const [status, setStatus] = useState<CrmStatus | null>(null);
   const [openaiStatus, setOpenaiStatus] = useState<OpenAIKeyStatus | null>(null);
   const [loadingOpenai, setLoadingOpenai] = useState(true);
 
@@ -35,10 +63,14 @@ export function SettingsScreenContent() {
     setConnected(isConnected);
   }, []);
 
+  // useCrmOAuth is provider-agnostic — we just feed it the right `api` and
+  // let the existing deep-link plumbing do the rest. Settings is its own
+  // OAuth surface (separate from /connect onboarding), so it doesn't need to
+  // pass `oauthStatus` / `oauthReason` route params here.
   const { startOAuthConnect } = useCrmOAuth({
-    provider: 'ghl',
-    api: ghlApi,
-    integrationName: 'GoHighLevel',
+    provider,
+    api: meta.api,
+    integrationName: meta.label,
     show,
     onStatusChange: (isConnected) => onStatusChange(isConnected),
     setLoadingStatus,
@@ -48,7 +80,7 @@ export function SettingsScreenContent() {
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true);
     try {
-      const next = await ghlApi.getStatus();
+      const next = await meta.api.getStatus();
       setStatus(next);
       setConnected(next.connected);
     } catch {
@@ -57,7 +89,7 @@ export function SettingsScreenContent() {
     } finally {
       setLoadingStatus(false);
     }
-  }, []);
+  }, [meta]);
 
   const refreshOpenaiStatus = useCallback(async () => {
     setLoadingOpenai(true);
@@ -82,12 +114,14 @@ export function SettingsScreenContent() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      await ghlApi.disconnect();
+      await meta.api.disconnect();
       await refreshStatus();
-      show('GoHighLevel disconnected.', 'success');
+      show(`${meta.label} disconnected.`, 'success');
     } catch (err) {
       const message =
-        err instanceof ApiError ? err.message : 'Could not disconnect GoHighLevel.';
+        err instanceof ApiError
+          ? err.message
+          : `Could not disconnect ${meta.label}.`;
       show(message, 'error');
     } finally {
       setSubmitting(false);
@@ -98,14 +132,18 @@ export function SettingsScreenContent() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const returnUrl = getOAuthReturnUrl('ghl');
-      await ghlApi.reconnect(returnUrl);
+      const returnUrl = getOAuthReturnUrl(provider);
+      // Eagerly invalidate the existing token row so the OAuth screen always
+      // re-prompts for consent (e.g. after we add new scopes server-side).
+      await meta.api.reconnect(returnUrl);
       setSubmitting(false);
       await startOAuthConnect();
     } catch (err) {
       setSubmitting(false);
       const message =
-        err instanceof ApiError ? err.message : 'Could not start GoHighLevel reconnect.';
+        err instanceof ApiError
+          ? err.message
+          : `Could not start ${meta.label} reconnect.`;
       show(message, 'error');
     }
   }
@@ -121,10 +159,33 @@ export function SettingsScreenContent() {
     show('CRM switching will be available once both providers are wired.', 'info');
   }
 
-  const calendarReady = status?.calendarScopesGranted !== false;
+  // GHL has a precomputed `calendarScopesGranted` flag; HubSpot does not.
+  const calendarScopesGranted =
+    provider === 'ghl'
+      ? (status as GhlStatusResponse | null)?.calendarScopesGranted
+      : undefined;
+  const calendarReady = calendarScopesGranted !== false;
+
   const hasOpenaiKey = openaiStatus?.exists === true;
-  const currentUser = getUser();
-  const crmProviderLabel = currentUser?.provider === 'hubspot' ? 'HubSpot' : 'GoHighLevel';
+
+  // Subtitle copy varies by provider so users see the right detail
+  // (locationId for GHL, portalId for HubSpot) when connected.
+  const integrationSubtitle = useMemo(() => {
+    if (loadingStatus) return 'Checking…';
+    if (!connected) return 'Tap to connect your account';
+
+    if (provider === 'ghl') {
+      const ghlStatus = status as GhlStatusResponse | null;
+      return ghlStatus?.locationId
+        ? `Location ${ghlStatus.locationId}`
+        : 'Contacts, calendar & opportunities enabled';
+    }
+
+    const hubspotStatus = status as HubspotStatusResponse | null;
+    return hubspotStatus?.portalId
+      ? `Portal ${hubspotStatus.portalId}`
+      : 'Contacts, deals & companies enabled';
+  }, [connected, loadingStatus, provider, status]);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -184,16 +245,8 @@ export function SettingsScreenContent() {
             icon="hub"
             iconBg="#E8F0FE"
             iconColor="#1A73E8"
-            title="GoHighLevel"
-            subtitle={
-              loadingStatus
-                ? 'Checking…'
-                : connected
-                  ? status?.locationId
-                    ? `Location ${status.locationId}`
-                    : 'Contacts, calendar & opportunities enabled'
-                  : 'Tap to connect your account'
-            }
+            title={meta.label}
+            subtitle={integrationSubtitle}
             right={
               loadingStatus ? (
                 <Skeleton width={70} height={20} radius={999} />
@@ -217,14 +270,14 @@ export function SettingsScreenContent() {
             subtitle="Switch between GoHighLevel and HubSpot"
             right={
               <Text style={styles.rowValue} numberOfLines={1}>
-                {crmProviderLabel}
+                {meta.label}
               </Text>
             }
             onPress={handleSwitchCrm}
           />
         </Group>
 
-        {connected && status?.calendarScopesGranted === false ? (
+        {provider === 'ghl' && connected && calendarScopesGranted === false ? (
           <InfoBanner
             tone="warning"
             icon="warning"
@@ -242,7 +295,7 @@ export function SettingsScreenContent() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={styles.primaryButtonText}>
-                {connected ? 'Reconnect GoHighLevel' : 'Connect GoHighLevel'}
+                {connected ? `Reconnect ${meta.label}` : `Connect ${meta.label}`}
               </Text>
             )}
           </Pressable>
@@ -258,8 +311,9 @@ export function SettingsScreenContent() {
         </View>
 
         <Text style={styles.helpText}>
-          Reconnect after enabling new scopes in the GHL Marketplace (for example Calendars or
-          Opportunities). This clears the old token and opens the authorisation screen again.
+          {provider === 'ghl'
+            ? 'Reconnect after enabling new scopes in the GHL Marketplace (for example Calendars or Opportunities). This clears the old token and opens the authorisation screen again.'
+            : 'Reconnect after changing scopes in HubSpot or rotating the connected app. This clears the old token and opens the authorisation screen again.'}
         </Text>
 
         {/* ── About ─────────────────────────────────────────────────────────── */}
