@@ -1,13 +1,27 @@
 import { apiRequest } from './client';
 import type {
   AssistantConversation,
-  AssistantConversationSummary,
+  AssistantConversationGroupsResponse,
   AssistantMessage,
   RunAssistantCommandRequest,
 } from './types';
 
-export async function listConversations(): Promise<AssistantConversationSummary[]> {
-  return apiRequest<AssistantConversationSummary[]>('/assistant/conversations');
+export async function listConversations(
+  timeZone?: string,
+): Promise<AssistantConversationGroupsResponse> {
+  const tz = timeZone ?? safeLocalTimeZone();
+  const path = tz
+    ? `/assistant/conversations?tz=${encodeURIComponent(tz)}`
+    : '/assistant/conversations';
+  return apiRequest<AssistantConversationGroupsResponse>(path);
+}
+
+function safeLocalTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function createConversation(): Promise<AssistantConversation> {

@@ -1,4 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -6,13 +7,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AIConciergeVoiceRecorder } from '@/components/ai-concierge-voice-recorder';
 import {
@@ -138,10 +139,11 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardView}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+        keyboardVerticalOffset={0}>
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <MaterialIcons name="arrow-back" size={24} color="#202124" />
@@ -161,6 +163,7 @@ export default function ChatScreen() {
           contentContainerStyle={styles.chatContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           onContentSizeChange={scrollToBottom}>
           {historyLoading && activeMessages.length === 0 ? (
             <ChatSkeleton />
@@ -183,6 +186,11 @@ export default function ChatScreen() {
               <CommandBubble
                 key={entry.id}
                 entry={entry}
+                onCopy={(text) => {
+                  void Clipboard.setStringAsync(text).then(() =>
+                    show('Copied to clipboard.', 'success'),
+                  );
+                }}
                 onDelete={
                   activeChatId
                     ? () => confirmDeleteMessage(activeChatId, entry.id, deleteMessage)
@@ -262,12 +270,15 @@ function confirmDeleteMessage(
 function CommandBubble({
   entry,
   onDelete,
+  onCopy,
 }: {
   entry: AssistantHistoryEntry;
   onDelete?: () => void;
+  onCopy?: (text: string) => void;
 }) {
   const userText = voiceUserText(entry);
   const timeLabel = formatMessageTime(entry.createdAt);
+  const canCopyResponse = !entry.pending && Boolean(entry.response?.trim());
 
   return (
     <Pressable
@@ -282,7 +293,12 @@ function CommandBubble({
             {userText}
           </Text>
         </View>
-        {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
+        <View style={styles.userMetaRow}>
+          {onCopy && userText ? (
+            <CopyButton tone="onBlue" onPress={() => onCopy(userText)} />
+          ) : null}
+          {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
+        </View>
       </View>
       {entry.pending ? (
         <View>
@@ -299,9 +315,38 @@ function CommandBubble({
               {entry.response}
             </Text>
           </View>
-          {timeLabel ? <Text style={styles.assistantTimestamp}>{timeLabel}</Text> : null}
+          <View style={styles.assistantMetaRow}>
+            {timeLabel ? <Text style={styles.assistantTimestamp}>{timeLabel}</Text> : null}
+            {onCopy && canCopyResponse ? (
+              <CopyButton tone="muted" onPress={() => onCopy(entry.response)} />
+            ) : null}
+          </View>
         </View>
       )}
+    </Pressable>
+  );
+}
+
+function CopyButton({
+  onPress,
+  tone,
+}: {
+  onPress: () => void;
+  tone: 'onBlue' | 'muted';
+}) {
+  const color = tone === 'onBlue' ? '#FFFFFF' : '#5F6368';
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      style={({ pressed }) => [
+        styles.copyButton,
+        tone === 'onBlue' && styles.copyButtonOnBlue,
+        pressed && { opacity: 0.6 },
+      ]}
+      accessibilityLabel="Copy text">
+      <MaterialIcons name="content-copy" size={14} color={color} />
+      <Text style={[styles.copyButtonText, { color }]}>Copy</Text>
     </Pressable>
   );
 }
@@ -583,18 +628,44 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.45,
   },
+  userMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 4,
+  },
+  assistantMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 8,
+    marginTop: 4,
+  },
   userTimestamp: {
-    alignSelf: 'flex-end',
     color: '#80868B',
     fontSize: 11,
-    marginTop: 4,
     marginRight: 4,
   },
   assistantTimestamp: {
-    alignSelf: 'flex-start',
     color: '#80868B',
     fontSize: 11,
-    marginTop: 4,
     marginLeft: 4,
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(95, 99, 104, 0.08)',
+  },
+  copyButtonOnBlue: {
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  copyButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
