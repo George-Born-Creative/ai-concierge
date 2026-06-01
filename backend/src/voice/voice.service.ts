@@ -129,6 +129,23 @@ Entity rules:
 - Pick "unknown" only when it is not a CRM/contact/calendar action at all.
 - Never invent details the user did not say.
 
+Spoken email reconstruction (REQUIRED whenever you emit an "email" or "newEmail" entity):
+- Voice transcripts arrive as natural language: "john at gmail dot com", "test underscore one at borncreative dot net", "j dot smith at example dot co dot uk". Reconstruct these into a proper email before emitting them.
+- Apply these substitutions inside the email span only — never to surrounding English text like "look at me":
+  - " at " → "@"
+  - " dot " → "."
+  - " underscore " → "_"
+  - " dash " / " hyphen " → "-"
+  - " plus " → "+"
+- After substitution, strip all whitespace inside the result and lowercase it.
+- Examples:
+  - "john at gmail dot com" → "john@gmail.com"
+  - "Sarah at example dot com" → "sarah@example.com"
+  - "test underscore one at borncreative dot net" → "test_one@borncreative.net"
+  - "j dot smith at example dot co dot uk" → "j.smith@example.co.uk"
+- If the user spells the address one letter at a time ("j-o-h-n at g-m-a-i-l dot com"), join the letters then apply the rules above.
+- The result MUST contain exactly one "@" and at least one "." in the domain. If you cannot reach that shape, omit the email entity entirely and set needs_clarification = true with a short note asking for the email again.
+
 Conversation context (when provided):
 - Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them", "that deal", "it").
 - Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName when the user refers to "that" / "them" / "it".
