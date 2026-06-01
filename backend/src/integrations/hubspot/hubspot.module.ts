@@ -48,6 +48,12 @@ import { HubspotService } from './hubspot.service';
     HubspotDealsService,
     HubspotCompaniesService,
   ],
-  exports: [HubspotService, HubspotApiClient],
+  exports: [
+    HubspotService,
+    HubspotApiClient,
+    HubspotContactsService,
+    HubspotDealsService,
+    HubspotCompaniesService,
+  ],
 })
 export class HubspotModule {}

@@ -238,7 +238,7 @@ export function extractCreateDetails(
   return {
     name: entityString(entities, 'name') || buildNameFromEntities(entities) || '',
     phone: entityString(entities, 'phone'),
-    email: entityString(entities, 'email')?.toLowerCase(),
+    email: normalizeSpokenEmail(entityString(entities, 'email')),
   };
 }
 
@@ -257,8 +257,50 @@ export function extractContactUpdateDetails(
     newFirstName: entityString(entities, 'newFirstName', 'new_first_name'),
     newLastName: entityString(entities, 'newLastName', 'new_last_name'),
     newPhone: entityString(entities, 'newPhone', 'new_phone', 'phone'),
-    newEmail: entityString(entities, 'newEmail', 'new_email', 'email')?.toLowerCase(),
+    newEmail: normalizeSpokenEmail(
+      entityString(entities, 'newEmail', 'new_email', 'email'),
+    ),
   };
+}
+
+/**
+ * Defensive fallback for spoken emails that slip past the LLM normalizer.
+ * Whisper transcribes voice as "john at gmail dot com" / "test underscore
+ * one at example dot co dot uk"; the normalizer prompt asks the LLM to
+ * reconstruct these into `john@gmail.com` shape, but if it ever forgets we
+ * recover here so the assistant doesn't silently lose the email.
+ *
+ * Returns the cleaned email if it has the shape `<local>@<domain>.<tld>`;
+ * otherwise returns the lowercased original (which may not be a valid email
+ * — the caller is expected to validate before issuing the API call).
+ */
+export function normalizeSpokenEmail(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const lower = value.trim().toLowerCase();
+  if (!lower) return undefined;
+  // Already-valid email: do nothing beyond lowercase + trim.
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(lower)) return lower;
+  // Apply spoken-word substitutions only when the input doesn't already
+  // contain '@' — otherwise we risk garbling a real address that happens
+  // to embed the word "at" in the local part.
+  const looksSpoken = !lower.includes('@') && /\bat\b/.test(lower);
+  if (!looksSpoken) return lower;
+
+  const substituted = lower
+    .replace(/\s+at\s+/g, '@')
+    .replace(/\s+dot\s+/g, '.')
+    .replace(/\s+underscore\s+/g, '_')
+    .replace(/\s+(?:dash|hyphen)\s+/g, '-')
+    .replace(/\s+plus\s+/g, '+')
+    .replace(/\s+/g, '');
+
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(substituted)) {
+    return substituted;
+  }
+  // Substitution didn't produce a syntactically valid email; surface the
+  // best-effort lowercased original so the caller can decide whether to
+  // re-prompt.
+  return lower;
 }
 
 const OPPORTUNITY_STATUSES = ['open', 'won', 'lost', 'abandoned'] as const;

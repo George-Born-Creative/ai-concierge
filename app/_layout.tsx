@@ -71,6 +71,7 @@ export default function RootLayout() {
               <Stack.Screen name="settings" options={{ headerShown: false }} />
               <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
               <Stack.Screen name="chats" options={{ headerShown: false }} />
+              <Stack.Screen name="hubspot" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
             </Stack>
             <StatusBar style="dark" />

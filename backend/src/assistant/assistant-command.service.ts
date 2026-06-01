@@ -1,10 +1,13 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { CrmProvider } from '@prisma/client';
 
 import type {
   GhlOpportunitySummary,
   GhlPipelineSummary,
 } from '../integrations/ghl/ghl.service';
 import { GhlService } from '../integrations/ghl/ghl.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { HubspotCommandService } from './hubspot-command.service';
 import {
   extractAppointmentCancelQuery,
   extractAppointmentDetails,
@@ -33,7 +36,13 @@ import type {
 
 @Injectable()
 export class AssistantCommandService {
-  constructor(private readonly ghl: GhlService) {}
+  private readonly logger = new Logger(AssistantCommandService.name);
+
+  constructor(
+    private readonly ghl: GhlService,
+    private readonly hubspot: HubspotCommandService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async execute(
     userId: string,
@@ -49,6 +58,10 @@ export class AssistantCommandService {
       };
     }
 
+    // Decide whether this user is on GHL or HubSpot. Defaults to GHL for
+    // backwards compatibility if anything goes wrong reading the provider.
+    const provider = await this.loadProvider(userId);
+
     try {
       let resolved = intent;
       if (resolved && sessionContext) {
@@ -63,17 +76,51 @@ export class AssistantCommandService {
       }
 
       if (resolved && shouldRunIntent(resolved)) {
-        const fromIntent = await this.executeFromIntent(userId, resolved);
+        const fromIntent =
+          provider === CrmProvider.HUBSPOT
+            ? await this.executeHubspotIntent(userId, resolved)
+            : await this.executeFromIntent(userId, resolved);
         if (fromIntent) return fromIntent;
       }
 
-      return this.executeWithHeuristics(userId, normalized);
+      return provider === CrmProvider.HUBSPOT
+        ? this.executeHubspotHeuristics(userId, normalized)
+        : this.executeWithHeuristics(userId, normalized);
     } catch (error) {
       return {
-        response: this.ghlErrorMessage(error),
+        response:
+          provider === CrmProvider.HUBSPOT
+            ? this.hubspotErrorMessage(error)
+            : this.ghlErrorMessage(error),
         status: 'error',
         intent,
       };
+    }
+  }
+
+  /**
+   * Look up which CRM provider this user is on. Source of truth is the
+   * enabled IntegrationConnection row (set up by OAuth). Falls back to the
+   * subscription plan provider, then GHL as a last resort.
+   */
+  private async loadProvider(userId: string): Promise<CrmProvider> {
+    try {
+      const enabled = await this.prisma.integrationConnection.findFirst({
+        where: { userId, enabled: true },
+        select: { provider: true },
+      });
+      if (enabled?.provider) return enabled.provider;
+
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { userId },
+        select: { plan: { select: { provider: true } } },
+      });
+      return subscription?.plan?.provider ?? CrmProvider.GHL;
+    } catch (err) {
+      this.logger.warn(
+        `loadProvider failed for user ${userId}: ${(err as Error).message}`,
+      );
+      return CrmProvider.GHL;
     }
   }
 
@@ -169,6 +216,108 @@ export class AssistantCommandService {
         'I can handle contacts, calendars, appointments, and opportunities in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", "book Sarah tomorrow at 2pm", "show my pipelines", or "create an opportunity Website Redesign for John Smith worth 2500 in Sales".',
       status: 'error',
     };
+  }
+
+  // ── HubSpot routing ─────────────────────────────────────────────────────────
+  //
+  // HubSpot now supports full contact CRUD (list, search, create, update,
+  // delete). Deals and companies remain read-only — write surface and the
+  // calendar / appointment paths still return a friendly "not wired yet"
+  // message so the user knows the chat didn't silently swallow the request.
+
+  private async executeHubspotIntent(
+    userId: string,
+    intent: VoiceIntentPayload,
+  ): Promise<AssistantCommandResult | null> {
+    switch (intent.intent) {
+      case 'list_contacts':
+        return this.hubspot.listLatestContacts(userId);
+      case 'find_contact':
+        return this.hubspot.findContact(userId, extractSearchQuery(intent.entities));
+      case 'list_opportunities':
+        // HubSpot's equivalent of opportunities is "deals".
+        return this.hubspot.listRecentDeals(userId);
+      case 'create_contact':
+        return this.hubspot.createContact(userId, extractCreateDetails(intent.entities));
+      case 'update_contact':
+        return this.hubspot.updateContact(
+          userId,
+          extractContactUpdateDetails(intent.entities),
+        );
+      case 'delete_contact':
+        return this.hubspot.deleteContact(userId, extractSearchQuery(intent.entities));
+      case 'find_opportunity':
+      case 'create_opportunity':
+      case 'update_opportunity':
+      case 'update_opportunity_status':
+      case 'delete_opportunity':
+        return {
+          response:
+            "I can list HubSpot deals. Searching or editing them through the assistant isn't wired up yet.",
+          status: 'error',
+        };
+      case 'list_pipelines':
+        return {
+          response:
+            "Pipelines aren't wired up for HubSpot yet — try \"show my deals\" instead.",
+          status: 'error',
+        };
+      case 'list_calendars':
+      case 'get_calendar':
+      case 'create_calendar':
+      case 'update_calendar':
+      case 'delete_calendar':
+      case 'get_free_slots':
+      case 'list_appointments':
+      case 'create_appointment':
+      case 'cancel_appointment':
+        return {
+          response:
+            "HubSpot doesn't expose calendars or appointments in this app yet.",
+          status: 'error',
+        };
+      default:
+        return null;
+    }
+  }
+
+  private async executeHubspotHeuristics(
+    userId: string,
+    command: string,
+  ): Promise<AssistantCommandResult> {
+    const lower = command.toLowerCase();
+    if (
+      /\b(contacts?|people|leads|clients)\b/.test(lower) &&
+      /\b(list|show|pull up|get|see|recent|latest|my|all|who)\b/.test(lower)
+    ) {
+      return this.hubspot.listLatestContacts(userId);
+    }
+    if (
+      /\b(deals?|opportunit(y|ies))\b/.test(lower) &&
+      /\b(list|show|what|my|recent|open|all)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentDeals(userId);
+    }
+    if (
+      /\b(compan(y|ies)|accounts?|organi[sz]ations?)\b/.test(lower) &&
+      /\b(list|show|what|my|recent|all)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentCompanies(userId);
+    }
+    return {
+      response:
+        'I can show your HubSpot contacts, deals, or companies. Try "pull up my contacts", "list my deals", or "what companies do I have".',
+      status: 'error',
+    };
+  }
+
+  private hubspotErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+      // HubspotApiClient already throws Nest exceptions with friendly copy
+      // (reconnect / scope / rate-limit messages). Surface them verbatim.
+      return error.message;
+    }
+    return 'Something went wrong talking to HubSpot.';
   }
 
   private async listLatestContacts(userId: string): Promise<AssistantCommandResult> {

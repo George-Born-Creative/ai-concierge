@@ -1,8 +1,18 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
+import { useMemo } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
-const featureCards = [
+import { getUser } from '@/lib/session';
+
+type FeatureCard = {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  title: string;
+  description: string;
+  href: Href | null;
+};
+
+const BASE_CARDS: ReadonlyArray<FeatureCard> = [
   {
     icon: 'record-voice-over',
     title: 'Voice commands',
@@ -21,10 +31,28 @@ const featureCards = [
     description: 'Review previous chats grouped by Today, Yesterday, and earlier.',
     href: '/chats',
   },
-] as const;
+];
 
 export function HomeScreenContent() {
   const router = useRouter();
+
+  // HubSpot users get an extra tile that opens the read-only browse screen
+  // for contacts / deals / companies. GHL users don't see it — there's no
+  // equivalent screen for them (they use the chat directly).
+  const featureCards = useMemo<ReadonlyArray<FeatureCard>>(() => {
+    if (getUser()?.provider === 'hubspot') {
+      return [
+        ...BASE_CARDS,
+        {
+          icon: 'hub',
+          title: 'HubSpot data',
+          description: 'Browse your recent HubSpot contacts, deals, and companies.',
+          href: '/hubspot',
+        },
+      ];
+    }
+    return BASE_CARDS;
+  }, []);
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.content}>
@@ -57,7 +85,8 @@ export function HomeScreenContent() {
                 ) : null}
               </>
             );
-            if (card.href) {
+            const href = card.href;
+            if (href) {
               return (
                 <Pressable
                   key={card.title}
@@ -65,7 +94,7 @@ export function HomeScreenContent() {
                     styles.featureCard,
                     pressed && { opacity: 0.85 },
                   ]}
-                  onPress={() => router.push(card.href)}>
+                  onPress={() => router.push(href)}>
                   {inner}
                 </Pressable>
               );
