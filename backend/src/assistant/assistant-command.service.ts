@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { CrmProvider } from '@prisma/client';
 
+import { CRM_LABELS, crmLabel, crmLabelList } from '../common/crm-labels';
 import type {
   GhlOpportunitySummary,
   GhlPipelineSummary,
@@ -58,9 +59,19 @@ export class AssistantCommandService {
       };
     }
 
-    // Decide whether this user is on GHL or HubSpot. Defaults to GHL for
-    // backwards compatibility if anything goes wrong reading the provider.
+    // Decide whether this user is on GHL or HubSpot. Returns null when the
+    // user has no integration and no plan provider yet — we surface a CRM-
+    // agnostic "connect a CRM" message in that case so the copy never lies
+    // about which CRM the user actually wanted.
     const provider = await this.loadProvider(userId);
+
+    if (!provider) {
+      return {
+        response: `Connect ${crmLabelList()} in Settings first so I can work with your contacts and calendar.`,
+        status: 'error',
+        intent,
+      };
+    }
 
     try {
       let resolved = intent;
@@ -101,9 +112,12 @@ export class AssistantCommandService {
   /**
    * Look up which CRM provider this user is on. Source of truth is the
    * enabled IntegrationConnection row (set up by OAuth). Falls back to the
-   * subscription plan provider, then GHL as a last resort.
+   * subscription plan provider. Returns null when neither exists so callers
+   * can render a CRM-agnostic message instead of guessing GHL — picking the
+   * wrong CRM here is what made the "Hook up GoHighLevel" prompt show for
+   * users who actually wanted HubSpot.
    */
-  private async loadProvider(userId: string): Promise<CrmProvider> {
+  private async loadProvider(userId: string): Promise<CrmProvider | null> {
     try {
       const enabled = await this.prisma.integrationConnection.findFirst({
         where: { userId, enabled: true },
@@ -115,12 +129,12 @@ export class AssistantCommandService {
         where: { userId },
         select: { plan: { select: { provider: true } } },
       });
-      return subscription?.plan?.provider ?? CrmProvider.GHL;
+      return subscription?.plan?.provider ?? null;
     } catch (err) {
       this.logger.warn(
         `loadProvider failed for user ${userId}: ${(err as Error).message}`,
       );
-      return CrmProvider.GHL;
+      return null;
     }
   }
 
@@ -317,7 +331,7 @@ export class AssistantCommandService {
       // (reconnect / scope / rate-limit messages). Surface them verbatim.
       return error.message;
     }
-    return 'Something went wrong talking to HubSpot.';
+    return `Something went wrong talking to ${CRM_LABELS[CrmProvider.HUBSPOT]}.`;
   }
 
   private async listLatestContacts(userId: string): Promise<AssistantCommandResult> {
@@ -1310,9 +1324,9 @@ export class AssistantCommandService {
       ) {
         return message;
       }
-      return 'Hook up GoHighLevel in Profile first, then I can work with your contacts, calendar, and opportunities.';
+      return `Hook up ${CRM_LABELS[CrmProvider.GHL]} in Profile first, then I can work with your contacts, calendar, and opportunities.`;
     }
     if (error instanceof Error) return error.message;
-    return 'Something went wrong while working with GoHighLevel.';
+    return `Something went wrong while working with ${CRM_LABELS[CrmProvider.GHL]}.`;
   }
 }

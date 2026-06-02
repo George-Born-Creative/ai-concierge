@@ -16,6 +16,7 @@ import { PageHeader } from '@/components/page-header';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { hubspotApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
+import { CRM_LABELS, getCrmLabel } from '@/lib/crm/labels';
 import type {
   HubspotCompanySummary,
   HubspotContactSummary,
@@ -84,19 +85,19 @@ export function HubspotDataScreenContent() {
     );
   }
 
-  // Gate to HubSpot users. We don't want a GHL user opening /hubspot from a
-  // stale deep link and seeing an empty browse screen.
+  // Gate to HubSpot users. We don't want a non-HubSpot account opening
+  // /hubspot from a stale deep link and seeing an empty browse screen.
   const provider = getUser()?.provider;
   if (provider && provider !== 'hubspot') {
     return (
       <SafeAreaView style={styles.screen}>
-        <PageHeader title="HubSpot data" showBack onBack={() => router.back()} />
+        <PageHeader title={`${CRM_LABELS.hubspot} data`} showBack onBack={() => router.back()} />
         <View style={styles.notFor}>
           <MaterialIcons name="info-outline" size={40} color="#80868B" />
-          <Text style={styles.notForTitle}>HubSpot only</Text>
+          <Text style={styles.notForTitle}>{CRM_LABELS.hubspot} only</Text>
           <Text style={styles.notForText}>
-            This view shows HubSpot contacts, deals, and companies. Your account is on
-            GoHighLevel — open Settings to switch CRMs.
+            This view shows {CRM_LABELS.hubspot} contacts, deals, and companies. Your account is on{' '}
+            {getCrmLabel(provider)} — open Settings to switch CRMs.
           </Text>
         </View>
       </SafeAreaView>

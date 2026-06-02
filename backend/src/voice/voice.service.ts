@@ -202,7 +202,7 @@ export class VoiceService {
         language: VOICE_LANGUAGE,
         prompt: WHISPER_PROMPT,
       });
-      transcript = whisper.text?.trim() ?? '';
+      transcript = reconstructSpokenEmailsInText(whisper.text?.trim() ?? '');
     } catch (err) {
       const message = formatOpenAIError(err, 'transcription');
       this.logger.warn(
@@ -475,6 +475,43 @@ export class VoiceService {
       this.logger.warn(`Failed to write audit log ${action}: ${(err as Error).message}`);
     }
   }
+}
+
+/**
+ * Convert spoken-email patterns inside a Whisper transcript to proper email
+ * addresses BEFORE the LLM normalizer sees them.
+ *
+ * Whisper transcribes dictated emails as English ("john at gmail dot com"),
+ * and frequently inserts commas / periods when the user pauses
+ * ("john, at gmail. dot com"). Both throw the downstream LLM off, which then
+ * either omits the email or stores the literal "john at gmail dot com".
+ *
+ * This regex finds the canonical spoken pattern
+ *   <identifier> ("dot|underscore|dash|hyphen|plus" <identifier>)* "at"
+ *   <identifier> ("dot" <identifier>)+
+ * with optional [ ,.] noise between every token, and rebuilds the address.
+ *
+ * False-positive risk is low because we require BOTH "at" AND at least one
+ * "dot <word>" pair on the domain side — a pattern that almost never appears
+ * in normal English speech outside of an email dictation.
+ */
+function reconstructSpokenEmailsInText(text: string): string {
+  if (!text) return text;
+  if (!/\bat\b/i.test(text) || !/\bdot\b/i.test(text)) return text;
+
+  const pattern =
+    /([A-Za-z0-9]+(?:[ ,.]+(?:dot|underscore|dash|hyphen|plus)[ ,.]+[A-Za-z0-9]+)*)[ ,.]+at[ ,.]+([A-Za-z0-9]+(?:[ ,.]+dot[ ,.]+[A-Za-z0-9]+)+)/gi;
+
+  return text.replace(pattern, (_match, local: string, domain: string) => {
+    const cleanedLocal = local
+      .replace(/[ ,.]+dot[ ,.]+/gi, '.')
+      .replace(/[ ,.]+underscore[ ,.]+/gi, '_')
+      .replace(/[ ,.]+(?:dash|hyphen)[ ,.]+/gi, '-')
+      .replace(/[ ,.]+plus[ ,.]+/gi, '+')
+      .toLowerCase();
+    const cleanedDomain = domain.replace(/[ ,.]+dot[ ,.]+/gi, '.').toLowerCase();
+    return `${cleanedLocal}@${cleanedDomain}`;
+  });
 }
 
 function clamp01(value: unknown): number {

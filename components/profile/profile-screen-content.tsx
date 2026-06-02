@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
+import { getCrmLabel, getCrmLabelList } from '@/lib/crm/labels';
 import { clearSession, getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -48,7 +49,7 @@ const upcomingFeatures = [
   {
     icon: 'auto-fix-high' as const,
     title: 'Workflows & automations',
-    description: 'Trigger GHL workflows ("send the welcome sequence to Maya") hands-free.',
+    description: 'Trigger CRM workflows ("send the welcome sequence to Maya") hands-free.',
   },
   {
     icon: 'forum' as const,
@@ -63,7 +64,7 @@ const upcomingFeatures = [
   {
     icon: 'hub' as const,
     title: 'Multi-CRM support',
-    description: 'Connect HubSpot alongside GoHighLevel and switch between them.',
+    description: `Connect ${getCrmLabelList(' and ')} and switch between them.`,
   },
 ];
 
@@ -174,7 +175,7 @@ export function ProfileScreenContent() {
   const initials = getInitials(user?.name, user?.email);
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'AI-Concierge';
   const planLabel = user?.plan ? formatPlanLabel(user.plan.name, user.plan.status) : null;
-  const crmLabel = crmStatus?.provider === 'hubspot' ? 'HubSpot' : 'GoHighLevel';
+  const crmLabel = getCrmLabel(crmStatus?.provider ?? null);
 
   return (
     <SafeAreaView style={styles.screen}>

@@ -286,13 +286,18 @@ export function normalizeSpokenEmail(value: string | undefined): string | undefi
   const looksSpoken = !lower.includes('@') && /\bat\b/.test(lower);
   if (!looksSpoken) return lower;
 
+  // Tolerate punctuation around the keywords because Whisper happily inserts
+  // commas and periods at speech pauses ("john, at gmail. dot com").
   const substituted = lower
-    .replace(/\s+at\s+/g, '@')
-    .replace(/\s+dot\s+/g, '.')
-    .replace(/\s+underscore\s+/g, '_')
-    .replace(/\s+(?:dash|hyphen)\s+/g, '-')
-    .replace(/\s+plus\s+/g, '+')
-    .replace(/\s+/g, '');
+    .replace(/[\s,.]+at[\s,.]+/g, '@')
+    .replace(/[\s,.]+dot[\s,.]+/g, '.')
+    .replace(/[\s,.]+underscore[\s,.]+/g, '_')
+    .replace(/[\s,.]+(?:dash|hyphen)[\s,.]+/g, '-')
+    .replace(/[\s,.]+plus[\s,.]+/g, '+')
+    // Strip any residual stray punctuation / whitespace inside the result.
+    .replace(/[\s,]+/g, '')
+    // Trailing punctuation Whisper sometimes appends ("…dot com.")
+    .replace(/[.,]+$/, '');
 
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(substituted)) {
     return substituted;

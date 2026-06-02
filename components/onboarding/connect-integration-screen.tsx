@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { ghlApi, hubspotApi } from '@/lib/api';
+import { CRM_LABELS } from '@/lib/crm/labels';
 import { useCrmOAuth, type CrmOAuthApi, type OAuthProvider } from '@/lib/oauth';
 import { useToast } from '@/lib/toast';
 
@@ -27,7 +28,7 @@ type IntegrationCard = {
 const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
   ghl: {
     id: 'ghl',
-    name: 'GoHighLevel',
+    name: CRM_LABELS.ghl,
     description:
       'Sync contacts, opportunities, notes, tasks, and trigger workflows from voice commands.',
     icon: 'hub',
@@ -35,7 +36,7 @@ const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
   },
   hubspot: {
     id: 'hubspot',
-    name: 'HubSpot',
+    name: CRM_LABELS.hubspot,
     description: 'Create contacts and deals, add notes, and manage your pipeline from voice.',
     icon: 'cloud',
     api: hubspotApi,
@@ -152,9 +153,9 @@ export function ConnectIntegrationScreen() {
         )}
 
         <Text style={styles.helperText}>
-          After you approve in GoHighLevel, you will see a success page in the browser, then return
-          here via aiconcierge://oauth/{integration.id}?status=ok. You can disconnect later from
-          Profile.
+          After you approve in {integration.name}, you will see a success page in the browser, then
+          return here via aiconcierge://oauth/{integration.id}?status=ok. You can disconnect later
+          from Profile.
         </Text>
       </ScrollView>
     </SafeAreaView>
