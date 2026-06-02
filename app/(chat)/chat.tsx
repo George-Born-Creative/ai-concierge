@@ -1,6 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -196,6 +197,17 @@ export default function ChatScreen() {
                     ? () => confirmDeleteMessage(activeChatId, entry.id, deleteMessage)
                     : undefined
                 }
+                onEdit={
+                  activeChatId && !isRunning
+                    ? async (newText) => {
+                        // Delete the original turn (server + local) first so the
+                        // edited request lands in its place — old assistant
+                        // response is gone, new one streams in fresh.
+                        await deleteMessage(activeChatId, entry.id);
+                        await submitCommand(newText, 'text');
+                      }
+                    : undefined
+                }
               />
             ))
           )}
@@ -271,34 +283,131 @@ function CommandBubble({
   entry,
   onDelete,
   onCopy,
+  onEdit,
 }: {
   entry: AssistantHistoryEntry;
   onDelete?: () => void;
   onCopy?: (text: string) => void;
+  onEdit?: (newText: string) => Promise<void> | void;
 }) {
   const userText = voiceUserText(entry);
   const timeLabel = formatMessageTime(entry.createdAt);
   const canCopyResponse = !entry.pending && Boolean(entry.response?.trim());
+  const canEdit = Boolean(onEdit) && !entry.pending;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(userText);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Keep the draft in sync with the underlying message text when not actively
+  // editing — handles voice transcripts arriving after first render.
+  useEffect(() => {
+    if (!editing) setDraft(userText);
+  }, [editing, userText]);
+
+  async function handleSaveEdit() {
+    const next = draft.trim();
+    const original = userText.trim();
+    if (!onEdit) return;
+    if (!next || next === original) {
+      setEditing(false);
+      setDraft(userText);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      // Parent deletes this entry + re-runs the command, so the component
+      // unmounts before we can clear editing — but reset in case of error.
+      await onEdit(next);
+    } finally {
+      setSavingEdit(false);
+      setEditing(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditing(false);
+    setDraft(userText);
+  }
 
   return (
     <Pressable
       style={styles.commandGroup}
       onLongPress={onDelete}
       delayLongPress={400}
-      disabled={!onDelete || entry.pending}>
+      disabled={!onDelete || entry.pending || editing}>
       <View>
         <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
           <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
-          <Text style={styles.userText} selectable>
-            {userText}
-          </Text>
+          {editing ? (
+            <>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                multiline
+                autoFocus
+                editable={!savingEdit}
+                style={styles.userEditInput}
+                placeholderTextColor="rgba(255,255,255,0.55)"
+              />
+              <View style={styles.editActionRow}>
+                <Pressable
+                  onPress={handleCancelEdit}
+                  disabled={savingEdit}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.editChip,
+                    styles.editChipCancel,
+                    pressed && { opacity: 0.6 },
+                  ]}>
+                  <Text style={styles.editChipCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSaveEdit}
+                  disabled={savingEdit || !draft.trim() || draft.trim() === userText.trim()}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.editChip,
+                    styles.editChipSave,
+                    (savingEdit ||
+                      !draft.trim() ||
+                      draft.trim() === userText.trim()) && { opacity: 0.5 },
+                    pressed && { opacity: 0.7 },
+                  ]}>
+                  <MaterialIcons name="send" size={13} color="#1A73E8" />
+                  <Text style={styles.editChipSaveText}>
+                    {savingEdit ? 'Saving…' : 'Save & resend'}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.userText} selectable>
+              {userText}
+            </Text>
+          )}
         </View>
-        <View style={styles.userMetaRow}>
-          {onCopy && userText ? (
-            <CopyButton tone="onBlue" onPress={() => onCopy(userText)} />
-          ) : null}
-          {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
-        </View>
+        {editing ? null : (
+          <View style={styles.userMetaRow}>
+            {canEdit && userText ? (
+              <ActionChip
+                tone="onBlue"
+                icon="edit"
+                onPress={() => setEditing(true)}
+                accessibilityLabel="Edit and resend"
+              />
+            ) : null}
+            {onCopy && userText ? (
+              <ActionChip
+                tone="onBlue"
+                icon="content-copy"
+                onPress={() => onCopy(userText)}
+                accessibilityLabel="Copy text"
+              />
+            ) : null}
+            {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
+          </View>
+        )}
       </View>
       {entry.pending ? (
         <View>
@@ -318,7 +427,12 @@ function CommandBubble({
           <View style={styles.assistantMetaRow}>
             {timeLabel ? <Text style={styles.assistantTimestamp}>{timeLabel}</Text> : null}
             {onCopy && canCopyResponse ? (
-              <CopyButton tone="muted" onPress={() => onCopy(entry.response)} />
+              <ActionChip
+                tone="muted"
+                icon="content-copy"
+                onPress={() => onCopy(entry.response)}
+                accessibilityLabel="Copy text"
+              />
             ) : null}
           </View>
         </View>
@@ -327,26 +441,31 @@ function CommandBubble({
   );
 }
 
-function CopyButton({
+function ActionChip({
   onPress,
   tone,
+  icon,
+  accessibilityLabel,
 }: {
   onPress: () => void;
   tone: 'onBlue' | 'muted';
+  icon: React.ComponentProps<typeof MaterialIcons>['name'];
+  // Required because the chip is icon-only — screen readers / a11y need a
+  // human-readable label (e.g. "Edit and resend", "Copy text").
+  accessibilityLabel: string;
 }) {
-  const color = tone === 'onBlue' ? '#FFFFFF' : '#5F6368';
+  const accent = '#1A73E8';
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
       style={({ pressed }) => [
-        styles.copyButton,
-        tone === 'onBlue' && styles.copyButtonOnBlue,
-        pressed && { opacity: 0.6 },
+        styles.actionChip,
+        tone === 'onBlue' && styles.actionChipOnBlue,
+        pressed && { opacity: 0.7 },
       ]}
-      accessibilityLabel="Copy text">
-      <MaterialIcons name="content-copy" size={14} color={color} />
-      <Text style={[styles.copyButtonText, { color }]}>Copy</Text>
+      accessibilityLabel={accessibilityLabel}>
+      <MaterialIcons name={icon} size={16} color={accent} />
     </Pressable>
   );
 }
@@ -652,20 +771,61 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginLeft: 4,
   },
-  copyButton: {
-    flexDirection: 'row',
+  actionChip: {
     alignItems: 'center',
+    backgroundColor: '#F1F3F4',
+    borderColor: '#D2E3FC',
+    borderRadius: 14,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  actionChipOnBlue: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  userEditInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: 10,
+    color: '#FFFFFF',
+    fontSize: 16,
+    lineHeight: 22,
+    minHeight: 60,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    textAlignVertical: 'top',
+  },
+  editActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+    marginTop: 10,
+  },
+  editChip: {
+    alignItems: 'center',
+    borderRadius: 14,
+    flexDirection: 'row',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(95, 99, 104, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  copyButtonOnBlue: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  editChipCancel: {
+    backgroundColor: 'transparent',
+    borderColor: '#FFFFFF',
+    borderWidth: 1.5,
   },
-  copyButtonText: {
-    fontSize: 11,
+  editChipCancelText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  editChipSave: {
+    backgroundColor: '#FFFFFF',
+  },
+  editChipSaveText: {
+    color: '#1A73E8',
+    fontSize: 12,
     fontWeight: '600',
   },
 });

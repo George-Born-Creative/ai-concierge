@@ -22,21 +22,32 @@ import type {
   HubspotStatusResponse,
   OpenAIKeyStatus,
 } from '@/lib/api/types';
+import { CRM_LABELS, getCrmLabelList } from '@/lib/crm/labels';
 import { getOAuthReturnUrl, useCrmOAuth } from '@/lib/oauth';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 // Provider-aware copy + the api module + which `getStatus()` shape we expect.
-// Everything else in this screen reads from the same primitives so a future
-// third provider would be a one-line addition here.
+// Labels come from the shared CRM_LABELS map so the only thing this screen
+// needs when a new provider is added is the matching `api` entry below.
 type ProviderMeta = {
   label: string;
   api: typeof ghlApi | typeof hubspotApi;
+  /** Where the user goes to change OAuth scopes / rotate the app. */
+  scopeManagementLocation: string;
 };
 
 const PROVIDER_META: Record<CrmProvider, ProviderMeta> = {
-  ghl: { label: 'GoHighLevel', api: ghlApi },
-  hubspot: { label: 'HubSpot', api: hubspotApi },
+  ghl: {
+    label: CRM_LABELS.ghl,
+    api: ghlApi,
+    scopeManagementLocation: `the ${CRM_LABELS.ghl} Marketplace`,
+  },
+  hubspot: {
+    label: CRM_LABELS.hubspot,
+    api: hubspotApi,
+    scopeManagementLocation: `${CRM_LABELS.hubspot}'s connected-app settings`,
+  },
 };
 
 type CrmStatus = GhlStatusResponse | HubspotStatusResponse;
@@ -267,7 +278,7 @@ export function SettingsScreenContent() {
             iconBg="#E8F0FE"
             iconColor="#1A73E8"
             title="CRM provider"
-            subtitle="Switch between GoHighLevel and HubSpot"
+            subtitle={`Switch between ${getCrmLabelList(' and ')}`}
             right={
               <Text style={styles.rowValue} numberOfLines={1}>
                 {meta.label}
@@ -311,9 +322,7 @@ export function SettingsScreenContent() {
         </View>
 
         <Text style={styles.helpText}>
-          {provider === 'ghl'
-            ? 'Reconnect after enabling new scopes in the GHL Marketplace (for example Calendars or Opportunities). This clears the old token and opens the authorisation screen again.'
-            : 'Reconnect after changing scopes in HubSpot or rotating the connected app. This clears the old token and opens the authorisation screen again.'}
+          {`Reconnect after enabling new scopes in ${meta.scopeManagementLocation}. This clears the old token and opens the authorisation screen again.`}
         </Text>
 
         {/* ── About ─────────────────────────────────────────────────────────── */}
