@@ -43,7 +43,7 @@ export class HubspotApiClient {
 
   async request<T>(
     userId: string,
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     init?: HubspotRequestInit,
   ): Promise<T> {
