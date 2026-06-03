@@ -21,6 +21,7 @@ import {
   ChatVoiceActivity,
   ChatVoiceWaveOverlay,
 } from '@/components/chat/chat-voice-wave-overlay';
+import { TypewriterText } from '@/components/chat/typewriter-text';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
 import { useToast } from '@/lib/toast';
@@ -216,6 +217,10 @@ export default function ChatScreen() {
         <ChatVoiceWaveOverlay activity={voiceActivity} />
 
         <View style={styles.composer}>
+          {/* Press-to-record mic backed by expo-av. Records an audio
+              file, uploads it to the backend for Whisper STT + LLM,
+              and the response streams back through the typewriter in
+              CommandBubble. */}
           <AIConciergeVoiceRecorder
             variant="composer"
             disabled={isRunning}
@@ -299,8 +304,26 @@ function CommandBubble({
   const [draft, setDraft] = useState(userText);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // Keep the draft in sync with the underlying message text when not actively
-  // editing — handles voice transcripts arriving after first render.
+  // Typewriter the assistant response, but only when it's a *fresh*
+  // arrival — i.e. the bubble just transitioned from pending=true to
+  // pending=false. Old responses (loaded from server history on chat
+  // reopen) render as plain text immediately, no re-animation.
+  //
+  // While animating, the response is rendered through TypewriterText
+  // (not selectable, no text actions). The moment the reveal finishes
+  // (onSettled), we swap back to a plain selectable Text node so
+  // copy / long-press still work like before.
+  const [animateResponse, setAnimateResponse] = useState(false);
+  const wasPendingRef = useRef(entry.pending);
+  useEffect(() => {
+    const justSettled =
+      wasPendingRef.current === true && entry.pending === false;
+    if (justSettled && entry.response) {
+      setAnimateResponse(true);
+    }
+    wasPendingRef.current = entry.pending;
+  }, [entry.pending, entry.response]);
+
   useEffect(() => {
     if (!editing) setDraft(userText);
   }, [editing, userText]);
@@ -420,9 +443,19 @@ function CommandBubble({
         <View>
           <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
             <Text style={styles.bubbleLabel}>Response</Text>
-            <Text style={styles.assistantText} selectable>
-              {entry.response}
-            </Text>
+            {animateResponse ? (
+              <TypewriterText
+                text={entry.response}
+                showCaret
+                caretColor="#202124"
+                textStyle={styles.assistantText}
+                onSettled={() => setAnimateResponse(false)}
+              />
+            ) : (
+              <Text style={styles.assistantText} selectable>
+                {entry.response}
+              </Text>
+            )}
           </View>
           <View style={styles.assistantMetaRow}>
             {timeLabel ? <Text style={styles.assistantTimestamp}>{timeLabel}</Text> : null}
