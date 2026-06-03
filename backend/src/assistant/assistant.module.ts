@@ -14,6 +14,6 @@ import { HubspotCommandService } from './hubspot-command.service';
   imports: [AuthModule, GhlModule, HubspotModule, VoiceModule, ConversationModule],
   controllers: [AssistantController],
   providers: [AssistantService, AssistantCommandService, HubspotCommandService],
-  exports: [AssistantService],
+  exports: [AssistantService, AssistantCommandService],
 })
 export class AssistantModule {}

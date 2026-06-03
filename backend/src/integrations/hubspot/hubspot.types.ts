@@ -43,9 +43,15 @@ export type HubspotCompanySummary = {
   id: string;
   name: string;
   domain?: string;
+  phone?: string;
   industry?: string;
   city?: string;
+  state?: string;
   country?: string;
+  /** HubSpot stores this as `numberofemployees` (all lowercase). */
+  numberOfEmployees?: number;
+  description?: string;
+  website?: string;
   createdAt?: string;
   updatedAt?: string;
 };

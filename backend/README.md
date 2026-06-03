@@ -2,7 +2,7 @@
 
 NestJS API that powers the AI-Concierge mobile app: authentication, plans,
 Stripe subscriptions, CRM OAuth (GoHighLevel, HubSpot), encrypted OpenAI key
-storage, and voice transcription.
+storage, and voice transcription (Whisper).
 
 ## Stack
 
