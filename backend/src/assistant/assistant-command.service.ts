@@ -16,6 +16,11 @@ import {
   extractCalendarCreateDetails,
   extractCalendarQuery,
   extractCalendarUpdateDetails,
+  extractCompanyContactAssociation,
+  extractCompanyCreateDetails,
+  extractCompanyDealAssociation,
+  extractCompanyQuery,
+  extractCompanyUpdateDetails,
   extractContactUpdateDetails,
   extractCreateDetails,
   extractFreeSlotsDetails,
@@ -234,10 +239,11 @@ export class AssistantCommandService {
 
   // ── HubSpot routing ─────────────────────────────────────────────────────────
   //
-  // HubSpot now supports full contact CRUD (list, search, create, update,
-  // delete). Deals and companies remain read-only — write surface and the
-  // calendar / appointment paths still return a friendly "not wired yet"
-  // message so the user knows the chat didn't silently swallow the request.
+  // HubSpot now supports full contact CRUD plus full company CRUD and
+  // contact/deal associations on companies. Deal read works (list); deal
+  // search/edit + calendars/appointments still return a friendly "not wired
+  // yet" message so the user knows the chat didn't silently swallow the
+  // request.
 
   private async executeHubspotIntent(
     userId: string,
@@ -260,6 +266,42 @@ export class AssistantCommandService {
         );
       case 'delete_contact':
         return this.hubspot.deleteContact(userId, extractSearchQuery(intent.entities));
+      case 'list_companies':
+        return this.hubspot.listLatestCompanies(userId);
+      case 'find_company':
+        return this.hubspot.findCompany(userId, extractCompanyQuery(intent.entities));
+      case 'create_company':
+        return this.hubspot.createCompany(
+          userId,
+          extractCompanyCreateDetails(intent.entities),
+        );
+      case 'update_company':
+        return this.hubspot.updateCompany(
+          userId,
+          extractCompanyUpdateDetails(intent.entities),
+        );
+      case 'delete_company':
+        return this.hubspot.deleteCompany(userId, extractCompanyQuery(intent.entities));
+      case 'attach_contact_to_company':
+        return this.hubspot.attachContactToCompany(
+          userId,
+          extractCompanyContactAssociation(intent.entities),
+        );
+      case 'detach_contact_from_company':
+        return this.hubspot.detachContactFromCompany(
+          userId,
+          extractCompanyContactAssociation(intent.entities),
+        );
+      case 'attach_deal_to_company':
+        return this.hubspot.attachDealToCompany(
+          userId,
+          extractCompanyDealAssociation(intent.entities),
+        );
+      case 'detach_deal_from_company':
+        return this.hubspot.detachDealFromCompany(
+          userId,
+          extractCompanyDealAssociation(intent.entities),
+        );
       case 'find_opportunity':
       case 'create_opportunity':
       case 'update_opportunity':
@@ -316,11 +358,46 @@ export class AssistantCommandService {
       /\b(compan(y|ies)|accounts?|organi[sz]ations?)\b/.test(lower) &&
       /\b(list|show|what|my|recent|all)\b/.test(lower)
     ) {
-      return this.hubspot.listRecentCompanies(userId);
+      return this.hubspot.listLatestCompanies(userId);
     }
+
+    // Last-line-of-defense fallbacks for company writes when the LLM
+    // mislabels the intent (e.g. emits "unknown" or routes to "create_deal"
+    // for a company create). Capture the most common phrasing patterns and
+    // re-route through the proper command method.
+    const createCompanyMatch = command.match(
+      /\b(?:create|add|save|make)\s+(?:a|an|the|new)?\s*(?:compan(?:y|ies)|account|organi[sz]ation)\s+(?:called|named)?\s*"?([^",]+?)"?(?:\s+(?:with|in|at|domain|website)\s+.*)?$/i,
+    );
+    if (createCompanyMatch?.[1]) {
+      return this.hubspot.createCompany(userId, {
+        name: createCompanyMatch[1].trim(),
+        domain: undefined,
+        phone: undefined,
+        industry: undefined,
+        city: undefined,
+        state: undefined,
+        country: undefined,
+        numberOfEmployees: undefined,
+        description: undefined,
+        website: undefined,
+      });
+    }
+    const findCompanyMatch = command.match(
+      /\b(?:find|look\s+up|show\s+me|search\s+for)\s+(?:the\s+)?(?:compan(?:y|ies)|account|organi[sz]ation)\s+"?([^",]+?)"?$/i,
+    );
+    if (findCompanyMatch?.[1]) {
+      return this.hubspot.findCompany(userId, { name: findCompanyMatch[1].trim() });
+    }
+    const deleteCompanyMatch = command.match(
+      /\b(?:delete|remove|drop)\s+(?:the\s+)?(?:compan(?:y|ies)|account|organi[sz]ation)\s+"?([^",]+?)"?$/i,
+    );
+    if (deleteCompanyMatch?.[1]) {
+      return this.hubspot.deleteCompany(userId, { name: deleteCompanyMatch[1].trim() });
+    }
+
     return {
       response:
-        'I can show your HubSpot contacts, deals, or companies. Try "pull up my contacts", "list my deals", or "what companies do I have".',
+        'I can show your HubSpot contacts, deals, or companies. Try "pull up my contacts", "list my deals", "what companies do I have", or "create a company called Acme".',
       status: 'error',
     };
   }
