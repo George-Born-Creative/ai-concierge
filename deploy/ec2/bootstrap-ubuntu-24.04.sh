@@ -70,7 +70,7 @@ install_node() {
   fi
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  trap "rm -rf '$tmpdir'" EXIT
 
   curl -fsSL "$url" -o "$tmpdir/$archive"
   mkdir -p "$install_root"
@@ -109,20 +109,20 @@ configure_postgres() {
 
   systemctl enable --now postgresql
 
-  runuser -u postgres -- psql -v ON_ERROR_STOP=1 <<SQL
-DO \$\$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${DB_USER}') THEN
-    CREATE ROLE ${DB_USER} LOGIN PASSWORD '${escaped_password}';
-  ELSE
-    ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${escaped_password}';
-  END IF;
-END
-\$\$;
-SELECT 'CREATE DATABASE ${DB_NAME} OWNER ${DB_USER}'
-WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}')\gexec
-GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
-SQL
+  if runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '${DB_USER}'" | grep -q 1; then
+    runuser -u postgres -- psql -v ON_ERROR_STOP=1 \
+      -c "ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${escaped_password}';"
+  else
+    runuser -u postgres -- psql -v ON_ERROR_STOP=1 \
+      -c "CREATE ROLE ${DB_USER} LOGIN PASSWORD '${escaped_password}';"
+  fi
+
+  if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'" | grep -q 1; then
+    runuser -u postgres -- createdb -O "${DB_USER}" "${DB_NAME}"
+  fi
+
+  runuser -u postgres -- psql -v ON_ERROR_STOP=1 \
+    -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};"
 }
 
 main() {
