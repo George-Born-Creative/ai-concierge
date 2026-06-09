@@ -1,5 +1,8 @@
 # Deploy AI-Concierge API on borncreative.net
 
+For a **dedicated AWS EC2 backend host** on Ubuntu 24.04 LTS, use
+[`./ec2/README.md`](./ec2/README.md).
+
 [borncreative.net](https://borncreative.net/) is the **WordPress marketing site**. GHL OAuth will **not** return to the mobile app until Nest runs behind that domain and nginx forwards OAuth/API traffic to it.
 
 ## Why OAuth gets stuck on the website
