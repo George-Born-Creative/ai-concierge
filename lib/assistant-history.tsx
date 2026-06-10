@@ -21,7 +21,16 @@ import { getToken, subscribeSession } from '@/lib/session';
 export type AssistantCommandStatus = 'success' | 'error';
 
 export type AssistantHistoryEntry = {
+  /**
+   * Stable React key for the row. For locally-created entries this is the
+   * optimistic id (e.g. "pending-voice-1750000000"); the server's persisted
+   * message id is stored separately on `serverMessageId` so list keys stay
+   * stable across the optimistic→server swap (otherwise the bubble remounts
+   * and the typewriter animation never fires).
+   */
   id: string;
+  /** Server-assigned message id once the command has been persisted. */
+  serverMessageId?: string;
   command: string;
   response: string;
   status: AssistantCommandStatus;
@@ -62,6 +71,7 @@ type AssistantState = {
 function mapMessage(message: AssistantMessage): AssistantHistoryEntry {
   return {
     id: message.id,
+    serverMessageId: message.id,
     command: message.command,
     response: message.response,
     status: message.status,
@@ -285,7 +295,11 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     setState((s) => {
       const chats = s.chats.map((chat) => {
         if (chat.id !== chatId) return chat;
-        const messages = chat.messages.filter((m) => m.id !== messageId);
+        // Match on either id: callers may pass the optimistic React-key id
+        // (entry.id) or the persisted server id (entry.serverMessageId).
+        const messages = chat.messages.filter(
+          (m) => m.id !== messageId && m.serverMessageId !== messageId,
+        );
         return {
           ...chat,
           messages,
@@ -316,7 +330,8 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         cancelledIdsRef.current.delete(optimisticId);
         return null;
       }
-      const entry = mapMessage(message);
+      const serverEntry = mapMessage(message);
+      let appliedEntry = serverEntry;
       setState((s) => {
         const chats = [...s.chats];
         const idx = chats.findIndex((c) => c.id === chatId);
@@ -324,32 +339,42 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           chats.push({
             id: chatId,
             title: null,
-            createdAt: entry.createdAt,
-            updatedAt: entry.createdAt,
-            messages: [entry],
+            createdAt: serverEntry.createdAt,
+            updatedAt: serverEntry.createdAt,
+            messages: [serverEntry],
           });
           return { ...s, chats, activeChatId: chatId, loading: false };
         }
 
         const chat = chats[idx];
         const existingIdx = chat.messages.findIndex(
-          (m) => m.id === entry.id || (optimisticId && m.id === optimisticId),
+          (m) => m.id === serverEntry.id || (optimisticId && m.id === optimisticId),
         );
         const messages = [...chat.messages];
         if (existingIdx >= 0) {
-          messages[existingIdx] = entry;
+          // Preserve the existing row's React key so the bubble doesn't
+          // remount when the optimistic id is replaced by the server id;
+          // remounting silently breaks the assistant typewriter animation
+          // because wasPendingRef re-initializes to its current value.
+          const existing = messages[existingIdx];
+          appliedEntry = {
+            ...serverEntry,
+            id: existing.id,
+            serverMessageId: serverEntry.id,
+          };
+          messages[existingIdx] = appliedEntry;
         } else {
-          messages.push(entry);
+          messages.push(serverEntry);
         }
 
         chats[idx] = {
           ...chat,
           messages,
-          updatedAt: entry.createdAt,
+          updatedAt: serverEntry.createdAt,
         };
         return { ...s, chats, activeChatId: chatId, loading: false };
       });
-      return entry;
+      return appliedEntry;
     },
     [],
   );
@@ -412,17 +437,13 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           cancelledIdsRef.current.delete(optimisticId);
           return { ...optimistic, response: 'Cancelled.', status: 'error' as const, pending: false };
         }
-        setState((s) => {
-          const chats = s.chats.map((chat) => {
-            if (chat.id !== chatId) return chat;
-            const messages = chat.messages
-              .filter((m) => m.id !== optimisticId)
-              .concat(mapMessage(result));
-            return { ...chat, messages, updatedAt: result.createdAt };
-          });
-          return { ...s, chats, activeChatId: chatId };
-        });
-        return mapMessage(result);
+        // Replace the optimistic row in place — preserving its React key —
+        // so the existing CommandBubble instance sees pending: true → false
+        // and fires the typewriter animation. Pushing a new entry with a
+        // fresh server uuid (the previous behavior) silently remounted the
+        // bubble and skipped the animation.
+        const applied = applyServerMessage(chatId, result, optimisticId);
+        return applied ?? mapMessage(result);
       } catch (err) {
         if (cancelledIdsRef.current.has(optimisticId)) {
           cancelledIdsRef.current.delete(optimisticId);
@@ -449,7 +470,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         return { ...optimistic, response, status: 'error' as const, pending: false };
       }
     },
-    [appendOptimistic, ensureConversationId],
+    [appendOptimistic, applyServerMessage, ensureConversationId],
   );
 
   const addVoiceMessage = useCallback(
@@ -549,12 +570,15 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             }),
           }));
 
+          // No `intent` field — the backend's /commands handler will run the
+          // normalizer with full conversation history + session context, which
+          // catches pronoun-resolution and follow-ups (e.g. "yes", "make it
+          // 2pm") that a history-blind transcribe-time call would miss.
           const result = await assistantApi.runCommand(convId, {
             text: transcript,
             source: 'voice',
             transcript,
             voiceUri,
-            intent: transcribed.intent,
           });
           if (cancelledIdsRef.current.has(optimisticId)) {
             cancelledIdsRef.current.delete(optimisticId);

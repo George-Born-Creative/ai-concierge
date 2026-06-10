@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  Easing,
-  StyleSheet,
-  Text,
-  type StyleProp,
-  type TextStyle,
-} from 'react-native';
+import { Text, type StyleProp, type TextStyle } from 'react-native';
 
 /**
  * Milliseconds between typewriter ticks. Larger = slower. At 55ms each
@@ -28,9 +21,11 @@ const TICK_INTERVAL_MS = 55;
 const CATCH_UP_DIVISOR = 20;
 
 /**
- * Typewriter renderer for an assistant response bubble. Reveals `text`
- * one chunk at a time so the user sees words *appearing* rather than
- * snapping in all at once when the LLM reply lands.
+ * Typewriter renderer for a chat bubble. Reveals `text` one chunk at a
+ * time so the user sees words *appearing* rather than snapping in all
+ * at once when the LLM reply lands. The output renders as plain text
+ * inside whatever bubble wraps it — no caret, no extra UI, just a
+ * smooth fill-in animation.
  *
  * Design notes:
  *
@@ -44,20 +39,13 @@ const CATCH_UP_DIVISOR = 20;
  *   common prefix and resume from there — never restart from empty.
  * - **Stops cleanly.** Once displayed === text, the tick loop ends. No
  *   background timers running on a settled bubble.
- * - The caret renders inside the same `<Text>` as the typed content so
- *   it sits inline with the last character on the current text line,
- *   like a code-editor cursor.
  */
 export function TypewriterText({
   text,
-  showCaret,
-  caretColor,
   textStyle,
   onSettled,
 }: {
   text: string;
-  showCaret: boolean;
-  caretColor: string;
   textStyle: StyleProp<TextStyle>;
   /**
    * Called once when the visible text has fully caught up to `text` and
@@ -124,12 +112,7 @@ export function TypewriterText({
     };
   }, [text]);
 
-  return (
-    <Text style={textStyle}>
-      {displayed}
-      {showCaret ? <BlinkingCaret color={caretColor} /> : null}
-    </Text>
-  );
+  return <Text style={textStyle}>{displayed}</Text>;
 }
 
 function longestCommonPrefix(a: string, b: string): string {
@@ -138,50 +121,3 @@ function longestCommonPrefix(a: string, b: string): string {
   while (i < max && a[i] === b[i]) i++;
   return a.slice(0, i);
 }
-
-/**
- * Inline blinking caret rendered at the end of a partial bubble's text.
- * Conveys "still streaming" without dimming the actual text. Uses
- * `Animated.Text` so the caret can opacity-blink inline with the
- * surrounding Text without breaking text layout.
- *
- * The character `▍` (half-block) reads as a typewriter cursor at small
- * font sizes on both iOS and Android, and unlike `|` or `_` it doesn't
- * collide visually with descenders.
- */
-export function BlinkingCaret({ color }: { color: string }) {
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 450,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 450,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [opacity]);
-  return (
-    <Animated.Text style={[styles.caret, { color, opacity }]}>
-      {' ▍'}
-    </Animated.Text>
-  );
-}
-
-const styles = StyleSheet.create({
-  caret: {
-    fontSize: 16,
-    fontWeight: '400',
-    lineHeight: 22,
-  },
-});

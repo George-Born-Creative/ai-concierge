@@ -68,10 +68,10 @@ export default function RootLayout() {
               <Stack.Screen name="oauth/[provider]" options={{ headerShown: false }} />
               <Stack.Screen name="(onboarding)/openai-key" options={{ headerShown: false }} />
               <Stack.Screen name="(chat)/chat" options={{ headerShown: false }} />
-              <Stack.Screen name="settings" options={{ headerShown: false }} />
-              <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
-              <Stack.Screen name="chats" options={{ headerShown: false }} />
-              <Stack.Screen name="hubspot" options={{ headerShown: false }} />
+              <Stack.Screen name="(stack)/settings" options={{ headerShown: false }} />
+              <Stack.Screen name="(stack)/edit-profile" options={{ headerShown: false }} />
+              <Stack.Screen name="(stack)/chats" options={{ headerShown: false }} />
+              <Stack.Screen name="(stack)/hubspot" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
             </Stack>
             <StatusBar style="dark" />
