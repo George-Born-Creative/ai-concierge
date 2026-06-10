@@ -40,6 +40,15 @@ const SUPPORTED_INTENTS = [
   'update_opportunity',
   'update_opportunity_status',
   'delete_opportunity',
+  'list_companies',
+  'find_company',
+  'create_company',
+  'update_company',
+  'delete_company',
+  'attach_contact_to_company',
+  'detach_contact_from_company',
+  'attach_deal_to_company',
+  'detach_deal_from_company',
   'create_note',
   'create_task',
   'create_deal',
@@ -48,15 +57,25 @@ const SUPPORTED_INTENTS = [
 ] as const;
 type Intent = (typeof SUPPORTED_INTENTS)[number];
 
+export type VoiceIntentPayload = {
+  intent: Intent;
+  confidence: number;
+  entities: Record<string, string | number | boolean | null>;
+  needs_clarification: boolean;
+  notes: string | null;
+};
+
+/**
+ * Response shape for POST /voice/transcribe.
+ *
+ * Historically this endpoint also ran the gpt-4o-mini intent normalizer
+ * before responding, doubling perceived latency on every voice command.
+ * The normalizer now runs in /assistant/.../commands instead, where it
+ * has access to conversation history + session context anyway. Voice
+ * just returns the transcript as soon as Whisper finishes.
+ */
 export type TranscribeResult = {
   transcript: string;
-  intent: {
-    intent: Intent;
-    confidence: number;
-    entities: Record<string, string | number | boolean | null>;
-    needs_clarification: boolean;
-    notes: string | null;
-  };
 };
 
 const NORMALIZER_SYSTEM_PROMPT = `You interpret casual spoken or typed commands for a GoHighLevel CRM assistant. Users speak in everyday English — not rigid command templates.
@@ -104,6 +123,15 @@ Intent examples (informal → intent):
 - "rename the Acme deal", "update opportunity Website Redesign to 3500", "move the John deal to Negotiation stage" → update_opportunity
 - "mark the Acme deal won", "set the Website Redesign opportunity to lost", "move that opportunity to abandoned" → update_opportunity_status
 - "delete the Acme opportunity", "remove the John Smith deal" → delete_opportunity
+- "list my companies", "show recent companies", "what accounts do I have", "pull up my organizations" → list_companies
+- "find the Acme company", "look up the company acme.com", "show me Globex" → find_company
+- "create a company called Acme Corp with domain acme.com in the software industry", "add an account named Globex", "save Initech as a company in Boston" → create_company
+- "update Acme's industry to software", "set the Globex phone to 555-1234", "rename Initech to Initech LLC", "change that company's website to acme.com" → update_company
+- "delete the Acme company", "remove the Globex account", "drop Initech from my companies" → delete_company
+- "attach John Smith to Acme", "associate Sarah with the Globex company", "link contact jane@test.com to Initech" → attach_contact_to_company
+- "detach John Smith from Acme", "unlink Sarah from Globex", "remove the contact association from Initech" → detach_contact_from_company
+- "attach the Website Redesign deal to Acme", "link deal 12345 to Globex", "associate that opportunity with Initech" → attach_deal_to_company
+- "detach the Website Redesign deal from Acme", "unlink deal 12345 from Globex" → detach_deal_from_company
 
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
@@ -123,6 +151,13 @@ Entity rules:
 - update_opportunity_status: "opportunityId"/"opportunityName"/"query" to identify; "status" required (open/won/lost/abandoned); optional "lostReasonId" when status is "lost".
 - delete_opportunity: "opportunityId"/"opportunityName"/"query".
 - For any opportunity intent that refers to "it" / "that deal" / "the opportunity", reuse lastOpportunityId/lastOpportunityName/lastPipelineId/lastPipelineName from session context.
+- list_companies: no entities required.
+- find_company / delete_company: put the search target in "query" (company name or domain). Also set "companyName" or "companyDomain" when obvious.
+- create_company: "companyName" (REQUIRED — extract from "called X", "named X", or "company X"), optional "companyDomain" (extract from "domain X" / "at acme.com" / "website acme.com"), optional "companyPhone", "companyIndustry", "companyCity", "companyState", "companyCountry", "companyEmployees" (number — extract from "10 employees", "5 people", "team of 25"), "companyDescription", "companyWebsite". If only "name" is given, that means the company name.
+- update_company: identify the company via "companyId", "companyName", or "companyDomain" (or session lastCompanyId); plus any of "newCompanyName", "companyDomain", "companyPhone", "companyIndustry", "companyCity", "companyState", "companyCountry", "companyEmployees", "companyDescription", "companyWebsite" to set.
+- attach_contact_to_company / detach_contact_from_company: identify the company via "companyName"/"companyDomain"/"companyId" (or session lastCompanyId), and the contact via "contactName"/"contactId"/"contactEmail"/"contactPhone".
+- attach_deal_to_company / detach_deal_from_company: identify the company via "companyName"/"companyDomain"/"companyId" (or session lastCompanyId), and the deal via "dealName" or "dealId".
+- For any company intent that refers to "it" / "that company" / "the account", reuse lastCompanyId/lastCompanyName from session context.
 - Normalize phone to digits with optional leading +.
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
@@ -148,7 +183,7 @@ Spoken email reconstruction (REQUIRED whenever you emit an "email" or "newEmail"
 
 Conversation context (when provided):
 - Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them", "that deal", "it").
-- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName when the user refers to "that" / "them" / "it".
+- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName, lastCompanyId, lastCompanyName when the user refers to "that" / "them" / "it".
 - If session context has a "pendingIntent" object, the backend is in the middle of collecting fields for it. Treat the latest user message as the answer to "pendingIntent.missing[0]" (the next missing field) and re-emit the SAME intent name with all previous entities plus the new piece. Do NOT switch intents.
 - If the latest message is a short follow-up answer (e.g. "Sales", "$2500", "tomorrow at 2", "John Smith", "yes", "sure", "go ahead", "do it"), look at the LAST assistant turn — if it was a clarification question, re-emit the ORIGINAL intent (e.g. create_opportunity) with all previously known entities PLUS the new piece of information the user just provided. Do not ask the same question again, and do not switch intents.
 - Treat "yes", "yeah", "yep", "sure", "ok", "okay", "right", "correct", "proceed", "continue", "go ahead", "do it", "sounds good" as positive confirmation of the most recent proposed action — re-emit that action's intent with all known entities and needs_clarification = false.
@@ -171,8 +206,11 @@ export class VoiceService {
     private readonly config: ConfigService,
   ) {}
 
-  // m4a (or any Whisper-supported format) → transcript → normalized JSON.
-  // Uses the user's own OpenAI key, never a shared one.
+  // Audio file → transcript via OpenAI's STT endpoint. Uses the user's own
+  // OpenAI key, never a shared one. The intent normalizer used to run here
+  // too, but it now runs in /assistant/.../commands so the user sees the
+  // transcript as soon as Whisper finishes — saves ~1-2s of perceived
+  // latency on every voice command.
   async transcribe(
     userId: string,
     file: Express.Multer.File | undefined,
@@ -198,7 +236,9 @@ export class VoiceService {
     try {
       const whisper = await openai.audio.transcriptions.create({
         file: audioFile,
-        model: 'whisper-1',
+        // gpt-4o-mini-transcribe is a drop-in faster replacement for whisper-1
+        // on the same endpoint; ~30-50% lower latency on short English clips.
+        model: 'gpt-4o-mini-transcribe',
         language: VOICE_LANGUAGE,
         prompt: WHISPER_PROMPT,
       });
@@ -214,29 +254,15 @@ export class VoiceService {
 
     if (!transcript) {
       await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_empty' });
-      return {
-        transcript: '',
-        intent: {
-          intent: 'unknown',
-          confidence: 0,
-          entities: {},
-          needs_clarification: true,
-          notes: 'No speech detected.',
-        },
-      };
+      return { transcript: '' };
     }
 
-    const intent = await this.interpretText(userId, transcript, openai);
+    await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_only' });
 
-    await this.audit(userId, 'voice.transcribe', 'success', {
-      intent: intent.intent,
-      confidence: intent.confidence,
-    });
-
-    return { transcript, intent };
+    return { transcript };
   }
 
-  async interpret(userId: string, text: string): Promise<TranscribeResult['intent']> {
+  async interpret(userId: string, text: string): Promise<VoiceIntentPayload> {
     const trimmed = text.trim();
     if (!trimmed) {
       return {
@@ -258,7 +284,7 @@ export class VoiceService {
     text: string,
     history: ConversationHistoryTurn[],
     sessionContext?: SessionContextPayload | null,
-  ): Promise<TranscribeResult['intent']> {
+  ): Promise<VoiceIntentPayload> {
     const trimmed = text.trim();
     if (!trimmed) {
       return {
@@ -281,7 +307,7 @@ export class VoiceService {
     openai: OpenAI,
     history: ConversationHistoryTurn[] = [],
     sessionContext?: SessionContextPayload | null,
-  ): Promise<TranscribeResult['intent']> {
+  ): Promise<VoiceIntentPayload> {
     try {
       const userContent = this.buildInterpretUserContent(text, history, sessionContext);
       const completion = await openai.chat.completions.create({
@@ -425,7 +451,7 @@ export class VoiceService {
     return Math.round((asUtc - date.getTime()) / 60000);
   }
 
-  private parseIntent(raw: string): TranscribeResult['intent'] {
+  private parseIntent(raw: string): VoiceIntentPayload {
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(raw) as Record<string, unknown>;

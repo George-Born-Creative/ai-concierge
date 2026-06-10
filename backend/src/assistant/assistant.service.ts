@@ -211,10 +211,48 @@ export class AssistantService {
     // Route: actionable intent → executor; otherwise → conversational chat.
     const hasActionableIntent = !!intent && intent.intent !== 'unknown';
     let result: AssistantCommandResult;
+    let ranActionableIntent = false;
     if (!tangent && hasActionableIntent) {
       result = await this.commands.execute(userId, text, intent, sessionContext);
+      ranActionableIntent = true;
     } else {
       result = await this.respondConversationally(userId, text, historyTurns, pending2, intent);
+    }
+
+    // After a successful CRM action, rewrite the deterministic baseline
+    // response in concierge tone via gpt-4o-mini. The LLM is given the
+    // factual baseline as ground truth and is forbidden from inventing or
+    // changing facts (names, ids, numbers); on any failure it falls back
+    // to the baseline so the user always sees a reply.
+    //
+    // Only polish when:
+    // - we actually ran an action (not the conversational fallback, which is
+    //   already an LLM reply),
+    // - the action succeeded,
+    // - there's no pendingIntent on the result (those are clarifying
+    //   questions like "what should I name it?" — keep them deterministic),
+    // - the action wasn't an unknown / no-op fallthrough.
+    if (
+      ranActionableIntent &&
+      result.status === 'success' &&
+      !result.pendingIntent &&
+      intent &&
+      intent.intent !== 'unknown' &&
+      result.response?.trim()
+    ) {
+      const polished = await this.conversation.polishActionResponse({
+        userId,
+        userMessage: text,
+        intent: intent.intent,
+        baseline: result.response,
+        history: historyTurns.flatMap((turn) => [
+          { role: 'user' as const, content: turn.command },
+          { role: 'assistant' as const, content: turn.response },
+        ]),
+      });
+      if (polished?.trim()) {
+        result = { ...result, response: polished };
+      }
     }
 
     const status =

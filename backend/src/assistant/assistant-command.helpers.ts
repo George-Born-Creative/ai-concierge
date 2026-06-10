@@ -482,6 +482,23 @@ export function mergeSessionIntoEntities(
   ) {
     merged.pipelineStageId = ctx.lastPipelineStageId;
   }
+  // Companies — only fill from session when the user didn't name a company
+  // themselves. Same wrong-target safety as contacts: an explicit name in the
+  // utterance ALWAYS wins over the session id.
+  if (
+    !entityString(merged, 'companyId', 'company_id') &&
+    !entityString(merged, 'companyName', 'company_name', 'companyDomain', 'company_domain') &&
+    ctx.lastCompanyId
+  ) {
+    merged.companyId = ctx.lastCompanyId;
+  }
+  if (
+    !entityString(merged, 'companyName', 'company_name') &&
+    !entityString(merged, 'companyDomain', 'company_domain') &&
+    ctx.lastCompanyName
+  ) {
+    merged.companyName = ctx.lastCompanyName;
+  }
   return merged;
 }
 
@@ -510,6 +527,161 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'update_opportunity',
     'update_opportunity_status',
     'delete_opportunity',
+    'list_companies',
+    'find_company',
+    'create_company',
+    'update_company',
+    'delete_company',
+    'attach_contact_to_company',
+    'detach_contact_from_company',
+    'attach_deal_to_company',
+    'detach_deal_from_company',
   ]);
   return supported.has(intent.intent);
+}
+
+// ── HubSpot companies extractors ────────────────────────────────────────────
+//
+// All five helpers accept the raw LLM entities bag and produce a typed shape
+// the HubspotCommandService can consume. They tolerate snake_case from the
+// LLM, fall back to generic keys like `name` / `query`, and never throw on
+// missing fields — the executor handles "missing required field" copy.
+
+export type CompanyQuery = {
+  id?: string;
+  name?: string;
+  domain?: string;
+};
+
+export function extractCompanyQuery(
+  entities: Record<string, string | number | boolean | null>,
+): CompanyQuery {
+  return {
+    id: entityString(entities, 'companyId', 'company_id'),
+    name:
+      entityString(entities, 'companyName', 'company_name') ||
+      entityString(entities, 'query', 'name'),
+    domain: entityString(entities, 'companyDomain', 'company_domain', 'domain', 'website'),
+  };
+}
+
+export function extractCompanyCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    name:
+      entityString(entities, 'companyName', 'company_name') ||
+      entityString(entities, 'name') ||
+      '',
+    domain: entityString(entities, 'companyDomain', 'company_domain', 'domain'),
+    phone: entityString(entities, 'companyPhone', 'company_phone', 'phone'),
+    industry: entityString(entities, 'companyIndustry', 'company_industry', 'industry'),
+    city: entityString(entities, 'companyCity', 'company_city', 'city'),
+    state: entityString(entities, 'companyState', 'company_state', 'state'),
+    country: entityString(entities, 'companyCountry', 'company_country', 'country'),
+    numberOfEmployees: entityNumber(
+      entities,
+      'companyEmployees',
+      'company_employees',
+      'numberOfEmployees',
+      'number_of_employees',
+      'employees',
+    ),
+    description: entityString(
+      entities,
+      'companyDescription',
+      'company_description',
+      'description',
+    ),
+    website: entityString(entities, 'companyWebsite', 'company_website', 'website'),
+  };
+}
+
+export function extractCompanyUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: how do we identify which company to update?
+  const query: CompanyQuery = {
+    id: entityString(entities, 'companyId', 'company_id'),
+    // For update, "companyName" without "newCompanyName" means SELECTOR not
+    // value — same convention as updateContact's `query` vs `newName`.
+    name: entityString(entities, 'companyName', 'company_name', 'query'),
+    domain: entityString(entities, 'companyDomain', 'company_domain'),
+  };
+
+  return {
+    query,
+    newName: entityString(entities, 'newCompanyName', 'new_company_name', 'newName'),
+    domain: entityString(entities, 'newCompanyDomain', 'new_company_domain'),
+    phone: entityString(entities, 'newCompanyPhone', 'new_company_phone', 'companyPhone', 'phone'),
+    industry: entityString(
+      entities,
+      'newCompanyIndustry',
+      'new_company_industry',
+      'companyIndustry',
+      'industry',
+    ),
+    city: entityString(entities, 'newCompanyCity', 'new_company_city', 'companyCity', 'city'),
+    state: entityString(entities, 'newCompanyState', 'new_company_state', 'companyState', 'state'),
+    country: entityString(
+      entities,
+      'newCompanyCountry',
+      'new_company_country',
+      'companyCountry',
+      'country',
+    ),
+    numberOfEmployees: entityNumber(
+      entities,
+      'newCompanyEmployees',
+      'new_company_employees',
+      'companyEmployees',
+      'numberOfEmployees',
+      'employees',
+    ),
+    description: entityString(
+      entities,
+      'newCompanyDescription',
+      'new_company_description',
+      'companyDescription',
+      'description',
+    ),
+    website: entityString(
+      entities,
+      'newCompanyWebsite',
+      'new_company_website',
+      'companyWebsite',
+      'website',
+    ),
+  };
+}
+
+export function extractCompanyContactAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    company: extractCompanyQuery(entities),
+    contact: {
+      id: entityString(entities, 'contactId', 'contact_id'),
+      query:
+        entityString(entities, 'contactName', 'contact_name') ||
+        buildNameFromEntities(entities) ||
+        entityString(entities, 'contactEmail', 'contact_email', 'email') ||
+        entityString(entities, 'contactPhone', 'contact_phone', 'phone') ||
+        '',
+    },
+  };
+}
+
+export function extractCompanyDealAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    company: extractCompanyQuery(entities),
+    deal: {
+      id: entityString(entities, 'dealId', 'deal_id', 'opportunityId', 'opportunity_id'),
+      name:
+        entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
+        '',
+    },
+  };
 }
