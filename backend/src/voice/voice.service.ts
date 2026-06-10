@@ -57,15 +57,25 @@ const SUPPORTED_INTENTS = [
 ] as const;
 type Intent = (typeof SUPPORTED_INTENTS)[number];
 
+export type VoiceIntentPayload = {
+  intent: Intent;
+  confidence: number;
+  entities: Record<string, string | number | boolean | null>;
+  needs_clarification: boolean;
+  notes: string | null;
+};
+
+/**
+ * Response shape for POST /voice/transcribe.
+ *
+ * Historically this endpoint also ran the gpt-4o-mini intent normalizer
+ * before responding, doubling perceived latency on every voice command.
+ * The normalizer now runs in /assistant/.../commands instead, where it
+ * has access to conversation history + session context anyway. Voice
+ * just returns the transcript as soon as Whisper finishes.
+ */
 export type TranscribeResult = {
   transcript: string;
-  intent: {
-    intent: Intent;
-    confidence: number;
-    entities: Record<string, string | number | boolean | null>;
-    needs_clarification: boolean;
-    notes: string | null;
-  };
 };
 
 const NORMALIZER_SYSTEM_PROMPT = `You interpret casual spoken or typed commands for a GoHighLevel CRM assistant. Users speak in everyday English — not rigid command templates.
@@ -196,8 +206,11 @@ export class VoiceService {
     private readonly config: ConfigService,
   ) {}
 
-  // m4a (or any Whisper-supported format) → transcript → normalized JSON.
-  // Uses the user's own OpenAI key, never a shared one.
+  // Audio file → transcript via OpenAI's STT endpoint. Uses the user's own
+  // OpenAI key, never a shared one. The intent normalizer used to run here
+  // too, but it now runs in /assistant/.../commands so the user sees the
+  // transcript as soon as Whisper finishes — saves ~1-2s of perceived
+  // latency on every voice command.
   async transcribe(
     userId: string,
     file: Express.Multer.File | undefined,
@@ -223,7 +236,9 @@ export class VoiceService {
     try {
       const whisper = await openai.audio.transcriptions.create({
         file: audioFile,
-        model: 'whisper-1',
+        // gpt-4o-mini-transcribe is a drop-in faster replacement for whisper-1
+        // on the same endpoint; ~30-50% lower latency on short English clips.
+        model: 'gpt-4o-mini-transcribe',
         language: VOICE_LANGUAGE,
         prompt: WHISPER_PROMPT,
       });
@@ -239,29 +254,15 @@ export class VoiceService {
 
     if (!transcript) {
       await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_empty' });
-      return {
-        transcript: '',
-        intent: {
-          intent: 'unknown',
-          confidence: 0,
-          entities: {},
-          needs_clarification: true,
-          notes: 'No speech detected.',
-        },
-      };
+      return { transcript: '' };
     }
 
-    const intent = await this.interpretText(userId, transcript, openai);
+    await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_only' });
 
-    await this.audit(userId, 'voice.transcribe', 'success', {
-      intent: intent.intent,
-      confidence: intent.confidence,
-    });
-
-    return { transcript, intent };
+    return { transcript };
   }
 
-  async interpret(userId: string, text: string): Promise<TranscribeResult['intent']> {
+  async interpret(userId: string, text: string): Promise<VoiceIntentPayload> {
     const trimmed = text.trim();
     if (!trimmed) {
       return {
@@ -283,7 +284,7 @@ export class VoiceService {
     text: string,
     history: ConversationHistoryTurn[],
     sessionContext?: SessionContextPayload | null,
-  ): Promise<TranscribeResult['intent']> {
+  ): Promise<VoiceIntentPayload> {
     const trimmed = text.trim();
     if (!trimmed) {
       return {
@@ -306,7 +307,7 @@ export class VoiceService {
     openai: OpenAI,
     history: ConversationHistoryTurn[] = [],
     sessionContext?: SessionContextPayload | null,
-  ): Promise<TranscribeResult['intent']> {
+  ): Promise<VoiceIntentPayload> {
     try {
       const userContent = this.buildInterpretUserContent(text, history, sessionContext);
       const completion = await openai.chat.completions.create({
@@ -450,7 +451,7 @@ export class VoiceService {
     return Math.round((asUtc - date.getTime()) / 60000);
   }
 
-  private parseIntent(raw: string): TranscribeResult['intent'] {
+  private parseIntent(raw: string): VoiceIntentPayload {
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(raw) as Record<string, unknown>;

@@ -418,7 +418,11 @@ export class AssistantCommandService {
       return { response: "You don't have any contacts in GoHighLevel yet.", status: 'success' };
     }
     return {
-      response: `Here's who you've got recently:\n${summaries.map((c) => this.formatContact(c)).join('\n')}`,
+      response:
+        `Here are the contacts you've added most recently in GoHighLevel:\n${summaries
+          .map((c) => this.formatContact(c))
+          .join('\n')}\n\n` +
+        "Want a closer look at someone? Just say their name and I'll pull up the details.",
       status: 'success',
     };
   }
@@ -435,8 +439,13 @@ export class AssistantCommandService {
     return {
       response:
         matches.length === 1
-          ? `Found them:\n${this.formatContact(top)}`
-          : `Found ${matches.length} people:\n${matches.slice(0, 5).map((c) => this.formatContact(c)).join('\n')}`,
+          ? `Found them in GoHighLevel:\n${this.formatContact(top)}\n\n` +
+            "I'll keep them in mind — say \"update their phone\" or \"book them tomorrow\" and I'll know who you mean."
+          : `Found ${matches.length} people in GoHighLevel — here are the closest matches:\n${matches
+              .slice(0, 5)
+              .map((c) => this.formatContact(c))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (a name, email, or phone) and I'll zero in.",
       status: 'success',
       contextPatch: { lastContactId: top.id, lastContactName: top.name },
     };
@@ -466,7 +475,10 @@ export class AssistantCommandService {
       .filter(Boolean)
       .join(', ');
     return {
-      response: `Added ${created.name}${bits ? ` (${bits})` : ''} to GoHighLevel.`,
+      response:
+        `Done — ${created.name} is now in GoHighLevel${bits ? ` (${bits})` : ''}. ` +
+        "I'll keep them in mind for follow-ups, so you can say things like " +
+        '"update their phone" or "book them tomorrow at 2" and I\'ll know who you mean.',
       status: 'success',
       contextPatch: { lastContactId: created.id, lastContactName: created.name },
     };
@@ -537,7 +549,9 @@ export class AssistantCommandService {
       .map(([k, v]) => `${k} → ${v}`)
       .join(', ');
     return {
-      response: `Updated ${updated.name} (${changed}).`,
+      response:
+        `All set — ${updated.name} is updated in GoHighLevel (${changed}). ` +
+        "Want me to tweak something else on this contact, or pull up their full details?",
       status: 'success',
       contextPatch: { lastContactId: updated.id, lastContactName: updated.name },
       clearPendingIntent: true,
@@ -559,7 +573,12 @@ export class AssistantCommandService {
       };
     }
     await this.ghl.deleteContact(userId, matches[0].id);
-    return { response: `Removed ${matches[0].name} from GoHighLevel.`, status: 'success' };
+    return {
+      response:
+        `Done — ${matches[0].name} is removed from GoHighLevel. ` +
+        "If that was a mistake, let me know and I can recreate them; otherwise, anything else you'd like me to tidy up?",
+      status: 'success',
+    };
   }
 
   private async listCalendars(userId: string): Promise<AssistantCommandResult> {
@@ -568,7 +587,11 @@ export class AssistantCommandService {
       return { response: "You don't have any calendars set up in GoHighLevel yet.", status: 'success' };
     }
     return {
-      response: `Here are your calendars:\n${result.calendars.map((c) => this.formatCalendar(c)).join('\n')}`,
+      response:
+        `Here are the calendars on your GoHighLevel account:\n${result.calendars
+          .map((c) => this.formatCalendar(c))
+          .join('\n')}\n\n` +
+        "Want me to check open slots, list upcoming appointments, or update one of these? Just say the word.",
       status: 'success',
     };
   }
@@ -599,7 +622,10 @@ export class AssistantCommandService {
       isActive: details.isActive,
     });
     return {
-      response: `Created calendar "${created.name}" (id ${created.id}).`,
+      response:
+        `Done — the "${created.name}" calendar is set up in GoHighLevel. ` +
+        "I'll keep this calendar in mind, so you can say things like " +
+        '"book Sarah on it tomorrow at 2" or "show available slots this week" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: { lastCalendarId: created.id, lastCalendarName: created.name },
     };
@@ -619,7 +645,9 @@ export class AssistantCommandService {
       isActive: details.isActive,
     });
     return {
-      response: `Updated calendar "${updated.name}".`,
+      response:
+        `All set — the "${updated.name}" calendar is updated in GoHighLevel. ` +
+        "Want me to tweak another field, check open slots, or list upcoming appointments on it?",
       status: 'success',
       contextPatch: { lastCalendarId: updated.id, lastCalendarName: updated.name },
     };
@@ -632,7 +660,12 @@ export class AssistantCommandService {
     const calendarId = await this.resolveCalendarId(userId, undefined, query);
     const calendar = await this.ghl.getCalendar(userId, calendarId);
     await this.ghl.deleteCalendar(userId, calendarId);
-    return { response: `Deleted calendar "${calendar.name}".`, status: 'success' };
+    return {
+      response:
+        `Done — the "${calendar.name}" calendar is removed from GoHighLevel. ` +
+        "Any appointments that lived on it are still around in your account; let me know if you want me to clean those up too.",
+      status: 'success',
+    };
   }
 
   private async getFreeSlotsFromDetails(
@@ -669,10 +702,12 @@ export class AssistantCommandService {
     }
     const top = result.appointments[0];
     return {
-      response: `Here's what's coming up:\n${result.appointments
-        .slice(0, 10)
-        .map((a) => this.formatAppointment(a))
-        .join('\n')}`,
+      response:
+        `Here's what's coming up on your GoHighLevel calendar:\n${result.appointments
+          .slice(0, 10)
+          .map((a) => this.formatAppointment(a))
+          .join('\n')}\n\n` +
+        "Need to reschedule, cancel one, or book something new? Just say the word.",
       status: 'success',
       contextPatch: top
         ? {
@@ -709,7 +744,10 @@ export class AssistantCommandService {
       notes: details.notes,
     });
     return {
-      response: `Booked — ${created.title} ${this.formatWhen(created.startTime)}.`,
+      response:
+        `Booked — ${created.title} is on the calendar for ${this.formatWhen(created.startTime)}. ` +
+        "I'll keep this appointment in mind, so you can say things like " +
+        '"cancel it", "move it to 3pm", or "reschedule that one" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: {
         lastAppointmentId: created.id,
@@ -731,7 +769,9 @@ export class AssistantCommandService {
     }
     await this.ghl.cancelAppointment(userId, matches[0].id);
     return {
-      response: `Canceled ${matches[0].title} ${this.formatWhen(matches[0].startTime)}.`,
+      response:
+        `Done — ${matches[0].title} on ${this.formatWhen(matches[0].startTime)} is canceled. ` +
+        "Want me to rebook it for a different time, or send a quick note to the contact?",
       status: 'success',
     };
   }
@@ -748,7 +788,11 @@ export class AssistantCommandService {
       };
     }
     return {
-      response: `Your pipelines:\n${pipelines.map((p) => this.formatPipeline(p)).join('\n')}`,
+      response:
+        `Here are the pipelines on your GoHighLevel account:\n${pipelines
+          .map((p) => this.formatPipeline(p))
+          .join('\n')}\n\n` +
+        "Want to see open opportunities in one of them, or create a new deal? Just point me at the pipeline.",
       status: 'success',
       contextPatch: { lastPipelineId: pipelines[0].id, lastPipelineName: pipelines[0].name },
       clearPendingIntent: true,
@@ -795,10 +839,12 @@ export class AssistantCommandService {
     }
     const top = result.opportunities[0];
     return {
-      response: `Opportunities:\n${result.opportunities
-        .slice(0, 10)
-        .map((o) => this.formatOpportunity(o))
-        .join('\n')}`,
+      response:
+        `Here are the opportunities I'm seeing in GoHighLevel:\n${result.opportunities
+          .slice(0, 10)
+          .map((o) => this.formatOpportunity(o))
+          .join('\n')}\n\n` +
+        "Want me to drill into one (\"show the Acme deal\"), update a status, or add a new one? I'm ready when you are.",
       status: 'success',
       contextPatch: this.opportunityContextPatch(top, pipelineName),
       clearPendingIntent: true,
@@ -823,8 +869,13 @@ export class AssistantCommandService {
     return {
       response:
         matches.length === 1
-          ? `Found it:\n${this.formatOpportunity(top)}`
-          : `Found ${matches.length} matches:\n${matches.slice(0, 5).map((o) => this.formatOpportunity(o)).join('\n')}`,
+          ? `Found it in GoHighLevel:\n${this.formatOpportunity(top)}\n\n` +
+            "I'll keep this deal in mind — say \"mark it won\", \"update its value\", or \"move it to Negotiation\" and I'll know which one you mean."
+          : `Found ${matches.length} matches in GoHighLevel — here's the top of the list:\n${matches
+              .slice(0, 5)
+              .map((o) => this.formatOpportunity(o))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (the deal name works) and I'll zero in.",
       status: 'success',
       contextPatch: this.opportunityContextPatch(top),
       clearPendingIntent: true,
@@ -1004,7 +1055,10 @@ export class AssistantCommandService {
       .join(' ');
 
     return {
-      response: `Created opportunity "${created.name}"${bits ? ` ${bits}` : ''}.`,
+      response:
+        `Done — the "${created.name}" opportunity is in GoHighLevel${bits ? ` ${bits}` : ''}. ` +
+        "I'll keep this deal in mind, so you can say things like " +
+        '"mark it won", "update its value", or "move it to Negotiation" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: this.opportunityContextPatch(created, resolvedPipeline.pipelineName),
       clearPendingIntent: true,
@@ -1045,7 +1099,9 @@ export class AssistantCommandService {
     });
 
     return {
-      response: `Updated "${updated.name}".`,
+      response:
+        `All set — the "${updated.name}" opportunity is updated in GoHighLevel. ` +
+        "Want me to change another field, mark it won, or move it to a different stage?",
       status: 'success',
       contextPatch: this.opportunityContextPatch(updated, pipelineResolved.pipelineName),
       clearPendingIntent: true,
@@ -1077,7 +1133,9 @@ export class AssistantCommandService {
     );
 
     return {
-      response: `Marked "${updated.name}" as ${updated.status}.`,
+      response:
+        `Done — "${updated.name}" is now marked ${updated.status} in GoHighLevel. ` +
+        "Want me to log a note on it, update the amount, or move it to a different stage next?",
       status: 'success',
       contextPatch: this.opportunityContextPatch(updated),
       clearPendingIntent: true,
@@ -1099,7 +1157,9 @@ export class AssistantCommandService {
 
     await this.ghl.deleteOpportunity(userId, target.opportunity.id);
     return {
-      response: `Removed opportunity "${target.opportunity.name}".`,
+      response:
+        `Done — the "${target.opportunity.name}" opportunity is removed from GoHighLevel. ` +
+        "If that was a mistake, let me know and I can recreate it; otherwise, anything else you'd like me to clean up?",
       status: 'success',
       clearPendingIntent: true,
     };

@@ -7,6 +7,23 @@ import type { PendingIntent } from '../assistant/assistant.types';
 const CHAT_MODEL = 'gpt-4o-mini';
 const MAX_HISTORY_TURNS = 10;
 
+const POLISH_SYSTEM_PROMPT = `You are the friendly voice of a CRM assistant inside a mobile app. The CRM system has just successfully run an action on the user's behalf and produced FACTUAL_RESPONSE — a deterministic, ground-truth description of exactly what happened. Your job is to rewrite FACTUAL_RESPONSE in a warmer, more conversational concierge tone, keeping the message tight (2–3 sentences for write actions; for list/find actions that include a bullet list, keep the bullets verbatim and only polish the surrounding sentences).
+
+Strict rules — these protect data integrity:
+- NEVER invent, add, omit, or alter facts. Names, phone numbers, emails, dollar amounts, ids, dates, times, statuses, pipeline names, calendar names, deal names, company names, and counts MUST match FACTUAL_RESPONSE exactly. If FACTUAL_RESPONSE says "Sarah Smith", you write "Sarah Smith" — never "Sarah", never "Sarah Jones".
+- If FACTUAL_RESPONSE contains a bullet list (lines starting with "·"), preserve every bullet verbatim and in the same order. Do not summarize, reorder, or skip bullets.
+- If FACTUAL_RESPONSE contains a follow-up suggestion (e.g. 'say "attach Sarah to it"'), keep an equivalent suggestion. You may rephrase it, but keep the same intent and any quoted user phrases unchanged.
+- NEVER claim an additional action ("…and I also…", "I'll go ahead and notify them"). Only describe what FACTUAL_RESPONSE describes.
+- NEVER apologize for the system, second-guess the action, or ask follow-up clarifying questions of your own.
+
+Style:
+- Concierge, not a log line. Confident, warm, and helpful — like a personal assistant reporting a quick task done.
+- Match the user's energy: short command → short reply.
+- Don't start with "Sure", "Of course", "I've", "Got it".
+- No greetings, sign-offs, emoji, or markdown headers.
+
+Output: just the polished response text — no JSON, no preamble, no commentary about what you changed.`;
+
 const SYSTEM_PROMPT_BASE = `You are a friendly, knowledgeable AI assistant inside a GoHighLevel CRM mobile app.
 
 You can help in two ways:
@@ -83,6 +100,78 @@ export class ConversationService {
       return `I'm here. We were in the middle of: ${input.pendingIntent.question}`;
     }
     return "I'm here — what would you like to do?";
+  }
+
+  /**
+   * Rephrase a deterministic action result in concierge tone.
+   *
+   * The CRM command services produce a factual baseline (e.g. "Done — Sarah
+   * Smith is now in HubSpot (phone 555-1234)…") that is the ground truth of
+   * what just happened. This method asks the LLM to rewrite that baseline in
+   * a warmer, more natural voice — without ever inventing or altering the
+   * facts. Any failure (network error, timeout, empty completion, etc.)
+   * falls back to the original baseline so the user always sees a reply.
+   *
+   * Only call this on successful actionable intents — clarifying questions
+   * (`pendingIntent.question`) and tangent replies should stay deterministic
+   * or use {@link respond} directly.
+   */
+  async polishActionResponse(input: {
+    userId: string;
+    userMessage: string;
+    intent: string;
+    /** The factual response produced by the command executor. Source of truth. */
+    baseline: string;
+    /** Optional brief history so the LLM can match the user's tone / style. */
+    history?: ConversationTurn[];
+  }): Promise<string> {
+    const baseline = input.baseline?.trim();
+    if (!baseline) return input.baseline;
+
+    let openai: OpenAI;
+    try {
+      const apiKey = await this.keys.getDecryptedKey(input.userId);
+      openai = new OpenAI({ apiKey });
+    } catch (err) {
+      this.logger.warn(
+        `polishActionResponse key lookup failed for ${input.userId}: ${(err as Error).message}`,
+      );
+      return baseline;
+    }
+
+    const trimmedHistory = (input.history ?? []).slice(-MAX_HISTORY_TURNS);
+    const userBlock = [
+      `User said: "${input.userMessage}"`,
+      `Intent that ran: ${input.intent}`,
+      `FACTUAL_RESPONSE (rewrite this in concierge tone — do not change any facts):`,
+      baseline,
+    ].join('\n\n');
+
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: 'system', content: POLISH_SYSTEM_PROMPT },
+      ...trimmedHistory.map((turn) => ({ role: turn.role, content: turn.content })),
+      { role: 'user', content: userBlock },
+    ];
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: CHAT_MODEL,
+        messages,
+        // Lower than respond()'s 0.6 — we want stylistic variety, not creative
+        // restructuring. Higher temps tempt the LLM to "improve" facts.
+        temperature: 0.3,
+        max_tokens: 320,
+      });
+      const reply = completion.choices[0]?.message?.content?.trim();
+      if (reply) return reply;
+    } catch (err) {
+      this.logger.warn(
+        `polishActionResponse failed for ${input.userId} on intent "${input.intent}": ${
+          (err as Error).message
+        }`,
+      );
+    }
+    return baseline;
   }
 
   private buildSystemPrompt(pending?: PendingIntent | null): string {
