@@ -386,7 +386,6 @@ function CommandBubble({
       disabled={!onDelete || entry.pending || editing}>
       <View>
         <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
-          <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
           {editing ? (
             <>
               <TextInput
@@ -432,8 +431,6 @@ function CommandBubble({
           ) : animateUserVoice ? (
             <TypewriterText
               text={userText}
-              showCaret
-              caretColor="#FFFFFF"
               textStyle={styles.userText}
               onSettled={() => setAnimateUserVoice(false)}
             />
@@ -475,12 +472,9 @@ function CommandBubble({
       ) : (
         <View>
           <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
-            <Text style={styles.bubbleLabel}>Response</Text>
             {animateResponse ? (
               <TypewriterText
                 text={entry.response}
-                showCaret
-                caretColor="#202124"
                 textStyle={styles.assistantText}
                 onSettled={() => setAnimateResponse(false)}
               />
