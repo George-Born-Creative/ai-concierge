@@ -256,9 +256,16 @@ export type VoiceIntent = {
   notes: string | null;
 };
 
+/**
+ * Response from POST /voice/transcribe.
+ *
+ * The backend used to also run the gpt-4o-mini intent normalizer here,
+ * doubling perceived voice latency. Normalization now happens once in
+ * /assistant/.../commands with full conversation history + session
+ * context, so this endpoint just returns the transcript.
+ */
 export type TranscribeResponse = {
   transcript: string;
-  intent: VoiceIntent;
 };
 
 // ─── Assistant conversations ─────────────────────────────────────────────────

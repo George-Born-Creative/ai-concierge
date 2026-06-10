@@ -195,7 +195,12 @@ export default function ChatScreen() {
                 }}
                 onDelete={
                   activeChatId
-                    ? () => confirmDeleteMessage(activeChatId, entry.id, deleteMessage)
+                    ? () =>
+                        confirmDeleteMessage(
+                          activeChatId,
+                          entry.serverMessageId ?? entry.id,
+                          deleteMessage,
+                        )
                     : undefined
                 }
                 onEdit={
@@ -203,8 +208,10 @@ export default function ChatScreen() {
                     ? async (newText) => {
                         // Delete the original turn (server + local) first so the
                         // edited request lands in its place — old assistant
-                        // response is gone, new one streams in fresh.
-                        await deleteMessage(activeChatId, entry.id);
+                        // response is gone, new one streams in fresh. Always
+                        // hit the backend with the persisted message id, not
+                        // the optimistic React-key id.
+                        await deleteMessage(activeChatId, entry.serverMessageId ?? entry.id);
                         await submitCommand(newText, 'text');
                       }
                     : undefined
@@ -324,6 +331,24 @@ function CommandBubble({
     wasPendingRef.current = entry.pending;
   }, [entry.pending, entry.response]);
 
+  // Same idea for the user bubble on voice messages: while transcribing,
+  // the bubble shows the "Transcribing your voice…" placeholder; the
+  // moment Whisper returns and `entry.transcript` is populated, animate
+  // it in character-by-character so the user sees their words being
+  // typed out instead of popping in instantly.
+  const [animateUserVoice, setAnimateUserVoice] = useState(false);
+  const wasTranscribingRef = useRef(
+    entry.source === 'voice' && !entry.transcript,
+  );
+  useEffect(() => {
+    if (entry.source !== 'voice') return;
+    const isTranscribing = !entry.transcript;
+    if (wasTranscribingRef.current && !isTranscribing) {
+      setAnimateUserVoice(true);
+    }
+    wasTranscribingRef.current = isTranscribing;
+  }, [entry.source, entry.transcript]);
+
   useEffect(() => {
     if (!editing) setDraft(userText);
   }, [editing, userText]);
@@ -404,6 +429,14 @@ function CommandBubble({
                 </Pressable>
               </View>
             </>
+          ) : animateUserVoice ? (
+            <TypewriterText
+              text={userText}
+              showCaret
+              caretColor="#FFFFFF"
+              textStyle={styles.userText}
+              onSettled={() => setAnimateUserVoice(false)}
+            />
           ) : (
             <Text style={styles.userText} selectable>
               {userText}
