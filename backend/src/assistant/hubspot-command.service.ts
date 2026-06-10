@@ -46,7 +46,11 @@ export class HubspotCommandService {
       return { response: "You don't have any contacts in HubSpot yet.", status: 'success' };
     }
     return {
-      response: `Here's who you've got recently:\n${results.map((c) => this.formatContact(c)).join('\n')}`,
+      response:
+        `Here are the contacts you've added most recently in HubSpot:\n${results
+          .map((c) => this.formatContact(c))
+          .join('\n')}\n\n` +
+        "Want a closer look at someone? Just say their name and I'll pull up the details.",
       status: 'success',
       contextPatch: { lastContactId: results[0].id, lastContactName: results[0].name },
     };
@@ -67,8 +71,13 @@ export class HubspotCommandService {
     return {
       response:
         results.length === 1
-          ? `Found them:\n${this.formatContact(top)}`
-          : `Found ${results.length} people:\n${results.slice(0, 5).map((c) => this.formatContact(c)).join('\n')}`,
+          ? `Found them in HubSpot:\n${this.formatContact(top)}\n\n` +
+            "I'll keep them in mind — say \"update their phone\" or \"attach them to Acme\" and I'll know who you mean."
+          : `Found ${results.length} people in HubSpot — here are the closest matches:\n${results
+              .slice(0, 5)
+              .map((c) => this.formatContact(c))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (a name, email, or phone) and I'll zero in.",
       status: 'success',
       contextPatch: { lastContactId: top.id, lastContactName: top.name },
     };
@@ -98,7 +107,10 @@ export class HubspotCommandService {
       .filter(Boolean)
       .join(', ');
     return {
-      response: `Added ${created.name}${bits ? ` (${bits})` : ''} to HubSpot.`,
+      response:
+        `Done — ${created.name} is now in HubSpot${bits ? ` (${bits})` : ''}. ` +
+        "I'll keep them in mind for follow-ups, so you can say things like " +
+        '"update their phone" or "attach them to Acme" and I\'ll know who you mean.',
       status: 'success',
       contextPatch: { lastContactId: created.id, lastContactName: created.name },
     };
@@ -166,7 +178,9 @@ export class HubspotCommandService {
       .map(([k, v]) => `${k} → ${v}`)
       .join(', ');
     return {
-      response: `Updated ${updated.name} in HubSpot (${changed}).`,
+      response:
+        `All set — ${updated.name} is updated in HubSpot (${changed}). ` +
+        "Want me to tweak something else on this contact, or pull up their full details?",
       status: 'success',
       contextPatch: { lastContactId: updated.id, lastContactName: updated.name },
       clearPendingIntent: true,
@@ -199,7 +213,9 @@ export class HubspotCommandService {
     }
     await this.contacts.delete(userId, matches[0].id);
     return {
-      response: `Removed ${matches[0].name} from HubSpot.`,
+      response:
+        `Done — ${matches[0].name} is removed from HubSpot. ` +
+        "If that was a mistake, let me know and I can recreate them; otherwise, anything else you'd like me to tidy up?",
       status: 'success',
     };
   }
@@ -223,7 +239,11 @@ export class HubspotCommandService {
       return { response: "You don't have any deals in HubSpot yet.", status: 'success' };
     }
     return {
-      response: `Here's your recent deals:\n${results.map((d) => this.formatDeal(d)).join('\n')}`,
+      response:
+        `Here are your most recent deals in HubSpot:\n${results
+          .map((d) => this.formatDeal(d))
+          .join('\n')}\n\n` +
+        "Want to dig into one of them, or attach a deal to a company? Just say the word.",
       status: 'success',
     };
   }
@@ -243,9 +263,11 @@ export class HubspotCommandService {
       return { response: "You don't have any companies in HubSpot yet.", status: 'success' };
     }
     return {
-      response: `Here's your recent companies:\n${results
-        .map((c) => this.formatCompany(c))
-        .join('\n')}`,
+      response:
+        `Here are the companies you've added most recently in HubSpot:\n${results
+          .map((c) => this.formatCompany(c))
+          .join('\n')}\n\n` +
+        "Pick one and ask me to pull it up, update a field, or attach a contact — I'll handle the rest.",
       status: 'success',
       contextPatch: { lastCompanyId: results[0].id, lastCompanyName: results[0].name },
     };
@@ -272,7 +294,9 @@ export class HubspotCommandService {
     if (query.id?.trim()) {
       const company = await this.companies.getById(userId, query.id.trim());
       return {
-        response: `Found it:\n${this.formatCompany(company)}`,
+        response:
+          `Found it in HubSpot:\n${this.formatCompany(company)}\n\n` +
+          "I'll keep this company in mind — say \"update its industry\" or \"attach Sarah to it\" and I'll know which one you mean.",
         status: 'success',
         contextPatch: { lastCompanyId: company.id, lastCompanyName: company.name },
       };
@@ -286,11 +310,13 @@ export class HubspotCommandService {
     return {
       response:
         matches.length === 1
-          ? `Found it:\n${this.formatCompany(top)}`
-          : `Found ${matches.length} companies:\n${matches
+          ? `Found it in HubSpot:\n${this.formatCompany(top)}\n\n` +
+            "I'll keep this company in mind — say \"update its industry\" or \"attach Sarah to it\" and I'll know which one you mean."
+          : `Found ${matches.length} companies in HubSpot — here are the closest matches:\n${matches
               .slice(0, 5)
               .map((c) => this.formatCompany(c))
-              .join('\n')}`,
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (a name or domain) and I'll zero in.",
       status: 'success',
       contextPatch: { lastCompanyId: top.id, lastCompanyName: top.name },
     };
@@ -323,7 +349,10 @@ export class HubspotCommandService {
       .filter(Boolean)
       .join(', ');
     return {
-      response: `Added ${created.name}${bits ? ` (${bits})` : ''} to HubSpot.`,
+      response:
+        `Done — ${created.name} is now in HubSpot${bits ? ` (${bits})` : ''}. ` +
+        "I'll keep this company in mind, so you can say things like " +
+        '"attach Sarah to it" or "update its industry" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: { lastCompanyId: created.id, lastCompanyName: created.name },
     };
@@ -362,7 +391,9 @@ export class HubspotCommandService {
       .map(([k, v]) => `${k} → ${v}`)
       .join(', ');
     return {
-      response: `Updated ${updated.name} in HubSpot (${changed}).`,
+      response:
+        `All set — ${updated.name} is updated in HubSpot (${changed}). ` +
+        "Want me to change another field, or attach a contact or deal to it next?",
       status: 'success',
       contextPatch: { lastCompanyId: updated.id, lastCompanyName: updated.name },
       clearPendingIntent: true,
@@ -377,7 +408,9 @@ export class HubspotCommandService {
     if (resolved.kind === 'missing') return resolved.result;
     await this.companies.delete(userId, resolved.company.id);
     return {
-      response: `Removed ${resolved.company.name} from HubSpot.`,
+      response:
+        `Done — ${resolved.company.name} is removed from HubSpot. ` +
+        "Its contacts and deals are still around; let me know if you'd like me to clean any of those up too.",
       status: 'success',
     };
   }
@@ -426,7 +459,10 @@ export class HubspotCommandService {
     if (mode === 'attach') {
       await this.companies.associateContact(userId, company.company.id, contact.contact.id);
       return {
-        response: `Attached ${contact.contact.name} to ${company.company.name}.`,
+        response:
+          `Linked ${contact.contact.name} to ${company.company.name} in HubSpot. ` +
+          "I'll remember both, so you can say " +
+          '"update their title" or "attach a deal to that company" and I\'ll know who and what you mean.',
         status: 'success',
         contextPatch: {
           lastCompanyId: company.company.id,
@@ -438,7 +474,10 @@ export class HubspotCommandService {
     }
     await this.companies.disassociateContact(userId, company.company.id, contact.contact.id);
     return {
-      response: `Detached ${contact.contact.name} from ${company.company.name}.`,
+      response:
+        `Unlinked ${contact.contact.name} from ${company.company.name} in HubSpot. ` +
+        "Both records are still there — just not associated anymore. " +
+        "Want me to attach them to a different company?",
       status: 'success',
       contextPatch: {
         lastCompanyId: company.company.id,
@@ -463,7 +502,10 @@ export class HubspotCommandService {
     if (mode === 'attach') {
       await this.companies.associateDeal(userId, company.company.id, deal.deal.id);
       return {
-        response: `Attached deal "${deal.deal.name}" to ${company.company.name}.`,
+        response:
+          `Linked the "${deal.deal.name}" deal to ${company.company.name} in HubSpot. ` +
+          "I'll keep this company in mind — say " +
+          '"show its deals" or "attach Sarah to it" and I\'ll know which one you mean.',
         status: 'success',
         contextPatch: {
           lastCompanyId: company.company.id,
@@ -473,7 +515,10 @@ export class HubspotCommandService {
     }
     await this.companies.disassociateDeal(userId, company.company.id, deal.deal.id);
     return {
-      response: `Detached deal "${deal.deal.name}" from ${company.company.name}.`,
+      response:
+        `Unlinked the "${deal.deal.name}" deal from ${company.company.name} in HubSpot. ` +
+        "Both records are still there — just not associated anymore. " +
+        "Anything else you'd like to adjust on this company?",
       status: 'success',
       contextPatch: {
         lastCompanyId: company.company.id,
