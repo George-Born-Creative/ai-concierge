@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getUser } from '@/lib/session';
 
@@ -55,7 +55,10 @@ export function HomeScreenContent() {
   }, []);
   return (
     <SafeAreaView style={styles.screen}>
-      <View style={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled">
         <View style={styles.logoMark}>
           <View style={[styles.logoDot, styles.blueDot]} />
           <View style={[styles.logoDot, styles.redDot]} />
@@ -106,7 +109,7 @@ export function HomeScreenContent() {
             );
           })}
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -118,8 +121,7 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
-    flex: 1,
-    justifyContent: 'flex-start',
+    flexGrow: 1,
     paddingHorizontal: 12,
     paddingBottom: 138,
     paddingTop: 62,
