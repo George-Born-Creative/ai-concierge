@@ -38,6 +38,11 @@ export class UsersService {
             name: user.subscription.plan.name,
             provider: user.subscription.plan.provider.toLowerCase(),
             status: user.subscription.status.toLowerCase(),
+            // Discriminator the mobile app uses to branch the "manage
+            // subscription" UI: Apple subs need a deep link to App Store
+            // Settings, Stripe subs use the cancel endpoint.
+            paymentProvider: user.subscription.paymentProvider.toLowerCase(),
+            appleProductId: user.subscription.plan.appleProductId,
           }
         : null,
       provider: user.subscription?.plan.provider.toLowerCase() ?? null,

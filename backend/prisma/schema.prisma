@@ -21,6 +21,14 @@ enum SubscriptionStatus {
   UNPAID
 }
 
+// Which payment processor owns a subscription. STRIPE covers the existing
+// PaymentSheet (Android) and Stripe Checkout (iOS web link-out) flows; APPLE
+// covers iOS in-app subscriptions purchased via StoreKit 2.
+enum PaymentProvider {
+  STRIPE
+  APPLE
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
@@ -38,33 +46,48 @@ model User {
 }
 
 // Per client spec: one subscription = one CRM integration.
+//
+// `monthlyPrice` is the Stripe / web price (used for Android PaymentSheet and
+// the iOS Stripe-via-web Checkout option). `applePrice` is the Apple IAP
+// price set in App Store Connect — usually higher to absorb Apple's 30%
+// commission. Null `applePrice` means the plan isn't sold via Apple IAP.
 model Plan {
-  id            String      @id @default(cuid())
-  code          String      @unique
-  name          String
-  provider      CrmProvider
-  stripePriceId String      @unique
-  monthlyPrice  Int
-  currency      String      @default("usd")
-  features      String[]
-  isActive      Boolean     @default(true)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  code            String      @unique
+  name            String
+  provider        CrmProvider
+  stripePriceId   String      @unique
+  monthlyPrice    Int
+  applePrice      Int?
+  appleProductId  String?     @unique
+  currency        String      @default("usd")
+  features        String[]
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   subscriptions Subscription[]
 }
 
 // userId is unique so a user has at most one subscription at a time.
 // When the plan changes we update the existing row in place.
+//
+// `paymentProvider` discriminates which set of billing identifiers is live:
+//   STRIPE → stripeSubscriptionId is set, Apple fields null
+//   APPLE  → appleOriginalTransactionId is set, stripeSubscriptionId may
+//            still be present from a prior Stripe sub but isn't authoritative
 model Subscription {
-  id                   String             @id @default(cuid())
-  userId               String             @unique
-  planId               String
-  stripeSubscriptionId String?            @unique
-  status               SubscriptionStatus @default(INCOMPLETE)
-  currentPeriodEnd     DateTime?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  id                          String             @id @default(cuid())
+  userId                      String             @unique
+  planId                      String
+  paymentProvider             PaymentProvider    @default(STRIPE)
+  stripeSubscriptionId        String?            @unique
+  appleOriginalTransactionId  String?            @unique
+  appleEnvironment            String?
+  status                      SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodEnd            DateTime?
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
