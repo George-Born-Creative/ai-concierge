@@ -325,3 +325,18 @@ export type RunAssistantCommandRequest = {
   voiceUri?: string;
   intent?: VoiceIntent;
 };
+
+/**
+ * SSE event types streamed by `POST /assistant/conversations/:id/commands/stream`.
+ *
+ * - `phase`: lifecycle marker — surface to the user as a status hint
+ *   (e.g. swap "Running your command…" for "Thinking…")
+ * - `token`: a content delta that should be appended to the in-flight
+ *   bubble's `response` so TypewriterText catches up live
+ * - `done`: terminal event with the persisted server message — swap
+ *   the optimistic id, finalise the bubble, stop animating
+ */
+export type AssistantStreamEvent =
+  | { type: 'phase'; phase: 'normalizing' | 'thinking' }
+  | { type: 'token'; delta: string }
+  | { type: 'done'; message: AssistantMessage };
