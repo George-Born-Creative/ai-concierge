@@ -14,6 +14,7 @@ import { ApiError } from '@/lib/api/client';
 import type {
   AssistantConversationBucketKey,
   AssistantMessage,
+  RunAssistantCommandRequest,
   VoiceIntent,
 } from '@/lib/api/types';
 import { getToken, subscribeSession } from '@/lib/session';
@@ -137,10 +138,15 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     activeChatId: null,
     loading: true,
   });
-  // Optimistic message ids that the user cancelled. We can't abort the
-  // server-side write cleanly, but we can drop the eventual response so the UI
-  // doesn't suddenly fill in the answer after the user said "stop".
+  // Optimistic message ids that the user cancelled. The matching SSE
+  // stream is also aborted via `pendingControllersRef`; this set is the
+  // belt-and-braces guard that drops a late-arriving `done` frame in
+  // case it raced past the close signal.
   const cancelledIdsRef = useRef<Set<string>>(new Set());
+  // AbortController per in-flight SSE stream, keyed by optimistic id.
+  // Used by `cancelPendingMessages` to tear the stream down cleanly so
+  // we stop billing the user's OpenAI key the instant they hit "stop".
+  const pendingControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   const refreshChats = useCallback(async () => {
     const token = getToken();
@@ -403,6 +409,69 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
+  /**
+   * Consume one SSE command stream into the optimistic bubble. Tokens
+   * are appended in place — the existing TypewriterText catches up to
+   * the growing target string, which is exactly what the streaming
+   * polish was designed to feed it. The `done` event swaps the
+   * optimistic id for the persisted server id without remounting the
+   * bubble, preserving the typewriter's internal state.
+   */
+  const consumeCommandStream = useCallback(
+    async (
+      chatId: string,
+      optimisticId: string,
+      body: RunAssistantCommandRequest,
+      controller: AbortController,
+      fallback: AssistantHistoryEntry,
+    ): Promise<AssistantHistoryEntry> => {
+      let accumulated = '';
+      let appliedEntry: AssistantHistoryEntry | null = null;
+
+      try {
+        for await (const evt of assistantApi.runCommandStream(chatId, body, controller.signal)) {
+          // Belt-and-braces: a token may have queued before our abort
+          // signal reached the server. Drop anything past cancellation.
+          if (cancelledIdsRef.current.has(optimisticId)) break;
+
+          if (evt.type === 'token') {
+            accumulated += evt.delta;
+            const snapshot = accumulated;
+            setState((s) => ({
+              ...s,
+              chats: s.chats.map((chat) =>
+                chat.id !== chatId
+                  ? chat
+                  : {
+                      ...chat,
+                      messages: chat.messages.map((m) =>
+                        m.id === optimisticId ? { ...m, response: snapshot } : m,
+                      ),
+                    },
+              ),
+            }));
+          } else if (evt.type === 'done') {
+            // applyServerMessage preserves the optimistic React key (so
+            // the bubble doesn't remount) and lands the canonical
+            // persisted text — which should match `accumulated` for
+            // streamed responses, so the TypewriterText sees a no-op.
+            appliedEntry = applyServerMessage(chatId, evt.message, optimisticId);
+          }
+          // 'phase' events are reserved for future status-line tweaks.
+        }
+      } finally {
+        pendingControllersRef.current.delete(optimisticId);
+      }
+
+      if (cancelledIdsRef.current.has(optimisticId)) {
+        cancelledIdsRef.current.delete(optimisticId);
+        return { ...fallback, response: 'Cancelled.', status: 'error' as const, pending: false };
+      }
+      return appliedEntry ?? fallback;
+    },
+    [applyServerMessage],
+  );
+
   const runCommand = useCallback(
     async (
       command: string,
@@ -431,19 +500,17 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         appendOptimistic(chatId, optimistic);
       }
 
+      const controller = new AbortController();
+      pendingControllersRef.current.set(optimisticId, controller);
+
       try {
-        const result = await assistantApi.runCommand(chatId, { text: command, source });
-        if (cancelledIdsRef.current.has(optimisticId)) {
-          cancelledIdsRef.current.delete(optimisticId);
-          return { ...optimistic, response: 'Cancelled.', status: 'error' as const, pending: false };
-        }
-        // Replace the optimistic row in place — preserving its React key —
-        // so the existing CommandBubble instance sees pending: true → false
-        // and fires the typewriter animation. Pushing a new entry with a
-        // fresh server uuid (the previous behavior) silently remounted the
-        // bubble and skipped the animation.
-        const applied = applyServerMessage(chatId, result, optimisticId);
-        return applied ?? mapMessage(result);
+        return await consumeCommandStream(
+          chatId,
+          optimisticId,
+          { text: command, source },
+          controller,
+          optimistic,
+        );
       } catch (err) {
         if (cancelledIdsRef.current.has(optimisticId)) {
           cancelledIdsRef.current.delete(optimisticId);
@@ -470,7 +537,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         return { ...optimistic, response, status: 'error' as const, pending: false };
       }
     },
-    [appendOptimistic, applyServerMessage, ensureConversationId],
+    [appendOptimistic, consumeCommandStream, ensureConversationId],
   );
 
   const addVoiceMessage = useCallback(
@@ -574,17 +641,20 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           // normalizer with full conversation history + session context, which
           // catches pronoun-resolution and follow-ups (e.g. "yes", "make it
           // 2pm") that a history-blind transcribe-time call would miss.
-          const result = await assistantApi.runCommand(convId, {
-            text: transcript,
-            source: 'voice',
-            transcript,
-            voiceUri,
-          });
-          if (cancelledIdsRef.current.has(optimisticId)) {
-            cancelledIdsRef.current.delete(optimisticId);
-            return;
-          }
-          applyServerMessage(convId, result, optimisticId);
+          const controller = new AbortController();
+          pendingControllersRef.current.set(optimisticId, controller);
+          await consumeCommandStream(
+            convId,
+            optimisticId,
+            {
+              text: transcript,
+              source: 'voice',
+              transcript,
+              voiceUri,
+            },
+            controller,
+            entry,
+          );
         } catch (err) {
           if (cancelledIdsRef.current.has(optimisticId)) {
             cancelledIdsRef.current.delete(optimisticId);
@@ -616,10 +686,11 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
 
       return entry;
     },
-    [appendOptimistic, applyServerMessage, ensureConversationId],
+    [appendOptimistic, consumeCommandStream, ensureConversationId],
   );
 
   const cancelPendingMessages = useCallback((chatId: string) => {
+    const idsToAbort: string[] = [];
     setState((s) => {
       let touched = false;
       const chats = s.chats.map((chat) => {
@@ -627,6 +698,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         const messages = chat.messages.map((m) => {
           if (!m.pending) return m;
           cancelledIdsRef.current.add(m.id);
+          idsToAbort.push(m.id);
           touched = true;
           return {
             ...m,
@@ -639,6 +711,17 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       });
       return touched ? { ...s, chats } : s;
     });
+    // Abort the SSE streams so we stop billing the user's OpenAI key
+    // immediately. The streaming consumer's signal handler tears down
+    // the connection and exits cleanly; the cancelledIdsRef guard
+    // ensures any in-flight `done` event is still ignored.
+    for (const id of idsToAbort) {
+      const controller = pendingControllersRef.current.get(id);
+      if (controller) {
+        controller.abort();
+        pendingControllersRef.current.delete(id);
+      }
+    }
   }, []);
 
   const value = useMemo<AssistantHistoryContextValue>(

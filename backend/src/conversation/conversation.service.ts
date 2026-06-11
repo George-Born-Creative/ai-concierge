@@ -95,9 +95,80 @@ export class ConversationService {
       this.logger.warn(`Chat completion failed for ${input.userId}: ${(err as Error).message}`);
     }
 
-    // Graceful fallback so the user always gets something useful back.
-    if (input.pendingIntent?.question) {
-      return `I'm here. We were in the middle of: ${input.pendingIntent.question}`;
+    return this.staticFallback(input.pendingIntent);
+  }
+
+  /**
+   * Streaming variant of {@link respond}. Yields tokens as the LLM emits
+   * them so the caller (the SSE pipeline in `AssistantService`) can
+   * forward each delta to the client. Contract: this generator never
+   * throws — on any failure it yields a useful static fallback so the
+   * client always sees a response.
+   */
+  async *respondStream(input: {
+    userId: string;
+    userMessage: string;
+    history: ConversationTurn[];
+    pendingIntent?: PendingIntent | null;
+  }): AsyncGenerator<string, void, void> {
+    let openai: OpenAI;
+    try {
+      const apiKey = await this.keys.getDecryptedKey(input.userId);
+      openai = new OpenAI({ apiKey });
+    } catch (err) {
+      this.logger.warn(
+        `respondStream key lookup failed for ${input.userId}: ${(err as Error).message}`,
+      );
+      yield this.staticFallback(input.pendingIntent);
+      return;
+    }
+
+    const systemPrompt = this.buildSystemPrompt(input.pendingIntent);
+    const trimmedHistory = input.history.slice(-MAX_HISTORY_TURNS);
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      ...trimmedHistory.map((turn) => ({
+        role: turn.role,
+        content: turn.content,
+      })),
+      { role: 'user', content: input.userMessage },
+    ];
+
+    let anyTokens = false;
+    try {
+      const stream = await openai.chat.completions.create({
+        model: CHAT_MODEL,
+        messages,
+        temperature: 0.6,
+        max_tokens: 400,
+        stream: true,
+      });
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) {
+          anyTokens = true;
+          yield delta;
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `respondStream completion failed for ${input.userId}: ${(err as Error).message}`,
+      );
+      // Fall through: if we already emitted something the partial reply is
+      // kept; otherwise the static fallback is sent below.
+    }
+
+    if (!anyTokens) yield this.staticFallback(input.pendingIntent);
+  }
+
+  /**
+   * Static fallback string used by both the buffered {@link respond} and
+   * streaming {@link respondStream} on any LLM failure, so the caller
+   * always has something useful to surface to the user.
+   */
+  private staticFallback(pending?: PendingIntent | null): string {
+    if (pending?.question) {
+      return `I'm here. We were in the middle of: ${pending.question}`;
     }
     return "I'm here — what would you like to do?";
   }
@@ -172,6 +243,82 @@ export class ConversationService {
       );
     }
     return baseline;
+  }
+
+  /**
+   * Streaming variant of {@link polishActionResponse}. Yields polish
+   * tokens as the LLM emits them. Contract: this generator never throws
+   * — if the stream errors before any tokens were emitted (or the key
+   * lookup fails), the deterministic baseline is yielded instead so the
+   * caller always sees a response. If the stream errors *after* some
+   * tokens were emitted, the partial polish is kept rather than being
+   * replaced — a partial concierge reply is closer to the truth than
+   * appending a duplicate baseline string.
+   */
+  async *polishActionResponseStream(input: {
+    userId: string;
+    userMessage: string;
+    intent: string;
+    baseline: string;
+    history?: ConversationTurn[];
+  }): AsyncGenerator<string, void, void> {
+    const baseline = input.baseline?.trim();
+    if (!baseline) {
+      if (input.baseline) yield input.baseline;
+      return;
+    }
+
+    let openai: OpenAI;
+    try {
+      const apiKey = await this.keys.getDecryptedKey(input.userId);
+      openai = new OpenAI({ apiKey });
+    } catch (err) {
+      this.logger.warn(
+        `polishActionResponseStream key lookup failed for ${input.userId}: ${(err as Error).message}`,
+      );
+      yield baseline;
+      return;
+    }
+
+    const trimmedHistory = (input.history ?? []).slice(-MAX_HISTORY_TURNS);
+    const userBlock = [
+      `User said: "${input.userMessage}"`,
+      `Intent that ran: ${input.intent}`,
+      `FACTUAL_RESPONSE (rewrite this in concierge tone — do not change any facts):`,
+      baseline,
+    ].join('\n\n');
+
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: 'system', content: POLISH_SYSTEM_PROMPT },
+      ...trimmedHistory.map((turn) => ({ role: turn.role, content: turn.content })),
+      { role: 'user', content: userBlock },
+    ];
+
+    let anyTokens = false;
+    try {
+      const stream = await openai.chat.completions.create({
+        model: CHAT_MODEL,
+        messages,
+        temperature: 0.3,
+        max_tokens: 320,
+        stream: true,
+      });
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) {
+          anyTokens = true;
+          yield delta;
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `polishActionResponseStream failed for ${input.userId} on intent "${input.intent}": ${
+          (err as Error).message
+        }`,
+      );
+    }
+
+    if (!anyTokens) yield baseline;
   }
 
   private buildSystemPrompt(pending?: PendingIntent | null): string {

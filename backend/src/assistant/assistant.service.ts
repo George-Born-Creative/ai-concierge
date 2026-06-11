@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, type MessageEvent } from '@nestjs/common';
 import { AssistantMessageSource, AssistantMessageStatus, Prisma } from '@prisma/client';
+import { Observable } from 'rxjs';
 
+import type { ConversationTurn } from '../conversation/conversation.service';
 import { ConversationService } from '../conversation/conversation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VoiceService } from '../voice/voice.service';
@@ -22,12 +24,77 @@ import {
 import type {
   AssistantCommandResult,
   AssistantSessionContext,
+  ConversationHistoryTurn,
   PendingIntent,
   VoiceIntentPayload,
 } from './assistant.types';
 import { RunAssistantCommandDto } from './dto/run-command.dto';
 
 const HISTORY_LIMIT = 15;
+
+/**
+ * Wire format for the SSE streaming endpoint. The `data` field of every
+ * {@link MessageEvent} emitted by `runCommandStream` is one of these.
+ *
+ * - `phase` events let the client surface lifecycle indicators
+ *   (e.g. swap "Running your command…" for "Thinking…")
+ * - `token` events deliver a content delta to append to the in-flight
+ *   message bubble — the existing TypewriterText catches up smoothly
+ * - `done` carries the persisted server message DTO so the client can
+ *   swap the optimistic id and finalise the bubble
+ */
+export type AssistantMessageDto = {
+  id: string;
+  command: string;
+  response: string;
+  status: AssistantMessageStatus;
+  source: AssistantMessageSource;
+  transcript?: string;
+  intent?: unknown;
+  voiceUri?: string;
+  pending: boolean;
+  createdAt: string;
+};
+
+export type AssistantStreamEvent =
+  | { type: 'phase'; phase: 'normalizing' | 'thinking' }
+  | { type: 'token'; delta: string }
+  | { type: 'done'; message: AssistantMessageDto };
+
+/**
+ * Snapshot of a runCommand pre-polish phase. Produced by
+ * {@link AssistantService.prepareCommand} and consumed by either the
+ * buffered or streaming polish path before being passed to
+ * {@link AssistantService.finalizeCommand} for DB persistence.
+ *
+ * The `mode` discriminator tells the wrapper which kind of response is
+ * pending — an actionable CRM result that may be polished, or a
+ * conversational fallback whose LLM call is deferred so the SSE path
+ * can stream it (the JSON path runs it buffered).
+ */
+export type PreparedCommand = {
+  userId: string;
+  conversationId: string;
+  conversationTitle: string | null;
+  pendingMessageId: string;
+  text: string;
+  source: AssistantMessageSource;
+  dto: RunAssistantCommandDto;
+  baseline: AssistantCommandResult;
+  intent: VoiceIntentPayload | undefined;
+  ranActionableIntent: boolean;
+  historyTurns: ConversationHistoryTurn[];
+  sessionContext: AssistantSessionContext;
+  /**
+   * `'action'` when the executor produced a deterministic baseline that
+   * may be polished. `'conversational'` when no actionable intent ran
+   * and the response must come from {@link ConversationService.respond}
+   * (or its streaming variant).
+   */
+  mode: 'action' | 'conversational';
+  /** For `mode === 'conversational'` — the active pending task, if any, that respond() should reference. */
+  pendingTask: PendingIntent | null;
+};
 
 @Injectable()
 export class AssistantService {
@@ -142,7 +209,89 @@ export class AssistantService {
     return { ok: true as const };
   }
 
+  /**
+   * One-shot JSON entry point. Runs the entire pipeline — prepare,
+   * (optional) buffered polish, finalize — and returns the persisted
+   * message. Kept as a backward-compatible fallback alongside the new
+   * SSE-streaming entry point; both share `prepareCommand` and
+   * `finalizeCommand` internally.
+   */
   async runCommand(userId: string, conversationId: string, dto: RunAssistantCommandDto) {
+    const prep = await this.prepareCommand(userId, conversationId, dto);
+
+    let finalResponse = prep.baseline.response;
+
+    if (prep.mode === 'conversational') {
+      // For the JSON path the conversational LLM call runs buffered.
+      try {
+        const reply = await this.conversation.respond({
+          userId: prep.userId,
+          userMessage: prep.text,
+          history: this.toChatHistory(prep.historyTurns),
+          pendingIntent: prep.pendingTask,
+        });
+        prep.baseline = { ...prep.baseline, response: reply };
+        finalResponse = reply;
+      } catch {
+        const fallback = prep.pendingTask?.question
+          ? `I'm here. We were on: ${prep.pendingTask.question}`
+          : "I'm here — what would you like to do?";
+        prep.baseline = { ...prep.baseline, response: fallback };
+        finalResponse = fallback;
+      }
+    } else if (this.shouldPolish(prep)) {
+      const polished = await this.conversation.polishActionResponse({
+        userId: prep.userId,
+        userMessage: prep.text,
+        intent: prep.intent!.intent,
+        baseline: prep.baseline.response,
+        history: this.toChatHistory(prep.historyTurns),
+      });
+      if (polished?.trim()) {
+        finalResponse = polished;
+      }
+    }
+
+    return this.finalizeCommand(prep, finalResponse);
+  }
+
+  /**
+   * Returns true when this prep is a candidate for the LLM polish pass
+   * (successful CRM action, no clarifying pendingIntent, non-empty
+   * deterministic baseline). The streaming and JSON entry points share
+   * this gate so behaviour stays identical when polish is or isn't run.
+   */
+  shouldPolish(prep: PreparedCommand): boolean {
+    return (
+      prep.ranActionableIntent &&
+      prep.baseline.status === 'success' &&
+      !prep.baseline.pendingIntent &&
+      !!prep.intent &&
+      prep.intent.intent !== 'unknown' &&
+      !!prep.baseline.response?.trim()
+    );
+  }
+
+  /** Flatten executor-side history into role-tagged messages for the polish/respond LLM calls. */
+  toChatHistory(historyTurns: ConversationHistoryTurn[]): ConversationTurn[] {
+    return historyTurns.flatMap((turn) => [
+      { role: 'user' as const, content: turn.command },
+      { role: 'assistant' as const, content: turn.response },
+    ]);
+  }
+
+  /**
+   * Pre-polish phase: validate the conversation, create the pending DB
+   * row, resolve the intent (synthesised, supplied, or LLM-normalised),
+   * and run the executor (CRM action) or the conversational fallback to
+   * produce a deterministic baseline response. Returns a snapshot the
+   * polish + finalize phases consume.
+   */
+  async prepareCommand(
+    userId: string,
+    conversationId: string,
+    dto: RunAssistantCommandDto,
+  ): Promise<PreparedCommand> {
     const conversation = await this.requireConversation(userId, conversationId);
     const text = dto.text.trim();
     const source: AssistantMessageSource = dto.source === 'voice' ? 'voice' : 'text';
@@ -181,23 +330,23 @@ export class AssistantService {
       take: HISTORY_LIMIT,
     });
 
-    const historyTurns = history
+    const historyTurns: ConversationHistoryTurn[] = history
       .reverse()
       .map((m) => ({ command: m.command, response: m.response }));
 
     const sessionContext = (conversation.context as AssistantSessionContext | null) ?? {};
-    const pending2 = isPendingIntentValid(sessionContext.pendingIntent ?? null)
+    const pendingTask = isPendingIntentValid(sessionContext.pendingIntent ?? null)
       ? sessionContext.pendingIntent ?? null
       : null;
 
     // The user might be (a) answering a pending question, (b) asking a brand-new
     // CRM action, or (c) just chatting / asking a tangent question. We resolve
     // those three paths in that priority order.
-    const tangent = pending2 ? looksLikeQuestion(text) : false;
+    const tangent = pendingTask ? looksLikeQuestion(text) : false;
 
     let intent = dto.intent;
     const synthesized =
-      pending2 && !tangent ? this.synthesizePendingIntent(pending2, text) : null;
+      pendingTask && !tangent ? this.synthesizePendingIntent(pendingTask, text) : null;
     if (synthesized) {
       intent = synthesized;
     } else if (!tangent && !intent) {
@@ -209,52 +358,151 @@ export class AssistantService {
     }
 
     // Route: actionable intent → executor; otherwise → conversational chat.
+    // The conversational LLM call is intentionally deferred: the JSON
+    // wrapper runs it buffered, the SSE wrapper streams it via
+    // ConversationService.respondStream so tokens appear live.
     const hasActionableIntent = !!intent && intent.intent !== 'unknown';
-    let result: AssistantCommandResult;
+    let baseline: AssistantCommandResult;
     let ranActionableIntent = false;
+    let mode: PreparedCommand['mode'];
     if (!tangent && hasActionableIntent) {
-      result = await this.commands.execute(userId, text, intent, sessionContext);
+      baseline = await this.commands.execute(userId, text, intent!, sessionContext);
       ranActionableIntent = true;
+      mode = 'action';
     } else {
-      result = await this.respondConversationally(userId, text, historyTurns, pending2, intent);
+      // Placeholder baseline — the wrapper will fill in `response` from
+      // the buffered or streaming conversational call.
+      baseline = {
+        response: '',
+        status: 'success',
+        intent,
+        preservePendingIntent: true,
+      };
+      mode = 'conversational';
     }
 
-    // After a successful CRM action, rewrite the deterministic baseline
-    // response in concierge tone via gpt-4o-mini. The LLM is given the
-    // factual baseline as ground truth and is forbidden from inventing or
-    // changing facts (names, ids, numbers); on any failure it falls back
-    // to the baseline so the user always sees a reply.
-    //
-    // Only polish when:
-    // - we actually ran an action (not the conversational fallback, which is
-    //   already an LLM reply),
-    // - the action succeeded,
-    // - there's no pendingIntent on the result (those are clarifying
-    //   questions like "what should I name it?" — keep them deterministic),
-    // - the action wasn't an unknown / no-op fallthrough.
-    if (
-      ranActionableIntent &&
-      result.status === 'success' &&
-      !result.pendingIntent &&
-      intent &&
-      intent.intent !== 'unknown' &&
-      result.response?.trim()
-    ) {
-      const polished = await this.conversation.polishActionResponse({
-        userId,
-        userMessage: text,
-        intent: intent.intent,
-        baseline: result.response,
-        history: historyTurns.flatMap((turn) => [
-          { role: 'user' as const, content: turn.command },
-          { role: 'assistant' as const, content: turn.response },
-        ]),
-      });
-      if (polished?.trim()) {
-        result = { ...result, response: polished };
-      }
-    }
+    return {
+      userId,
+      conversationId,
+      conversationTitle: conversation.title,
+      pendingMessageId: pending.id,
+      text,
+      source,
+      dto,
+      baseline,
+      intent,
+      ranActionableIntent,
+      historyTurns,
+      sessionContext,
+      mode,
+      pendingTask,
+    };
+  }
 
+  /**
+   * SSE-streaming entry point. Mirrors {@link runCommand} but emits the
+   * polished assistant reply token-by-token over Server-Sent Events. The
+   * stream events are:
+   *
+   * - `phase`: lifecycle markers (`'normalizing'`, `'thinking'`)
+   * - `token`: a content delta to append to the in-flight bubble
+   * - `done`: the full persisted message DTO (consumer swaps optimistic IDs)
+   *
+   * Streaming applies only to LLM-generated phases:
+   * - actionable intents that {@link shouldPolish} → `polishActionResponseStream`
+   * - conversational fallbacks (tangents / unknown / no-action) → `respondStream`
+   *
+   * Deterministic short replies (clarifying questions, error states,
+   * non-polishable actionable results) are emitted as a single `token`
+   * event followed by `done`, matching the existing JSON behaviour.
+   */
+  runCommandStream(
+    userId: string,
+    conversationId: string,
+    dto: RunAssistantCommandDto,
+  ): Observable<MessageEvent> {
+    return new Observable<MessageEvent>((subscriber) => {
+      let cancelled = false;
+
+      const emit = (data: AssistantStreamEvent) => {
+        if (cancelled) return;
+        subscriber.next({ data });
+      };
+
+      void (async () => {
+        try {
+          emit({ type: 'phase', phase: 'normalizing' });
+          const prep = await this.prepareCommand(userId, conversationId, dto);
+          if (cancelled) return;
+
+          let accumulated = '';
+          const appendDelta = (delta: string) => {
+            accumulated += delta;
+            emit({ type: 'token', delta });
+          };
+
+          if (prep.mode === 'action' && this.shouldPolish(prep)) {
+            emit({ type: 'phase', phase: 'thinking' });
+            const stream = this.conversation.polishActionResponseStream({
+              userId: prep.userId,
+              userMessage: prep.text,
+              intent: prep.intent!.intent,
+              baseline: prep.baseline.response,
+              history: this.toChatHistory(prep.historyTurns),
+            });
+            for await (const delta of stream) {
+              if (cancelled) return;
+              appendDelta(delta);
+            }
+          } else if (prep.mode === 'conversational') {
+            emit({ type: 'phase', phase: 'thinking' });
+            const stream = this.conversation.respondStream({
+              userId: prep.userId,
+              userMessage: prep.text,
+              history: this.toChatHistory(prep.historyTurns),
+              pendingIntent: prep.pendingTask,
+            });
+            for await (const delta of stream) {
+              if (cancelled) return;
+              appendDelta(delta);
+            }
+          } else {
+            // Action mode without polish (clarifying question, error,
+            // unknown intent): emit the deterministic baseline as a
+            // single chunk so the FE protocol stays uniform.
+            const baselineText = prep.baseline.response;
+            if (baselineText) appendDelta(baselineText);
+          }
+
+          if (cancelled) return;
+          const finalResponse = accumulated.trim() || prep.baseline.response;
+          const dtoOut = await this.finalizeCommand(prep, finalResponse);
+          if (cancelled) return;
+          emit({ type: 'done', message: dtoOut });
+          subscriber.complete();
+        } catch (err) {
+          if (!cancelled) subscriber.error(err);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    });
+  }
+
+  /**
+   * Post-polish phase: persist the (possibly polished) response onto the
+   * pending DB row, merge session context (contextPatch / pendingIntent /
+   * clearPendingIntent), and return the message DTO. Mirrors the original
+   * monolithic runCommand's tail half — including the "pending row was
+   * deleted mid-flight" recovery path.
+   */
+  async finalizeCommand(prep: PreparedCommand, finalResponse: string) {
+    const result: AssistantCommandResult = {
+      ...prep.baseline,
+      response: finalResponse,
+    };
     const status =
       result.status === 'error'
         ? AssistantMessageStatus.error
@@ -272,33 +520,33 @@ export class AssistantService {
     let updated: Awaited<ReturnType<typeof this.prisma.assistantMessage.update>>;
     try {
       updated = await this.prisma.assistantMessage.update({
-        where: { id: pending.id },
+        where: { id: prep.pendingMessageId },
         data: updateData,
       });
     } catch (err) {
       if (!this.isMissingRecordError(err)) throw err;
       const stillExists = await this.prisma.assistantConversation.findFirst({
-        where: { id: conversationId, userId },
+        where: { id: prep.conversationId, userId: prep.userId },
       });
       if (!stillExists) {
         // Both the pending row AND the conversation were deleted. Return a
         // transient reply so the client doesn't get a 500.
-        return this.buildTransientMessageDto(pending.id, text, result, source, dto);
+        return this.buildTransientMessageDto(prep.pendingMessageId, prep.text, result, prep.source, prep.dto);
       }
       updated = await this.prisma.assistantMessage.create({
         data: {
-          conversationId,
-          command: text,
-          source,
-          transcript: dto.transcript,
-          voiceUri: dto.voiceUri,
+          conversationId: prep.conversationId,
+          command: prep.text,
+          source: prep.source,
+          transcript: prep.dto.transcript,
+          voiceUri: prep.dto.voiceUri,
           ...updateData,
         },
       });
     }
 
     const contextPatch = result.contextPatch ?? {};
-    const mergedContext: AssistantSessionContext = { ...sessionContext, ...contextPatch };
+    const mergedContext: AssistantSessionContext = { ...prep.sessionContext, ...contextPatch };
     if (result.pendingIntent) {
       mergedContext.pendingIntent = result.pendingIntent;
     } else if (result.clearPendingIntent) {
@@ -307,18 +555,18 @@ export class AssistantService {
       mergedContext.pendingIntent = null;
     }
     const title =
-      conversation.title ??
-      (text.length > 60 ? `${text.slice(0, 57)}…` : text);
+      prep.conversationTitle ??
+      (prep.text.length > 60 ? `${prep.text.slice(0, 57)}…` : prep.text);
 
     try {
       await this.prisma.assistantConversation.update({
-        where: { id: conversationId },
+        where: { id: prep.conversationId },
         data: {
-          title: conversation.title ? conversation.title : title,
+          title: prep.conversationTitle ? prep.conversationTitle : title,
           context: mergedContext as Prisma.InputJsonValue,
           updatedAt: new Date(),
           lastMessageStatus: status,
-          lastMessageSource: source,
+          lastMessageSource: prep.source,
         },
       });
     } catch (err) {
@@ -358,48 +606,6 @@ export class AssistantService {
       pending: false,
       createdAt: new Date(),
     });
-  }
-
-  /**
-   * Conversational fallback: produce a natural reply via ChatGPT. Preserves an
-   * in-flight pending intent so a tangent doesn't drop the user's workflow.
-   */
-  private async respondConversationally(
-    userId: string,
-    text: string,
-    historyTurns: { command: string; response: string }[],
-    pending: PendingIntent | null,
-    intent: VoiceIntentPayload | undefined,
-  ): Promise<AssistantCommandResult> {
-    // Flatten the prior turns into role-based messages for the chat completion.
-    const chatHistory = historyTurns.flatMap((turn) => [
-      { role: 'user' as const, content: turn.command },
-      { role: 'assistant' as const, content: turn.response },
-    ]);
-
-    try {
-      const reply = await this.conversation.respond({
-        userId,
-        userMessage: text,
-        history: chatHistory,
-        pendingIntent: pending,
-      });
-      return {
-        response: reply,
-        status: 'success',
-        intent,
-        preservePendingIntent: true,
-      };
-    } catch {
-      return {
-        response: pending?.question
-          ? `I'm here. We were on: ${pending.question}`
-          : "I'm here — what would you like to do?",
-        status: 'success',
-        intent,
-        preservePendingIntent: true,
-      };
-    }
   }
 
   /**
