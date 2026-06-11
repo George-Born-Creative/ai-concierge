@@ -18,12 +18,23 @@ export type AuthResponse = {
 
 export type CrmProvider = 'ghl' | 'hubspot';
 
+// Which payment processor owns the user's active subscription.
+// 'stripe' covers both the in-app PaymentSheet (Android) and the iOS
+// Stripe-via-web Checkout link-out. 'apple' covers iOS in-app subscriptions
+// purchased through StoreKit / Apple IAP.
+export type PaymentProvider = 'stripe' | 'apple';
+
 export type UserPlan = {
   id: string;
   name: string;
   provider: CrmProvider;
   // 'incomplete' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid'
   status: string;
+  paymentProvider: PaymentProvider;
+  // Apple App Store Connect product identifier (e.g.
+  // 'com.daveget.aiconcierge.ghl_pro_monthly'); null when the plan isn't
+  // sold via Apple IAP.
+  appleProductId: string | null;
 };
 
 export type User = {
@@ -52,6 +63,25 @@ export type CreatePaymentSheetResponse = {
   ephemeralKey: string;
   customer: string;
   publishableKey: string;
+};
+
+// Shape returned by GET /plans. Both prices arrive in cents (so the mobile
+// app can compute discount math without parsing display strings) plus a
+// pre-formatted display string for direct rendering.
+export type PlanListItem = {
+  id: PlanCode;
+  name: string;
+  provider: CrmProvider;
+  monthlyPrice: number;
+  monthlyPriceDisplay: string;
+  applePrice: number | null;
+  applePriceDisplay: string | null;
+  appleProductId: string | null;
+  // Legacy field kept for any callers still reading `price`. Equals
+  // `monthlyPriceDisplay`. Prefer the explicit fields for new code.
+  price: string;
+  currency: string;
+  features: string[];
 };
 
 // ─── GoHighLevel OAuth ───────────────────────────────────────────────────────
