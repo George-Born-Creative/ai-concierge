@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -15,62 +15,125 @@ import {
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { createPaymentSheet, refreshSubscription } from '@/lib/api/payment';
+import { listPlans } from '@/lib/api/plans';
+import type { PlanCode, PlanListItem } from '@/lib/api/types';
 import { isActiveSubscription, routeForUser } from '@/lib/onboarding-route';
 import { getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 import { useStripePaymentSheet } from './use-stripe-payment-sheet';
 
-type PlanId = 'ghl-pro' | 'hubspot-pro';
-type CrmProvider = 'ghl' | 'hubspot';
-
-type PlanCard = {
-  id: PlanId;
-  provider: CrmProvider;
+// Display-only metadata for each plan: icon, fallback name, one-line tagline.
+// The rest of the card (price, feature bullets) is sourced from the backend
+// via GET /plans so prices and features can be tweaked without an app release.
+// Name is duplicated here so the loading skeleton can show plan names without
+// waiting for the backend round-trip.
+type PlanDisplay = {
   name: string;
-  price: string;
   description: string;
-  features: string[];
   icon: keyof typeof MaterialIcons.glyphMap;
 };
 
-const PLANS: PlanCard[] = [
-  {
-    id: 'ghl-pro',
-    provider: 'ghl',
+const PLAN_DISPLAY: Record<PlanCode, PlanDisplay> = {
+  'ghl-pro': {
     name: 'GoHighLevel plan',
-    price: '$29',
     description: 'Voice AI that drives your GoHighLevel CRM.',
-    features: [
-      'GHL contacts, deals, notes, tasks',
-      'Trigger GHL workflows by voice',
-      'Per-location access',
-    ],
     icon: 'hub',
   },
-  {
-    id: 'hubspot-pro',
-    provider: 'hubspot',
+  'hubspot-pro': {
     name: 'HubSpot plan',
-    price: '$29',
     description: 'Voice AI that drives your HubSpot CRM.',
-    features: [
-      'HubSpot contacts and deals',
-      'Add notes and create tasks by voice',
-      'Per-portal access',
-    ],
     icon: 'cloud',
   },
-];
+};
+
+// Order plans render in. Anything missing from PLAN_DISPLAY is appended in
+// backend order so a future plan code rendered before its display entry
+// ships still works.
+const PLAN_ORDER: PlanCode[] = ['ghl-pro', 'hubspot-pro'];
+
+// Merged shape used to render each card. `live` is null until GET /plans
+// resolves; in that loading window the price pill renders a skeleton and
+// the subscribe button is disabled.
+type DisplayCard = {
+  id: PlanCode;
+  name: string;
+  description: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  live: PlanListItem | null;
+};
 
 export function PlanSelectionScreen() {
   const router = useRouter();
   const { show } = useToast();
   const stripeSheet = useStripePaymentSheet();
-  const [selectedPlan, setSelectedPlan] = useState<PlanId>('ghl-pro');
+  const [selectedPlan, setSelectedPlan] = useState<PlanCode>('ghl-pro');
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [plans, setPlans] = useState<PlanListItem[] | null>(null);
 
-  const active = PLANS.find((plan) => plan.id === selectedPlan) ?? PLANS[0];
+  // Fetch live prices + features on mount. While `plans` is null we render
+  // skeletons in the price pill; on failure we surface a toast and let the
+  // user retry by leaving and coming back to the screen.
+  useEffect(() => {
+    let cancelled = false;
+    listPlans()
+      .then((result) => {
+        if (cancelled) return;
+        setPlans(result);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        show('Could not load plan prices. Please try again.', 'error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [show]);
+
+  // Merge backend plan data with the local display metadata (icon, fallback
+  // name + description) and order according to PLAN_ORDER. Cards always
+  // render — even before the fetch completes — using local fallback name +
+  // icon, with the price pill showing a skeleton until live data arrives.
+  // Any plan id missing from PLAN_DISPLAY is rendered with a generic icon.
+  const displayPlans = useMemo<DisplayCard[]>(() => {
+    const byCode = new Map<PlanCode, PlanListItem>();
+    if (plans) for (const p of plans) byCode.set(p.id, p);
+
+    const seen = new Set<PlanCode>();
+    const cards: DisplayCard[] = [];
+    for (const code of PLAN_ORDER) {
+      const display = PLAN_DISPLAY[code];
+      const live = byCode.get(code);
+      cards.push({
+        id: code,
+        name: live?.name ?? display?.name ?? code,
+        description: display?.description ?? '',
+        icon: display?.icon ?? ('workspace-premium' as keyof typeof MaterialIcons.glyphMap),
+        live: live ?? null,
+      });
+      seen.add(code);
+    }
+    if (plans) {
+      for (const p of plans) {
+        if (seen.has(p.id)) continue;
+        cards.push({
+          id: p.id,
+          name: p.name,
+          description: '',
+          icon: 'workspace-premium',
+          live: p,
+        });
+      }
+    }
+    return cards;
+  }, [plans]);
+
+  const active = useMemo(
+    () => displayPlans.find((d) => d.id === selectedPlan) ?? displayPlans[0],
+    [displayPlans, selectedPlan],
+  );
+
+  const canSubscribe = Boolean(active?.live);
 
   const continueAfterPlan = useCallback(
     async (user = getUser()) => {
@@ -87,6 +150,10 @@ export function PlanSelectionScreen() {
   );
 
   async function subscribeToActivePlan() {
+    if (!active || !active.live) {
+      show('Plans are still loading. Please try again in a moment.', 'error');
+      return;
+    }
     setIsSubscribing(true);
     try {
       let user = getUser();
@@ -179,38 +246,57 @@ export function PlanSelectionScreen() {
         </Text>
 
         <View style={styles.planList}>
-          {PLANS.map((plan) => {
-            const isSelected = selectedPlan === plan.id;
+          {displayPlans.map((card) => {
+            const isSelected = selectedPlan === card.id;
+            const live = card.live;
 
             return (
               <Pressable
-                key={plan.id}
+                key={card.id}
                 style={[styles.planCard, isSelected && styles.selectedPlanCard]}
-                onPress={() => setSelectedPlan(plan.id)}>
+                onPress={() => setSelectedPlan(card.id)}>
                 <View style={styles.planHeader}>
                   <View style={styles.planTitleRow}>
                     <View style={styles.planIcon}>
-                      <MaterialIcons name={plan.icon} size={22} color="#1A73E8" />
+                      <MaterialIcons name={card.icon} size={22} color="#1A73E8" />
                     </View>
                     <View style={styles.planTitleCopy}>
-                      <Text style={styles.planName}>{plan.name}</Text>
-                      <Text style={styles.planDescription}>{plan.description}</Text>
+                      <Text style={styles.planName}>{card.name}</Text>
+                      {card.description ? (
+                        <Text style={styles.planDescription}>{card.description}</Text>
+                      ) : null}
                     </View>
                   </View>
                   <View style={styles.pricePill}>
-                    <Text style={styles.price}>{plan.price}</Text>
-                    <Text style={styles.priceMeta}>/mo</Text>
+                    {live ? (
+                      <>
+                        <Text style={styles.price}>{live.monthlyPriceDisplay}</Text>
+                        <Text style={styles.priceMeta}>/mo</Text>
+                      </>
+                    ) : (
+                      <View style={styles.priceSkeleton}>
+                        <ActivityIndicator size="small" color="#1A73E8" />
+                      </View>
+                    )}
                   </View>
                 </View>
 
-                <View style={styles.featuresList}>
-                  {plan.features.map((feature) => (
-                    <View key={feature} style={styles.featureRow}>
-                      <MaterialIcons name="check-circle" size={20} color="#34A853" />
-                      <Text style={styles.featureText}>{feature}</Text>
-                    </View>
-                  ))}
-                </View>
+                {live ? (
+                  <View style={styles.featuresList}>
+                    {live.features.map((feature) => (
+                      <View key={feature} style={styles.featureRow}>
+                        <MaterialIcons name="check-circle" size={20} color="#34A853" />
+                        <Text style={styles.featureText}>{feature}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.featuresList}>
+                    <View style={styles.featureSkeletonRow} />
+                    <View style={styles.featureSkeletonRow} />
+                    <View style={styles.featureSkeletonRow} />
+                  </View>
+                )}
 
                 <View style={[styles.radio, isSelected && styles.selectedRadio]}>
                   {isSelected ? <View style={styles.radioDot} /> : null}
@@ -221,10 +307,13 @@ export function PlanSelectionScreen() {
         </View>
 
         <Pressable
-          style={[styles.primaryButton, isSubscribing && styles.primaryButtonDisabled]}
+          style={[
+            styles.primaryButton,
+            (isSubscribing || !canSubscribe) && styles.primaryButtonDisabled,
+          ]}
           onPress={subscribeToActivePlan}
-          disabled={isSubscribing}>
-          {isSubscribing ? (
+          disabled={isSubscribing || !canSubscribe}>
+          {isSubscribing || !canSubscribe ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>
@@ -339,8 +428,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
     borderRadius: 18,
+    minHeight: 50,
+    minWidth: 64,
+    justifyContent: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
+  },
+  priceSkeleton: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
   },
   price: {
     color: '#1A73E8',
@@ -360,6 +457,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 10,
+  },
+  featureSkeletonRow: {
+    backgroundColor: '#F1F3F4',
+    borderRadius: 6,
+    height: 14,
+    width: '70%',
   },
   featureText: {
     color: '#3C4043',

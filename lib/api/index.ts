@@ -4,6 +4,7 @@ export * from './types';
 
 export * as authApi from './auth';
 export * as paymentApi from './payment';
+export * as plansApi from './plans';
 export * as ghlApi from './ghl';
 export * as hubspotApi from './hubspot';
 export * as openaiApi from './openai';

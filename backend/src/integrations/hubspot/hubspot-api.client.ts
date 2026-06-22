@@ -13,7 +13,7 @@ const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 type HubspotErrorBody = {
   category?: string;
   message?: string;
-  errors?: Array<{ message?: string }>;
+  errors?: { message?: string }[];
   status?: string;
 };
 
