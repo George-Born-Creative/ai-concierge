@@ -14,14 +14,25 @@ import {
 
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
-import { createPaymentSheet, refreshSubscription } from '@/lib/api/payment';
+import {
+  createPaymentSheet,
+  refreshSubscription,
+  restoreApplePurchase,
+  verifyAppleReceipt,
+} from '@/lib/api/payment';
 import { listPlans } from '@/lib/api/plans';
 import type { PlanCode, PlanListItem } from '@/lib/api/types';
 import { isActiveSubscription, routeForUser } from '@/lib/onboarding-route';
 import { getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
+import { useAppleIap } from './use-apple-iap';
 import { useStripePaymentSheet } from './use-stripe-payment-sheet';
+
+// iOS shows the Apple IAP CTA + Restore Purchases. Android/web keep the
+// existing Stripe PaymentSheet flow. Step 7 will introduce the dual CTA
+// (Apple IAP + Stripe-via-web link-out) on iOS; today is single-CTA only.
+const IS_IOS = Platform.OS === 'ios';
 
 // Display-only metadata for each plan: icon, fallback name, one-line tagline.
 // The rest of the card (price, feature bullets) is sourced from the backend
@@ -67,8 +78,10 @@ export function PlanSelectionScreen() {
   const router = useRouter();
   const { show } = useToast();
   const stripeSheet = useStripePaymentSheet();
+  const appleIap = useAppleIap();
   const [selectedPlan, setSelectedPlan] = useState<PlanCode>('ghl-pro');
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [plans, setPlans] = useState<PlanListItem[] | null>(null);
 
   // Fetch live prices + features on mount. While `plans` is null we render
@@ -133,7 +146,26 @@ export function PlanSelectionScreen() {
     [displayPlans, selectedPlan],
   );
 
-  const canSubscribe = Boolean(active?.live);
+  // iOS surfaces the higher Apple IAP price because that's what Apple
+  // actually charges; Android/web keeps the Stripe (web) price. Falls back
+  // to monthlyPriceDisplay if applePriceDisplay isn't set (e.g. a future
+  // plan that's Stripe-only).
+  const cardPriceDisplay = useCallback(
+    (live: PlanListItem | null): string | null => {
+      if (!live) return null;
+      if (IS_IOS) return live.applePriceDisplay ?? live.monthlyPriceDisplay;
+      return live.monthlyPriceDisplay;
+    },
+    [],
+  );
+
+  // iOS needs both the live backend plan (for appleProductId) and the
+  // expo-iap hook to be ready before the button is enabled. Without the
+  // hook the buy() call will reject; without the backend plan we don't
+  // know which appleProductId to pass.
+  const canSubscribe = IS_IOS
+    ? Boolean(active?.live?.appleProductId) && appleIap.ready
+    : Boolean(active?.live);
 
   const continueAfterPlan = useCallback(
     async (user = getUser()) => {
@@ -171,52 +203,17 @@ export function PlanSelectionScreen() {
         return;
       }
 
+      if (IS_IOS) {
+        await subscribeWithApple(active.id, active.live);
+        return;
+      }
+
       if (Platform.OS === 'web') {
         show('Stripe checkout is only available on the iOS / Android build.', 'info');
         return;
       }
-      if (!stripeSheet) {
-        show('Payment SDK is still loading. Please try again in a moment.', 'error');
-        return;
-      }
 
-      const sheet = await createPaymentSheet({ planCode: active.id });
-
-      const init = await stripeSheet.initPaymentSheet({
-        merchantDisplayName: 'AI-Concierge',
-        customerId: sheet.customer,
-        customerEphemeralKeySecret: sheet.ephemeralKey,
-        paymentIntentClientSecret: sheet.paymentIntent,
-        returnURL: 'aiconcierge://stripe-redirect',
-      });
-      if (init.error) {
-        throw new Error(init.error.message);
-      }
-
-      const presented = await stripeSheet.presentPaymentSheet();
-      if (presented.error) {
-        // User cancelled or card was declined. "Canceled" is a no-op.
-        if (!/cancel/i.test(presented.error.message)) {
-          show(presented.error.message, 'error');
-        }
-        return;
-      }
-
-      // Force the backend to reconcile from Stripe so the local row flips
-      // INCOMPLETE → ACTIVE before the next guarded call. Webhook may not be
-      // wired in local dev; this makes the flow work either way.
-      try {
-        await refreshSubscription();
-        // Refresh the cached user so a cold start lands the user on /connect
-        // (or further) instead of /plan based on stale data.
-        const me = await getMe();
-        await refreshUser(me);
-      } catch {
-        // Non-fatal: the webhook may still arrive shortly.
-      }
-
-      show('Subscription active. Connect your CRM next.', 'success');
-      await continueAfterPlan();
+      await subscribeWithStripe(active.id);
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -224,9 +221,137 @@ export function PlanSelectionScreen() {
           : err instanceof Error
             ? err.message
             : 'Could not start checkout. Please try again.';
-      show(message, 'error');
+      // Swallow obvious user-cancel paths — StoreKit and Stripe both surface
+      // these as throws and the toast would just be noise.
+      if (!/cancel/i.test(message)) {
+        show(message, 'error');
+      }
     } finally {
       setIsSubscribing(false);
+    }
+  }
+
+  // Android + (later) web Stripe PaymentSheet path. Unchanged from before
+  // Step 4 except for being extracted to a function so the iOS branch can
+  // live next to it.
+  async function subscribeWithStripe(planCode: PlanCode) {
+    if (!stripeSheet) {
+      show('Payment SDK is still loading. Please try again in a moment.', 'error');
+      return;
+    }
+
+    const sheet = await createPaymentSheet({ planCode });
+
+    const init = await stripeSheet.initPaymentSheet({
+      merchantDisplayName: 'AI-Concierge',
+      customerId: sheet.customer,
+      customerEphemeralKeySecret: sheet.ephemeralKey,
+      paymentIntentClientSecret: sheet.paymentIntent,
+      returnURL: 'aiconcierge://stripe-redirect',
+    });
+    if (init.error) {
+      throw new Error(init.error.message);
+    }
+
+    const presented = await stripeSheet.presentPaymentSheet();
+    if (presented.error) {
+      if (!/cancel/i.test(presented.error.message)) {
+        show(presented.error.message, 'error');
+      }
+      return;
+    }
+
+    // Force the backend to reconcile from Stripe so the local row flips
+    // INCOMPLETE → ACTIVE before the next guarded call. Webhook may not be
+    // wired in local dev; this makes the flow work either way.
+    try {
+      await refreshSubscription();
+      const me = await getMe();
+      await refreshUser(me);
+    } catch {
+      // Non-fatal: the webhook may still arrive shortly.
+    }
+
+    show('Subscription active. Connect your CRM next.', 'success');
+    await continueAfterPlan();
+  }
+
+  // iOS Apple IAP path. The expo-iap purchase listener resolves the
+  // `buy(...)` promise with the JWS once StoreKit confirms the sale, then
+  // we send it to the backend's verifier (which both validates the receipt
+  // and writes the Subscription row). Only after the backend ACKs do we
+  // mark the StoreKit transaction finished — leaving it pending if verify
+  // throws so StoreKit replays the transaction on next launch.
+  async function subscribeWithApple(planCode: PlanCode, live: PlanListItem) {
+    if (!live.appleProductId) {
+      show('This plan is not available on iOS yet. Please try the web checkout.', 'error');
+      return;
+    }
+    if (!appleIap.ready) {
+      show('Apple Store is still connecting. Please try again in a moment.', 'error');
+      return;
+    }
+
+    const { jwsRepresentation } = await appleIap.buy(planCode, live.appleProductId);
+    await verifyAppleReceipt({ planCode, jwsRepresentation });
+
+    try {
+      const me = await getMe();
+      await refreshUser(me);
+    } catch {
+      // Non-fatal: the row is already correct on the backend, the next
+      // /me call will pick it up.
+    }
+
+    show('Subscription active. Connect your CRM next.', 'success');
+    await continueAfterPlan();
+  }
+
+  // Restore Purchases — required by App Review. Only meaningful on iOS;
+  // surfaced as a small link on iOS only (see render branch below).
+  async function restoreApple() {
+    if (!IS_IOS) return;
+    if (!active || !active.live) {
+      show('Plans are still loading. Please try again in a moment.', 'error');
+      return;
+    }
+    if (!active.live.appleProductId) {
+      show('This plan is not available on iOS yet.', 'error');
+      return;
+    }
+    if (!appleIap.ready) {
+      show('Apple Store is still connecting. Please try again in a moment.', 'error');
+      return;
+    }
+    setIsRestoring(true);
+    try {
+      const result = await appleIap.restore(active.live.appleProductId);
+      if (!result) {
+        show('No active Apple subscription found for this plan.', 'info');
+        return;
+      }
+      await restoreApplePurchase({
+        planCode: active.id,
+        jwsRepresentation: result.jwsRepresentation,
+      });
+      try {
+        const me = await getMe();
+        await refreshUser(me);
+      } catch {
+        // Non-fatal.
+      }
+      show('Subscription restored.', 'success');
+      await continueAfterPlan();
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message || 'Could not restore. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not restore. Please try again.';
+      show(message, 'error');
+    } finally {
+      setIsRestoring(false);
     }
   }
 
@@ -270,7 +395,7 @@ export function PlanSelectionScreen() {
                   <View style={styles.pricePill}>
                     {live ? (
                       <>
-                        <Text style={styles.price}>{live.monthlyPriceDisplay}</Text>
+                        <Text style={styles.price}>{cardPriceDisplay(live)}</Text>
                         <Text style={styles.priceMeta}>/mo</Text>
                       </>
                     ) : (
@@ -309,22 +434,43 @@ export function PlanSelectionScreen() {
         <Pressable
           style={[
             styles.primaryButton,
-            (isSubscribing || !canSubscribe) && styles.primaryButtonDisabled,
+            (isSubscribing || isRestoring || !canSubscribe) && styles.primaryButtonDisabled,
           ]}
           onPress={subscribeToActivePlan}
-          disabled={isSubscribing || !canSubscribe}>
+          disabled={isSubscribing || isRestoring || !canSubscribe}>
           {isSubscribing || !canSubscribe ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>
-              <MaterialIcons name="lock" size={20} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>Subscribe with Stripe</Text>
+              <MaterialIcons
+                name={IS_IOS ? 'apple' : 'lock'}
+                size={20}
+                color="#FFFFFF"
+              />
+              <Text style={styles.primaryButtonText}>
+                {IS_IOS ? 'Subscribe with Apple' : 'Subscribe with Stripe'}
+              </Text>
             </>
           )}
         </Pressable>
         <Text style={styles.checkoutHint}>
-          Card details are collected securely inside Stripe. No card data touches our servers.
+          {IS_IOS
+            ? 'Subscribing with Apple uses your Apple ID. You can manage or cancel in Settings → [Your Name] → Subscriptions.'
+            : 'Card details are collected securely inside Stripe. No card data touches our servers.'}
         </Text>
+
+        {IS_IOS ? (
+          <Pressable
+            style={styles.restoreButton}
+            onPress={restoreApple}
+            disabled={isSubscribing || isRestoring || !canSubscribe}>
+            {isRestoring ? (
+              <ActivityIndicator color="#1A73E8" size="small" />
+            ) : (
+              <Text style={styles.restoreButtonText}>Restore Purchases</Text>
+            )}
+          </Pressable>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -514,5 +660,18 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 12,
     textAlign: 'center',
+  },
+  restoreButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    minHeight: 36,
+    paddingVertical: 8,
+  },
+  restoreButtonText: {
+    color: '#1A73E8',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

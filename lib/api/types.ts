@@ -65,6 +65,27 @@ export type CreatePaymentSheetResponse = {
   publishableKey: string;
 };
 
+// Sent to POST /billing/apple/verify and POST /billing/apple/restore.
+// `jwsRepresentation` is the StoreKit 2 JWS — surfaced as
+// `purchaseToken` on the iOS Purchase object emitted by expo-iap's
+// purchaseUpdatedListener (and on the active purchase returned by
+// getAvailablePurchases() during a restore flow).
+export type VerifyAppleReceiptRequest = {
+  planCode: PlanCode;
+  jwsRepresentation: string;
+};
+
+// Mirrors AppleVerifyResult on the backend. `paymentProvider` is always
+// 'apple' here — the field is present so callers can refresh-and-branch the
+// UI without a second profile fetch.
+export type VerifyAppleReceiptResponse = {
+  paymentProvider: 'apple';
+  // SubscriptionStatus enum value, upper-cased (e.g. 'ACTIVE', 'CANCELED').
+  status: string;
+  planCode: PlanCode;
+  expiresAt: string | null;
+};
+
 // Shape returned by GET /plans. Both prices arrive in cents (so the mobile
 // app can compute discount math without parsing display strings) plus a
 // pre-formatted display string for direct rendering.
