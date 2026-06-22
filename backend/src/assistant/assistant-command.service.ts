@@ -912,7 +912,7 @@ export class AssistantCommandService {
     // Field gather order — change here to reorder the conversational flow.
     // contactName comes first because GHL requires a contactId on opportunity
     // create and we resolve contactId from the name.
-    const requiredOrder: Array<'contact' | 'name' | 'monetaryValue' | 'pipeline'> = [
+    const requiredOrder: ('contact' | 'name' | 'monetaryValue' | 'pipeline')[] = [
       'contact',
       'name',
       'monetaryValue',
