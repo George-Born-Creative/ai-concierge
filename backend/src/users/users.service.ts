@@ -32,6 +32,8 @@ export class UsersService {
       id: user.id,
       name: user.name,
       email: user.email,
+      timezone: user.timezone,
+      hasPushToken: Boolean(user.expoPushToken),
       plan: user.subscription?.plan
         ? {
             id: user.subscription.plan.code,
@@ -50,6 +52,22 @@ export class UsersService {
       hasOpenAIKey: Boolean(user.openaiKey),
       openAIKeyLast4: user.openaiKey?.last4 ?? null,
     };
+  }
+
+  async updatePushToken(userId: string, token: string | null) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { expoPushToken: token },
+    });
+    return { ok: true, hasPushToken: token !== null };
+  }
+
+  async updateTimezone(userId: string, timezone: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { timezone },
+    });
+    return { ok: true, timezone };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
