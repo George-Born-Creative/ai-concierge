@@ -1,0 +1,121 @@
+{
+  "identifier" : "8d35a8bc-4c6e-4f0b-9d3e-1e0b1f2a3b4c",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "4b8a1d2c-9e7f-4b3a-8c5d-2a3b4c5d6e7f",
+      "localizations" : [
+        {
+          "description" : "AI Concierge Pro",
+          "displayName" : "AI Concierge Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "AI Concierge Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "29.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Voice AI that drives your GoHighLevel CRM. Monthly subscription, auto-renews.",
+              "displayName" : "GoHighLevel Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.daveget.aiconcierge.ghl_pro_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "GoHighLevel Pro Monthly",
+          "subscriptionGroupID" : "4b8a1d2c-9e7f-4b3a-8c5d-2a3b4c5d6e7f",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "29.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Voice AI that drives your HubSpot CRM. Monthly subscription, auto-renews.",
+              "displayName" : "HubSpot Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.daveget.aiconcierge.hubspot_pro_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "HubSpot Pro Monthly",
+          "subscriptionGroupID" : "4b8a1d2c-9e7f-4b3a-8c5d-2a3b4c5d6e7f",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

@@ -29,12 +29,30 @@ enum PaymentProvider {
   APPLE
 }
 
+enum ReminderStatus {
+  SCHEDULED
+  SNOOZED
+  DELIVERED
+  DISMISSED
+  FAILED
+  CANCELED
+}
+
+enum ReminderLinkType {
+  CONTACT
+  COMPANY
+  DEAL
+  APPOINTMENT
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
   name             String
   passwordHash     String
   stripeCustomerId String?  @unique
+  expoPushToken    String?
+  timezone         String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -43,6 +61,7 @@ model User {
   openaiKey               OpenAIKey?
   auditLogs               AuditLog[]
   assistantConversations  AssistantConversation[]
+  reminders               Reminder[]
 }
 
 // Per client spec: one subscription = one CRM integration.
@@ -187,4 +206,33 @@ model AssistantMessage {
   conversation AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+// Scheduled reminder created by the user (manual UI or AI assistant). The cron
+// worker dispatches due rows via Expo push. Optional link* fields snapshot a
+// CRM entity so the notification can deep-link to it; the snapshot doesn't
+// stay in sync with CRM renames.
+model Reminder {
+  id              String                  @id @default(cuid())
+  userId          String
+  title           String
+  notes           String?
+  dueAt           DateTime
+  status          ReminderStatus          @default(SCHEDULED)
+  snoozedUntil    DateTime?
+  linkType        ReminderLinkType?
+  linkProvider    CrmProvider?
+  linkExternalId  String?
+  linkLabel       String?
+  attempts        Int                     @default(0)
+  lastError       String?
+  deliveredAt     DateTime?
+  source          AssistantMessageSource  @default(text)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dueAt])
+  @@index([status, dueAt])
 }
