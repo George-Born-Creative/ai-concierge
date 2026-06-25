@@ -1,3 +1,5 @@
+import { setPushState } from './state';
+
 // Web fallback for the Expo push token registration helper. The real
 // implementation lives in `register-push-token.native.ts` and is selected by
 // Metro's platform-resolver on iOS / Android. Web has no push token concept,
@@ -11,6 +13,7 @@ export type PushRegistration =
     };
 
 export async function registerPushToken(): Promise<PushRegistration> {
+  setPushState({ status: 'web' });
   return { granted: false, reason: 'web' };
 }
 

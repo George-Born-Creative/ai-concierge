@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 
 import { remindersApi } from '../api';
 import { clearCacheItem, getCacheItem, setCacheItem } from '../cache';
+import { setPushState } from './state';
 
 const TOKEN_CACHE_KEY = 'ai_concierge.expo_push_token.v1';
 
@@ -28,6 +29,7 @@ Notifications.setNotificationHandler({
 
 export async function registerPushToken(): Promise<PushRegistration> {
   if (!Device.isDevice) {
+    setPushState({ status: 'not_a_device' });
     return { granted: false, reason: 'not_a_device' };
   }
 
@@ -49,6 +51,7 @@ export async function registerPushToken(): Promise<PushRegistration> {
   if (status !== 'granted') {
     await clearPushTokenCache();
     await safePostTokenToBackend(null);
+    setPushState({ status: 'denied' });
     return { granted: false, reason: 'denied' };
   }
 
@@ -57,6 +60,7 @@ export async function registerPushToken(): Promise<PushRegistration> {
       ?.eas?.projectId ?? process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
 
   if (!projectId) {
+    setPushState({ status: 'no_project_id' });
     return { granted: false, reason: 'no_project_id' };
   }
 
@@ -70,8 +74,10 @@ export async function registerPushToken(): Promise<PushRegistration> {
       await safePostTokenToBackend(token);
       await setCacheItem(TOKEN_CACHE_KEY, token);
     }
+    setPushState({ status: 'granted' });
     return { granted: true, token };
   } catch {
+    setPushState({ status: 'error' });
     return { granted: false, reason: 'error' };
   }
 }
