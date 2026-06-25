@@ -26,12 +26,14 @@ import { isActiveSubscription, routeForUser } from '@/lib/onboarding-route';
 import { getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
+import { PaymentMethodSheet, type PaymentMethod } from './payment-method-sheet';
 import { useAppleIap } from './use-apple-iap';
 import { useStripePaymentSheet } from './use-stripe-payment-sheet';
 
-// iOS shows the Apple IAP CTA + Restore Purchases. Android/web keep the
-// existing Stripe PaymentSheet flow. Step 7 will introduce the dual CTA
-// (Apple IAP + Stripe-via-web link-out) on iOS; today is single-CTA only.
+// iOS offers BOTH payment rails: tapping Subscribe opens a sheet where the
+// user picks Apple In-App Purchase or Stripe (card). Stripe is the cheaper
+// option (no Apple fee) and the sheet surfaces that discount. Android/web
+// only have Stripe, so they skip the sheet and go straight to PaymentSheet.
 const IS_IOS = Platform.OS === 'ios';
 
 // Display-only metadata for each plan: icon, fallback name, one-line tagline.
@@ -83,6 +85,11 @@ export function PlanSelectionScreen() {
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [plans, setPlans] = useState<PlanListItem[] | null>(null);
+  // iOS payment-method picker state. `paymentBusy` marks which rail is
+  // mid-checkout so the sheet shows a spinner on that row while keeping the
+  // other one tappable as a fallback.
+  const [paymentSheetVisible, setPaymentSheetVisible] = useState(false);
+  const [paymentBusy, setPaymentBusy] = useState<PaymentMethod | null>(null);
 
   // Fetch live prices + features on mount. While `plans` is null we render
   // skeletons in the price pill; on failure we surface a toast and let the
@@ -146,26 +153,36 @@ export function PlanSelectionScreen() {
     [displayPlans, selectedPlan],
   );
 
-  // iOS surfaces the higher Apple IAP price because that's what Apple
-  // actually charges; Android/web keeps the Stripe (web) price. Falls back
-  // to monthlyPriceDisplay if applePriceDisplay isn't set (e.g. a future
-  // plan that's Stripe-only).
+  // The card headline shows the best available price — i.e. the Stripe
+  // (no-Apple-fee) price on every platform. The per-rail breakdown (and the
+  // higher Apple price) is shown in the payment-method sheet on iOS.
   const cardPriceDisplay = useCallback(
-    (live: PlanListItem | null): string | null => {
-      if (!live) return null;
-      if (IS_IOS) return live.applePriceDisplay ?? live.monthlyPriceDisplay;
-      return live.monthlyPriceDisplay;
+    (live: PlanListItem | null): string | null =>
+      live ? live.monthlyPriceDisplay : null,
+    [],
+  );
+
+  // Whole-number percent the Stripe price saves vs the Apple IAP price.
+  // Null when there's no real discount (prices equal, or the plan has no
+  // Apple price). Computed from the cent fields so the badge stays accurate
+  // regardless of display rounding.
+  const stripeSavingsPercent = useCallback(
+    (live: PlanListItem | null): number | null => {
+      if (!live || live.applePrice == null) return null;
+      if (live.applePrice <= live.monthlyPrice) return null;
+      return Math.round(
+        ((live.applePrice - live.monthlyPrice) / live.applePrice) * 100,
+      );
     },
     [],
   );
 
-  // iOS needs both the live backend plan (for appleProductId) and the
-  // expo-iap hook to be ready before the button is enabled. Without the
-  // hook the buy() call will reject; without the backend plan we don't
-  // know which appleProductId to pass.
-  const canSubscribe = IS_IOS
-    ? Boolean(active?.live?.appleProductId) && appleIap.ready
-    : Boolean(active?.live);
+  // The Subscribe button only needs the live backend plan: on iOS it opens
+  // the payment-method sheet (which gates Apple-vs-Stripe availability
+  // individually), and on Android it goes straight to Stripe. We no longer
+  // block the whole button on StoreKit readiness — Stripe stays available
+  // even if Apple IAP can't load.
+  const canSubscribe = Boolean(active?.live);
 
   const continueAfterPlan = useCallback(
     async (user = getUser()) => {
@@ -181,11 +198,34 @@ export function PlanSelectionScreen() {
     [router],
   );
 
-  async function subscribeToActivePlan() {
+  // Subscribe button entry point. iOS opens the payment-method sheet so the
+  // user can choose Apple or Stripe; Android goes straight to Stripe; web has
+  // no native checkout.
+  function openCheckout() {
     if (!active || !active.live) {
       show('Plans are still loading. Please try again in a moment.', 'error');
       return;
     }
+    if (IS_IOS) {
+      setPaymentSheetVisible(true);
+      return;
+    }
+    if (Platform.OS === 'web') {
+      show('Stripe checkout is only available on the iOS / Android build.', 'info');
+      return;
+    }
+    void handleSubscribe('stripe');
+  }
+
+  // Runs the chosen payment rail. Shared "already subscribed" short-circuit
+  // up front, then dispatches to the Apple or Stripe flow. On error we keep
+  // the sheet open (when shown) so the user can fall back to the other rail.
+  async function handleSubscribe(method: PaymentMethod) {
+    if (!active || !active.live) {
+      show('Plans are still loading. Please try again in a moment.', 'error');
+      return;
+    }
+    setPaymentBusy(method);
     setIsSubscribing(true);
     try {
       let user = getUser();
@@ -199,21 +239,17 @@ export function PlanSelectionScreen() {
       if (user && isActiveSubscription(user.plan)) {
         const planName = user.plan?.name ?? 'your plan';
         show(`You already have an active subscription (${planName}).`, 'info');
+        setPaymentSheetVisible(false);
         await continueAfterPlan(user);
         return;
       }
 
-      if (IS_IOS) {
+      if (method === 'apple') {
         await subscribeWithApple(active.id, active.live);
-        return;
+      } else {
+        await subscribeWithStripe(active.id);
       }
-
-      if (Platform.OS === 'web') {
-        show('Stripe checkout is only available on the iOS / Android build.', 'info');
-        return;
-      }
-
-      await subscribeWithStripe(active.id);
+      setPaymentSheetVisible(false);
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -222,11 +258,13 @@ export function PlanSelectionScreen() {
             ? err.message
             : 'Could not start checkout. Please try again.';
       // Swallow obvious user-cancel paths — StoreKit and Stripe both surface
-      // these as throws and the toast would just be noise.
+      // these as throws and the toast would just be noise. Leave the sheet
+      // open so the user can pick the other payment method.
       if (!/cancel/i.test(message)) {
         show(message, 'error');
       }
     } finally {
+      setPaymentBusy(null);
       setIsSubscribing(false);
     }
   }
@@ -436,26 +474,22 @@ export function PlanSelectionScreen() {
             styles.primaryButton,
             (isSubscribing || isRestoring || !canSubscribe) && styles.primaryButtonDisabled,
           ]}
-          onPress={subscribeToActivePlan}
+          onPress={openCheckout}
           disabled={isSubscribing || isRestoring || !canSubscribe}>
           {isSubscribing || !canSubscribe ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>
-              <MaterialIcons
-                name={IS_IOS ? 'apple' : 'lock'}
-                size={20}
-                color="#FFFFFF"
-              />
+              <MaterialIcons name="lock" size={20} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>
-                {IS_IOS ? 'Subscribe with Apple' : 'Subscribe with Stripe'}
+                {IS_IOS ? 'Subscribe' : 'Subscribe with Stripe'}
               </Text>
             </>
           )}
         </Pressable>
         <Text style={styles.checkoutHint}>
           {IS_IOS
-            ? 'Subscribing with Apple uses your Apple ID. You can manage or cancel in Settings → [Your Name] → Subscriptions.'
+            ? 'Choose Apple or pay by card with Stripe. Card checkout is discounted — no Apple fee.'
             : 'Card details are collected securely inside Stripe. No card data touches our servers.'}
         </Text>
 
@@ -472,6 +506,33 @@ export function PlanSelectionScreen() {
           </Pressable>
         ) : null}
       </ScrollView>
+
+      {IS_IOS ? (
+        <PaymentMethodSheet
+          visible={paymentSheetVisible}
+          planName={active?.name ?? 'Your plan'}
+          applePriceDisplay={
+            active?.live?.applePriceDisplay ??
+            active?.live?.monthlyPriceDisplay ??
+            null
+          }
+          stripePriceDisplay={active?.live?.monthlyPriceDisplay ?? null}
+          savingsPercent={stripeSavingsPercent(active?.live ?? null)}
+          appleAvailable={Boolean(active?.live?.appleProductId) && appleIap.ready}
+          appleUnavailableReason={
+            !active?.live?.appleProductId
+              ? 'Not available on iOS yet'
+              : !appleIap.ready
+                ? 'Connecting to the App Store…'
+                : null
+          }
+          stripeAvailable={Boolean(stripeSheet)}
+          busy={paymentBusy}
+          onSelectApple={() => void handleSubscribe('apple')}
+          onSelectStripe={() => void handleSubscribe('stripe')}
+          onClose={() => setPaymentSheetVisible(false)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
