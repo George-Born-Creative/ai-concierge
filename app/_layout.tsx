@@ -11,6 +11,7 @@ import { StripeWrapper } from '@/components/stripe-wrapper';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AssistantHistoryProvider } from '@/lib/assistant-history';
 import { isBootstrapReady, subscribeBootstrap } from '@/lib/bootstrap-signal';
+import { useNotificationTapHandler } from '@/lib/push/notification-handler';
 import { ToastProvider } from '@/lib/toast';
 
 // Keep the OS splash visible until the JS splash overlay is mounted, then we
@@ -26,6 +27,10 @@ export default function RootLayout() {
   const [bootReady, setBootReady] = useState(() => isBootstrapReady());
   const [showOverlay, setShowOverlay] = useState(() => !isBootstrapReady());
   const overlayOpacity = useRef(new Animated.Value(1)).current;
+
+  // Mount the global push-notification tap handler. No-op on web; on native
+  // it routes a reminder push tap to /(stack)/reminders?focus=<id>.
+  useNotificationTapHandler();
 
   // Listen for the bootstrap signal from `app/index.tsx`.
   useEffect(() => {
@@ -72,6 +77,7 @@ export default function RootLayout() {
               <Stack.Screen name="(stack)/edit-profile" options={{ headerShown: false }} />
               <Stack.Screen name="(stack)/chats" options={{ headerShown: false }} />
               <Stack.Screen name="(stack)/hubspot" options={{ headerShown: false }} />
+              <Stack.Screen name="(stack)/reminders" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
             </Stack>
             <StatusBar style="dark" />

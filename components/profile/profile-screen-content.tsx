@@ -13,10 +13,11 @@ import {
 } from 'react-native';
 
 import { Skeleton } from '@/components/ui/skeleton';
-import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
+import { ghlApi, hubspotApi, openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
 import { getCrmLabel, getCrmLabelList } from '@/lib/crm/labels';
+import { clearPushTokenCache } from '@/lib/push/register-push-token';
 import { clearSession, getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -164,6 +165,11 @@ export function ProfileScreenContent() {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
+      // Best-effort: tell the backend to drop the push token before we
+      // clear the JWT. After clearSession() the bearer is gone so we
+      // couldn't authenticate this call any more.
+      await remindersApi.setPushToken(null).catch(() => undefined);
+      await clearPushTokenCache();
       await signOut().catch(() => undefined);
     } finally {
       await clearSession();

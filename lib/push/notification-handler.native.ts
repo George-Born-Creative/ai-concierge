@@ -6,11 +6,6 @@ import { useEffect } from 'react';
 // notification. Reads the `reminderId` we stash in the notification's `data`
 // payload backend-side, then deep-links the user into the Reminders screen
 // with that row highlighted (via the `focus` search param).
-//
-// The Reminders screen route (`/(stack)/reminders`) is added in a follow-up
-// step. The `as never` cast lets this file typecheck ahead of that route
-// landing under `typedRoutes`; once the route file exists the cast becomes
-// a no-op and can be removed.
 export function useNotificationTapHandler(): void {
   const router = useRouter();
 
@@ -24,7 +19,7 @@ export function useNotificationTapHandler(): void {
           router.push({
             pathname: '/(stack)/reminders',
             params: { focus: reminderId },
-          } as never);
+          });
         }
       },
     );
