@@ -41,6 +41,12 @@ export type User = {
   id: string;
   name: string;
   email: string;
+  // IANA timezone (e.g. "America/Los_Angeles"). Set by the mobile client on
+  // signin via Intl.DateTimeFormat().resolvedOptions().timeZone, used by the
+  // backend for reminder time parsing.
+  timezone?: string | null;
+  // True iff the backend has a non-null `expoPushToken` for this user.
+  hasPushToken?: boolean;
   plan?: UserPlan | null;
   provider?: CrmProvider | null;
   hasIntegration?: boolean;
@@ -391,3 +397,57 @@ export type AssistantStreamEvent =
   | { type: 'phase'; phase: 'normalizing' | 'thinking' }
   | { type: 'token'; delta: string }
   | { type: 'done'; message: AssistantMessage };
+
+// ─── Reminders ───────────────────────────────────────────────────────────────
+
+export type ReminderStatus =
+  | 'SCHEDULED'
+  | 'SNOOZED'
+  | 'DELIVERED'
+  | 'DISMISSED'
+  | 'FAILED'
+  | 'CANCELED';
+
+export type ReminderLinkType = 'CONTACT' | 'COMPANY' | 'DEAL' | 'APPOINTMENT';
+export type ReminderSource = 'text' | 'voice';
+export type ReminderListRange = 'today' | 'upcoming' | 'past';
+export type SnoozePreset = '10m' | '1h' | 'tomorrow9';
+
+export type Reminder = {
+  id: string;
+  title: string;
+  notes: string | null;
+  dueAt: string;
+  status: ReminderStatus;
+  snoozedUntil: string | null;
+  linkType: ReminderLinkType | null;
+  linkProvider: CrmProvider | null;
+  linkExternalId: string | null;
+  linkLabel: string | null;
+  source: ReminderSource;
+  createdAt: string;
+};
+
+export type CreateReminderRequest = {
+  title: string;
+  notes?: string;
+  dueAt: string;
+  linkType?: ReminderLinkType;
+  linkProvider?: CrmProvider;
+  linkExternalId?: string;
+  linkLabel?: string;
+  source?: ReminderSource;
+};
+
+export type UpdateReminderRequest = Partial<
+  Omit<CreateReminderRequest, 'source'>
+>;
+
+// Backend accepts either an explicit ISO timestamp OR a preset shortcut.
+// The two variants are mutually exclusive — pass exactly one.
+export type SnoozeReminderRequest =
+  | { snoozeUntil: string; preset?: never }
+  | { preset: SnoozePreset; snoozeUntil?: never };
+
+export type SetPushTokenResponse = { ok: true; hasPushToken: boolean };
+export type SetTimezoneResponse = { ok: true; timezone: string };
