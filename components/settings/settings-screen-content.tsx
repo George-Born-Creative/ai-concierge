@@ -325,6 +325,19 @@ export function SettingsScreenContent() {
           {`Reconnect after enabling new scopes in ${meta.scopeManagementLocation}. This clears the old token and opens the authorisation screen again.`}
         </Text>
 
+        {/* ── Notifications ─────────────────────────────────────────────────── */}
+        <SectionLabel>Notifications</SectionLabel>
+        <Group>
+          <Row
+            icon="notifications-active"
+            iconBg="#E8F0FE"
+            iconColor="#1A73E8"
+            title="Reminders"
+            subtitle="Manage scheduled reminders & push notifications"
+            onPress={() => router.push('/(stack)/reminders')}
+          />
+        </Group>
+
         {/* ── About ─────────────────────────────────────────────────────────── */}
         <SectionLabel>About</SectionLabel>
         <Group>

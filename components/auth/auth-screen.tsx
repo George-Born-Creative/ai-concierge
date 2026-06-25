@@ -16,12 +16,30 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { remindersApi } from '@/lib/api';
 import { getMe, signIn, signUp } from '@/lib/api/auth';
 import { getApiBaseUrl } from '@/lib/api/base-url';
 import { ApiError } from '@/lib/api/client';
 import { routeForUser } from '@/lib/onboarding-route';
+import { registerPushToken } from '@/lib/push/register-push-token';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
+
+// Fire-and-forget: after a session is established, send the device's IANA tz
+// so the assistant can resolve reminder times correctly, and register the
+// Expo push token so reminders can fire. Failures are swallowed - the token
+// retries on next cold start, and timezone is cosmetic until first use.
+function attachDevicePreferences() {
+  try {
+    const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (detectedTz) {
+      void remindersApi.setTimezone(detectedTz).catch(() => undefined);
+    }
+  } catch {
+    // Intl can fail on very old runtimes; skip.
+  }
+  void registerPushToken();
+}
 
 const SESSION_CHECK_TIMEOUT_MS = 6_000;
 
@@ -57,6 +75,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           const me = await withTimeout(getMe(), SESSION_CHECK_TIMEOUT_MS);
           if (cancelled || redirected.current) return;
           await setSession(token, me);
+          attachDevicePreferences();
           redirected.current = true;
           router.replace(routeForUser(me));
         } catch (err) {
@@ -99,6 +118,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         : await signIn({ email: email.trim(), password });
 
       await setSession(result.token, result.user);
+      attachDevicePreferences();
 
       if (!isSignup) {
         show('Signed in successfully.', 'success');
