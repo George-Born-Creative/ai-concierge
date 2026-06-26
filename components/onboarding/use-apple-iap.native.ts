@@ -1,3 +1,4 @@
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
@@ -13,6 +14,18 @@ import type { PlanCode } from '@/lib/api/types';
 
 import type { AppleIapHook, AppleIapProduct, AppleIapResult } from './use-apple-iap';
 
+// expo-iap's `useIAP` eagerly reaches into the 'ExpoIap' native module on
+// mount (to register the purchase listener). When that module isn't compiled
+// into the running binary — i.e. the app is opened in Expo Go, or in a dev
+// client that was built before expo-iap was added — that access throws
+// "Cannot find native module 'ExpoIap'" and crashes the screen. We probe for
+// the module ONCE at import time (its presence can't change at runtime) and,
+// when it's absent, swap in a no-op hook that never calls `useIAP`. The plan
+// screen then simply shows Apple IAP as unavailable and the user pays with
+// Stripe. To actually use Apple IAP, rebuild the native app (expo prebuild +
+// a dev/EAS build); a JS-only reload (expo start -c) won't add the module.
+const IAP_NATIVE_AVAILABLE = requireOptionalNativeModule('ExpoIap') != null;
+
 // Hard-coded mapping of our plan codes to App Store Connect product
 // identifiers. The same strings live on `Plan.appleProductId` in the
 // backend (seeded by prisma/seed.ts) — we duplicate them here only to
@@ -26,6 +39,29 @@ const APPLE_PRODUCT_IDS: Record<PlanCode, string> = {
 };
 
 const ALL_PRODUCT_IDS = Object.values(APPLE_PRODUCT_IDS);
+
+// StoreKit / expo-iap throws a terse "SKU not found" (and a few sibling
+// phrasings) when requestPurchase references a product that wasn't loaded —
+// e.g. the product isn't live in App Store Connect, the simulator has no
+// StoreKit config file wired into the scheme, or the initial fetchProducts
+// call failed. That message is useless to an end user, so we translate the
+// whole family into one actionable sentence that nudges them to the Stripe
+// option (which doesn't depend on StoreKit). User-cancel errors are left
+// untouched so the call site can keep swallowing them.
+function normalizePurchaseError(err: unknown): Error {
+  const raw =
+    err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  if (
+    /sku\s*not\s*found|product\s*not\s*found|not\s*found|invalid\s*product|cannot\s*find|unknown\s*product/i.test(
+      raw,
+    )
+  ) {
+    return new Error(
+      "This subscription isn't available from the App Store right now. Please choose “Pay with card” instead.",
+    );
+  }
+  return err instanceof Error ? err : new Error('Apple purchase failed');
+}
 
 // One-shot promise registry keyed by productId. expo-iap delivers purchase
 // results via a listener (not the requestPurchase return value), so we need
@@ -43,7 +79,7 @@ type PendingPurchase = {
   planCode: PlanCode;
 };
 
-export function useAppleIap(): AppleIapHook {
+function useAppleIapNative(): AppleIapHook {
   // The web bundle never reaches this file (use-apple-iap.ts is picked
   // instead via Platform extensions). On Android the file still loads but
   // expo-iap's iOS bits are inert; we short-circuit `ready` to false.
@@ -57,6 +93,11 @@ export function useAppleIap(): AppleIapHook {
   // the backend finishes it after verify, but until then we may see the
   // event twice).
   const lastResolvedRef = useRef(new Map<string, string>());
+
+  // SKUs StoreKit has actually confirmed it knows about. Populated from the
+  // reactive `products` array below. `buy()` reads this to decide whether it
+  // should attempt a last-chance refetch before kicking off a purchase.
+  const loadedSkusRef = useRef(new Set<string>());
 
   const { connected, products, fetchProducts } = useIAP({
     onPurchaseSuccess: (purchase: Purchase) => {
@@ -97,16 +138,16 @@ export function useAppleIap(): AppleIapHook {
       // store has shut down our flow and any other in-flight buys are
       // dead too.
       const targetProductId = error.productId ?? null;
-      const message = error.message || 'Apple purchase failed';
       if (targetProductId) {
         const pending = pendingRef.current.get(targetProductId);
         if (pending) {
           pendingRef.current.delete(targetProductId);
-          pending.reject(new Error(message));
+          pending.reject(normalizePurchaseError(error));
         }
         return;
       }
-      pendingRef.current.forEach((p) => p.reject(new Error(message)));
+      const normalized = normalizePurchaseError(error);
+      pendingRef.current.forEach((p) => p.reject(normalized));
       pendingRef.current.clear();
     },
   });
@@ -150,18 +191,35 @@ export function useAppleIap(): AppleIapHook {
     return out;
   }, [products]);
 
+  // Keep the loaded-SKU set in sync with whatever StoreKit has returned so
+  // far. `buy()` uses it to skip a redundant refetch on the happy path.
+  useEffect(() => {
+    for (const p of products) loadedSkusRef.current.add(p.id);
+  }, [products]);
+
   const buy = useCallback(
-    (planCode: PlanCode, productId: string): Promise<AppleIapResult> => {
+    async (planCode: PlanCode, productId: string): Promise<AppleIapResult> => {
       if (!isIos) {
-        return Promise.reject(
-          new Error('Apple In-App Purchase is only available on iOS.'),
-        );
+        throw new Error('Apple In-App Purchase is only available on iOS.');
       }
       if (!connected) {
-        return Promise.reject(
-          new Error('Apple Store not ready yet. Please try again in a moment.'),
-        );
+        throw new Error('Apple Store not ready yet. Please try again in a moment.');
       }
+
+      // If the initial fetch (on connect) failed or hasn't surfaced this SKU
+      // yet, give StoreKit one more chance to load it before we reference it.
+      // Without a loaded product, requestPurchase throws the cryptic "SKU not
+      // found" — this refetch removes the most common false negative. Any
+      // failure here is non-fatal: the requestPurchase error path below
+      // normalizes whatever StoreKit ultimately reports.
+      if (!loadedSkusRef.current.has(productId)) {
+        try {
+          await fetchProducts({ skus: [productId], type: 'subs' });
+        } catch {
+          // ignore — surfaced (normalized) by the requestPurchase path below
+        }
+      }
+
       // If a previous buy for the same productId is still pending, reject
       // it before starting a new one — the UI should never have two open
       // payment sheets but defensive cleanup keeps the Map well-formed.
@@ -178,18 +236,18 @@ export function useAppleIap(): AppleIapHook {
           },
           type: 'subs',
         }).catch((err: unknown) => {
-          // Synchronous rejections from requestPurchase (e.g. not-prepared)
-          // never trigger the listener path, so we have to clear the
-          // pending entry here too.
+          // Synchronous rejections from requestPurchase (e.g. not-prepared,
+          // "SKU not found") never trigger the listener path, so we have to
+          // clear the pending entry and normalize the error here too.
           const pending = pendingRef.current.get(productId);
           if (pending) {
             pendingRef.current.delete(productId);
-            pending.reject(err instanceof Error ? err : new Error('Purchase failed'));
+            pending.reject(normalizePurchaseError(err));
           }
         });
       });
     },
-    [isIos, connected],
+    [isIos, connected, fetchProducts],
   );
 
   const restore = useCallback(
@@ -222,3 +280,27 @@ export function useAppleIap(): AppleIapHook {
 
   return { ready, products: productsByCode, buy, restore };
 }
+
+// No-op fallback used when the 'ExpoIap' native module isn't in the running
+// binary. Crucially this never calls `useIAP`, so it can't trip the
+// "Cannot find native module" crash. `ready` stays false → the plan screen
+// marks Apple unavailable and routes the user to Stripe.
+function useAppleIapUnavailable(): AppleIapHook {
+  return {
+    ready: false,
+    products: {},
+    buy: async () => {
+      throw new Error(
+        "Apple In-App Purchase isn't available in this build. Please choose “Pay with card” instead.",
+      );
+    },
+    restore: async () => null,
+  };
+}
+
+// Pick the implementation once, at module load. Native-module availability is
+// fixed for the process lifetime, so the selected hook is stable across
+// renders and never violates the rules of hooks.
+export const useAppleIap: () => AppleIapHook = IAP_NATIVE_AVAILABLE
+  ? useAppleIapNative
+  : useAppleIapUnavailable;
