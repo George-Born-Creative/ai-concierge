@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "NestJS backend for AI-Concierge: auth, plans, Stripe billing, CRM OAuth, OpenAI key vault, voice.",
+  "prisma": {
+    "seed": "ts-node --project prisma/tsconfig.json prisma/seed.ts"
+  },
   "scripts": {
     "build": "nest build",
     "start": "nest start",

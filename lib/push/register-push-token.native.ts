@@ -1,6 +1,5 @@
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { remindersApi } from '../api';
@@ -13,21 +12,50 @@ export type PushRegistration =
   | { granted: true; token: string }
   | {
       granted: false;
-      reason: 'not_a_device' | 'denied' | 'no_project_id' | 'error' | 'web';
+      reason: 'not_a_device' | 'denied' | 'no_project_id' | 'error' | 'web' | 'expo_go';
     };
 
-// Configure foreground notification presentation. Module-level so it runs
-// once at import time; safe to re-import elsewhere.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// Expo Go (SDK 53+) removed remote push. Even *importing* expo-notifications
+// there runs its auto-registration side effect, which throws a noisy redbox.
+// So we detect Expo Go and (a) never execute the module's import-time code and
+// (b) make push registration a no-op. Dev client / standalone builds are
+// unaffected and keep full functionality.
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+type NotificationsModule = typeof import('expo-notifications');
+
+let cachedNotifications: NotificationsModule | null = null;
+
+// Lazy, guarded require: the module's side-effectful top-level code only runs
+// the first time this is called — never in Expo Go.
+function loadNotifications(): NotificationsModule {
+  if (!cachedNotifications) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load to keep the side-effectful module out of Expo Go
+    cachedNotifications = require('expo-notifications') as NotificationsModule;
+  }
+  return cachedNotifications;
+}
+
+if (!isExpoGo) {
+  // Configure foreground notification presentation once at import time.
+  loadNotifications().setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 export async function registerPushToken(): Promise<PushRegistration> {
+  if (isExpoGo) {
+    setPushState({ status: 'expo_go' });
+    return { granted: false, reason: 'expo_go' };
+  }
+
+  const Notifications = loadNotifications();
+
   if (!Device.isDevice) {
     setPushState({ status: 'not_a_device' });
     return { granted: false, reason: 'not_a_device' };
