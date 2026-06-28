@@ -325,6 +325,19 @@ export class GhlService {
     const userId = payload.sub;
     const returnUrl = payload.returnUrl ?? `${this.getDeepLinkScheme()}://oauth/ghl`;
 
+    // Guard against a stale OAuth state pointing at a user that no longer
+    // exists (e.g. the DB was reset between starting and finishing the flow).
+    // Without this, the upsert below fails with an opaque FK violation.
+    const userExists = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!userExists) {
+      throw new UnauthorizedException(
+        'Your session is no longer valid. Please sign in again before connecting GoHighLevel.',
+      );
+    }
+
     const tokens = await this.exchangeCode(code);
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
