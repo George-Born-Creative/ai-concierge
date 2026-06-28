@@ -7,7 +7,15 @@ import { useEffect, useState } from 'react';
 
 export type PushState = {
   /** Most recent registerPushToken() result, or null if it hasn't run yet. */
-  status: 'granted' | 'denied' | 'not_a_device' | 'no_project_id' | 'error' | 'web' | null;
+  status:
+    | 'granted'
+    | 'denied'
+    | 'not_a_device'
+    | 'no_project_id'
+    | 'error'
+    | 'web'
+    | 'expo_go'
+    | null;
 };
 
 const state: PushState = { status: null };

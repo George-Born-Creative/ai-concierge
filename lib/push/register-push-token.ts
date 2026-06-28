@@ -9,7 +9,7 @@ export type PushRegistration =
   | { granted: true; token: string }
   | {
       granted: false;
-      reason: 'not_a_device' | 'denied' | 'no_project_id' | 'error' | 'web';
+      reason: 'not_a_device' | 'denied' | 'no_project_id' | 'error' | 'web' | 'expo_go';
     };
 
 export async function registerPushToken(): Promise<PushRegistration> {
