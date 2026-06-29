@@ -5,7 +5,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
@@ -199,7 +199,7 @@ export function SettingsScreenContent() {
   }, [connected, loadingStatus, provider, status]);
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell edges={['bottom']}>
       <PageHeader title="Settings" showBack onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* ── Account group ─────────────────────────────────────────────────── */}
@@ -353,7 +353,7 @@ export function SettingsScreenContent() {
           />
         </Group>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -472,10 +472,6 @@ const PILL: Record<PillTone, { bg: string; border: string; fg: string }> = {
 };
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F2F4F8',
-  },
   content: {
     paddingHorizontal: 16,
     paddingBottom: 48,

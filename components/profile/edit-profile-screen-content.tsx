@@ -12,9 +12,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { ApiError } from '@/lib/api/client';
 import { updateMe } from '@/lib/api/auth';
 import { getUser, refreshUser } from '@/lib/session';
@@ -90,7 +90,7 @@ export function EditProfileScreenContent() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <ScreenShell edges={['bottom']}>
       <PageHeader title="Edit profile" showBack onBack={() => router.back()} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -192,7 +192,7 @@ export function EditProfileScreenContent() {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -249,7 +249,6 @@ function isLikelyEmail(value: string): boolean {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F8FAFF' },
   kbView: { flex: 1 },
   content: {
     paddingHorizontal: 16,

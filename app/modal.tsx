@@ -1,23 +1,27 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Link } from 'expo-router';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { ScreenShell } from '@/components/screen';
 
 export default function ModalScreen() {
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.card}>
-        <View style={styles.iconWrap}>
-          <MaterialIcons name="mic" size={34} color="#FFFFFF" />
+    <ScreenShell edges={['top', 'bottom']}>
+      <View style={styles.container}>
+        <View style={styles.card}>
+          <View style={styles.iconWrap}>
+            <MaterialIcons name="mic" size={34} color="#FFFFFF" />
+          </View>
+          <Text style={styles.title}>Voice concierge</Text>
+          <Text style={styles.subtitle}>
+            Tap the mic from Assistant to start a natural conversation with your concierge.
+          </Text>
         </View>
-        <Text style={styles.title}>Voice concierge</Text>
-        <Text style={styles.subtitle}>
-          Tap the mic from Assistant to start a natural conversation with your concierge.
-        </Text>
+        <Link href="/" dismissTo style={styles.link}>
+          <Text style={styles.linkText}>Back to Assistant</Text>
+        </Link>
       </View>
-      <Link href="/" dismissTo style={styles.link}>
-        <Text style={styles.linkText}>Back to Assistant</Text>
-      </Link>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -25,7 +29,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#F8FAFF',
     justifyContent: 'center',
     paddingHorizontal: 12,
     paddingVertical: 24,

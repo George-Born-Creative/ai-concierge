@@ -14,7 +14,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AIConciergeVoiceRecorder } from '@/components/ai-concierge-voice-recorder';
 import {
@@ -22,7 +21,9 @@ import {
   ChatVoiceWaveOverlay,
 } from '@/components/chat/chat-voice-wave-overlay';
 import { TypewriterText } from '@/components/chat/typewriter-text';
+import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
+import { APP_BG, BORDER, HEADER_ACTION } from '@/constants/theme';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
 import { useToast } from '@/lib/toast';
 
@@ -141,7 +142,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <ScreenShell edges={['top']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -265,7 +266,7 @@ export default function ChatScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -577,32 +578,28 @@ function voiceUserText(entry: AssistantHistoryEntry): string {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   keyboardView: {
     flex: 1,
     position: 'relative',
   },
   header: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E8EAED',
+    backgroundColor: APP_BG,
+    borderBottomColor: BORDER,
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    paddingBottom: 16,
+    paddingBottom: 10,
     paddingHorizontal: 12,
-    paddingTop: 26,
+    paddingTop: 8,
   },
   backButton: {
     alignItems: 'center',
     backgroundColor: '#F1F3F4',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: HEADER_ACTION / 2,
+    height: HEADER_ACTION,
     justifyContent: 'center',
-    width: 44,
+    width: HEADER_ACTION,
   },
   headerCopy: {
     flex: 1,

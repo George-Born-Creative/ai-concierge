@@ -29,14 +29,14 @@ export default function TabLayout() {
         tabBarButton: HapticTab,
       }}>
       <Tabs.Screen
-        name="explore"
+        name="index"
         options={{
-          title: 'History',
-          tabBarIcon: ({ color }) => <MaterialIcons size={27} name="history" color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color }) => <MaterialIcons size={27} name="home" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="index"
+        name="voice"
         options={{
           title: 'Assistant',
           tabBarButton: VoiceAssistantTabButton,

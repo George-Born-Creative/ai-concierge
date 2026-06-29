@@ -5,13 +5,14 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { ghlApi, hubspotApi } from '@/lib/api';
 import { CRM_LABELS } from '@/lib/crm/labels';
 import { useCrmOAuth, type CrmOAuthApi, type OAuthProvider } from '@/lib/oauth';
@@ -89,12 +90,9 @@ export function ConnectIntegrationScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell>
+      <PageHeader title={`Connect ${integration.name}`} showBack onBack={() => router.replace('/plan')} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.backButton} onPress={() => router.replace('/plan')}>
-          <MaterialIcons name="arrow-back" size={22} color="#202124" />
-        </Pressable>
-
         <View style={styles.headerIcon}>
           <MaterialIcons name="lan" size={34} color="#1A73E8" />
         </View>
@@ -158,30 +156,15 @@ export function ConnectIntegrationScreen() {
           from Profile.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   content: {
     paddingHorizontal: 12,
     paddingTop: 24,
     paddingBottom: 42,
-  },
-  backButton: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 22,
-    width: 44,
   },
   headerIcon: {
     alignItems: 'center',

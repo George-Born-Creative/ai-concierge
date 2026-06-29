@@ -6,7 +6,6 @@ import {
   Alert,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   SectionList,
   StyleSheet,
   Text,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import {
   useAssistantHistory,
@@ -88,7 +88,7 @@ export function ChatsScreenContent() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell edges={['bottom']}>
       <PageHeader
         title="Chats"
         showBack
@@ -134,7 +134,7 @@ export function ChatsScreenContent() {
           ItemSeparatorComponent={() => <View style={styles.divider} />}
         />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -275,10 +275,6 @@ function formatTime(iso: string): string {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F2F4F8',
-  },
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 12,

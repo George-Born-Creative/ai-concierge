@@ -5,13 +5,13 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ghlApi, hubspotApi, openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
@@ -184,7 +184,7 @@ export function ProfileScreenContent() {
   const crmLabel = getCrmLabel(crmStatus?.provider ?? null);
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell edges={[]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* ── Profile card ──────────────────────────────────────────────────── */}
         <View style={styles.profileCard}>
@@ -365,7 +365,7 @@ export function ProfileScreenContent() {
           </Pressable>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -490,14 +490,10 @@ const TONE_PILL_STYLES: Record<Tone, { bg: string; border: string; fg: string }>
 };
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   content: {
     paddingHorizontal: 12,
     paddingBottom: 120,
-    paddingTop: 30,
+    paddingTop: 24,
   },
   // ── Profile card ──
   profileCard: {
