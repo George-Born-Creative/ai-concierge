@@ -5,13 +5,14 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -394,12 +395,9 @@ export function PlanSelectionScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell>
+      <PageHeader title="Choose plan" showBack onBack={() => router.replace('/signup')} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.backButton} onPress={() => router.replace('/signup')}>
-          <MaterialIcons name="arrow-back" size={22} color="#202124" />
-        </Pressable>
-
         <View style={styles.headerIcon}>
           <MaterialIcons name="workspace-premium" size={34} color="#1A73E8" />
         </View>
@@ -533,30 +531,15 @@ export function PlanSelectionScreen() {
           onClose={() => setPaymentSheetVisible(false)}
         />
       ) : null}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   content: {
     paddingHorizontal: 12,
     paddingTop: 24,
     paddingBottom: 42,
-  },
-  backButton: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 22,
-    width: 44,
   },
   headerIcon: {
     alignItems: 'center',

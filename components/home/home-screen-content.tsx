@@ -1,8 +1,9 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { ScreenShell } from '@/components/screen';
 import { getUser } from '@/lib/session';
 
 type FeatureCard = {
@@ -54,7 +55,7 @@ export function HomeScreenContent() {
     return BASE_CARDS;
   }, []);
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell edges={[]}>
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -110,21 +111,17 @@ export function HomeScreenContent() {
           })}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   content: {
     alignItems: 'center',
     flexGrow: 1,
     paddingHorizontal: 12,
     paddingBottom: 138,
-    paddingTop: 62,
+    paddingTop: 28,
   },
   logoMark: {
     alignItems: 'center',

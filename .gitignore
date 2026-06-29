@@ -51,3 +51,4 @@ node_modules
 
 # Cursor workspace state (plans, rules, etc.) — local-only, never committed.
 .cursor/
+/plan

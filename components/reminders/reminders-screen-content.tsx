@@ -10,13 +10,13 @@ import {
   Platform,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { CreateReminderModal } from '@/components/reminders/create-reminder-modal';
 import { ReminderRow } from '@/components/reminders/reminder-row';
 import { remindersApi } from '@/lib/api';
@@ -156,7 +156,7 @@ export function RemindersScreenContent() {
   const pushDenied = pushState.status === 'denied';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell edges={['bottom']}>
       <PageHeader title="Reminders" showBack />
 
       <View style={styles.tabs}>
@@ -244,12 +244,11 @@ export function RemindersScreenContent() {
         onClose={() => setModalVisible(false)}
         onCreated={onCreated}
       />
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFF' },
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: 16,

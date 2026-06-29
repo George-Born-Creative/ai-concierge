@@ -1,7 +1,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
-import { Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { APP_BG, BORDER, HEADER_ACTION, HEADER_ROW } from '@/constants/theme';
 
 // Reusable sticky page header. Lives outside the screen's ScrollView so it
 // stays anchored to the top while content scrolls underneath. Used by the
@@ -23,10 +26,9 @@ type PageHeaderProps = {
   right?: ReactNode;
 };
 
-const STATUS_BAR_HEIGHT = Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0;
-
 export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   function handleBack() {
     if (onBack) {
@@ -41,7 +43,7 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
   }
 
   return (
-    <View style={styles.headerWrapper}>
+    <View style={[styles.headerWrapper, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={styles.leftGroup}>
           {showBack ? (
@@ -49,8 +51,8 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
               accessibilityLabel="Go back"
               hitSlop={10}
               onPress={handleBack}
-              style={styles.backButton}>
-              <MaterialIcons name="arrow-back" size={22} color="#202124" />
+              style={styles.actionButton}>
+              <MaterialIcons name="arrow-back" size={24} color="#202124" />
             </Pressable>
           ) : null}
 
@@ -77,35 +79,30 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
   );
 }
 
-// Header height (excluding the status-bar padding). "Medium-height rectangle"
-// as requested.
-const HEADER_HEIGHT = 60;
-
 const styles = StyleSheet.create({
   headerWrapper: {
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E8EAED',
+    backgroundColor: APP_BG,
+    borderBottomColor: BORDER,
     borderBottomWidth: 1,
-    paddingTop: STATUS_BAR_HEIGHT,
   },
   header: {
     alignItems: 'center',
     flexDirection: 'row',
-    height: HEADER_HEIGHT,
+    height: HEADER_ROW,
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
   },
   leftGroup: {
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
-  backButton: {
+  actionButton: {
     alignItems: 'center',
-    height: 36,
+    height: HEADER_ACTION,
     justifyContent: 'center',
-    width: 36,
+    width: HEADER_ACTION,
   },
   title: {
     color: '#202124',

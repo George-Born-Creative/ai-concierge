@@ -5,7 +5,6 @@ import { useCallback, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { hubspotApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
@@ -90,7 +90,7 @@ export function HubspotDataScreenContent() {
   const provider = getUser()?.provider;
   if (provider && provider !== 'hubspot') {
     return (
-      <SafeAreaView style={styles.screen}>
+      <ScreenShell edges={['bottom']}>
         <PageHeader title={`${CRM_LABELS.hubspot} data`} showBack onBack={() => router.back()} />
         <View style={styles.notFor}>
           <MaterialIcons name="info-outline" size={40} color="#80868B" />
@@ -100,12 +100,12 @@ export function HubspotDataScreenContent() {
             {getCrmLabel(provider)} — open Settings to switch CRMs.
           </Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell edges={['bottom']}>
       <PageHeader title="HubSpot data" showBack onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.content}
@@ -174,7 +174,7 @@ export function HubspotDataScreenContent() {
           queries against the same data.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -291,7 +291,6 @@ function RowCard({ title, subtitle, meta, onPress }: RowCardProps) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F2F4F8' },
   content: {
     paddingHorizontal: 16,
     paddingTop: 8,

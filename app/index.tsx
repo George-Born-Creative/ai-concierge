@@ -8,6 +8,7 @@ import { ApiError } from '@/lib/api/client';
 import { markBootstrapReady } from '@/lib/bootstrap-signal';
 import { routeForUser } from '@/lib/onboarding-route';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
+import { APP_BG } from '@/constants/theme';
 
 // Root entry: decides where the user should land based on the saved JWT and
 // how far they got through onboarding. The full funnel is:
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
   container: {
     // The JS dots-splash overlay covers this view while bootstrap runs. We
     // still match the splash background so the very first paint blends in.
-    backgroundColor: '#F8FAFF',
+    backgroundColor: APP_BG,
     flex: 1,
   },
 });

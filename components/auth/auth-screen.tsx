@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { remindersApi } from '@/lib/api';
 import { getMe, signIn, signUp } from '@/lib/api/auth';
 import { getApiBaseUrl } from '@/lib/api/base-url';
@@ -145,15 +145,17 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
   if (checkingSession) {
     return (
-      <View style={styles.sessionCheck}>
-        <ActivityIndicator size="large" color="#1A73E8" />
-      </View>
+      <ScreenShell>
+        <View style={styles.sessionCheck}>
+          <ActivityIndicator size="large" color="#1A73E8" />
+        </View>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <PageHeader />
+    <ScreenShell>
+      <PageHeader showBack={!isSignup} onBack={() => router.replace('/signup')} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
@@ -164,12 +166,6 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          {!isSignup ? (
-            <Pressable style={styles.backButton} onPress={() => router.replace('/signup')}>
-              <MaterialIcons name="arrow-back" size={22} color="#202124" />
-            </Pressable>
-          ) : null}
-
           <View style={styles.heroCard}>
             <View style={styles.heroTopRow}>
               <View style={styles.logoMark}>
@@ -285,7 +281,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -308,13 +304,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 const styles = StyleSheet.create({
   sessionCheck: {
     alignItems: 'center',
-    backgroundColor: '#F6F9FF',
     flex: 1,
     justifyContent: 'center',
-  },
-  screen: {
-    flex: 1,
-    backgroundColor: '#F6F9FF',
   },
   keyboardView: {
     flex: 1,
@@ -326,18 +317,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 22,
     paddingBottom: 120,
-  },
-  backButton: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 28,
-    width: 44,
   },
   heroCard: {
     backgroundColor: '#EDF4FF',

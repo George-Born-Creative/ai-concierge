@@ -1,0 +1,18 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" fill="#F8FAFF"/>
+
+  <!-- Expanding "voice wave" pulse rings (fading outward, like the Lottie) -->
+  <g fill="none" stroke="#1A73E8" stroke-width="24">
+    <circle cx="512" cy="512" r="178" stroke-opacity="1"/>
+    <circle cx="512" cy="512" r="256" stroke-opacity="0.5"/>
+    <circle cx="512" cy="512" r="324" stroke-opacity="0.22"/>
+  </g>
+
+  <!-- Audio waveform bars (the 4 equalizer bars from the Lottie) -->
+  <g fill="#1A73E8">
+    <rect x="-20" y="-75"  width="40" height="150" rx="20" transform="translate(422 512)"/>
+    <rect x="-20" y="-125" width="40" height="250" rx="20" transform="translate(482 512)"/>
+    <rect x="-20" y="-105" width="40" height="210" rx="20" transform="translate(542 512)"/>
+    <rect x="-20" y="-65"  width="40" height="130" rx="20" transform="translate(602 512)"/>
+  </g>
+</svg>

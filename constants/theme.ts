@@ -5,6 +5,17 @@
 
 import { Platform } from 'react-native';
 
+// Single source of truth for the app-wide surface color and header metrics.
+// Used by ScreenShell, PageHeader and AppHeader so the status-bar area, header
+// band and page body never differ in color, and header action buttons line up
+// at the same vertical level on every screen.
+export const APP_BG = '#F8FAFF';
+export const BORDER = '#E8EAED';
+/** Square hit-target for header action buttons (back, history, etc.). */
+export const HEADER_ACTION = 40;
+/** Header content row height, excluding the status-bar inset. */
+export const HEADER_ROW = 56;
+
 const tintColorLight = '#0a7ea4';
 const tintColorDark = '#fff';
 

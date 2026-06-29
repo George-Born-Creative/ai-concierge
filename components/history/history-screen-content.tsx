@@ -1,7 +1,9 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { AssistantChat, useAssistantHistory } from '@/lib/assistant-history';
 
 export function HistoryScreenContent() {
@@ -34,17 +36,18 @@ export function HistoryScreenContent() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.kicker}>History</Text>
-            <Text style={styles.title}>Your chats</Text>
-          </View>
+    <ScreenShell>
+      <PageHeader
+        title="History"
+        showBack
+        right={
           <View style={styles.historyCount}>
             <Text style={styles.historyCountText}>{chats.length}</Text>
           </View>
-        </View>
+        }
+      />
+
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.subtitle}>
           Each block is one conversation. Open a chat to see all messages, or start a new one.
         </Text>
@@ -52,9 +55,7 @@ export function HistoryScreenContent() {
           <MaterialIcons name="add-comment" size={22} color="#FFFFFF" />
           <Text style={styles.newChatButtonText}>New chat</Text>
         </Pressable>
-      </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Conversations</Text>
           <Pressable disabled={chats.length === 0} onPress={clearAllChats}>
@@ -115,7 +116,7 @@ export function HistoryScreenContent() {
           ))
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -137,65 +138,29 @@ function formatTimestamp(value: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   content: {
     paddingHorizontal: 12,
-    paddingTop: 24,
+    paddingTop: 20,
     paddingBottom: 36,
-  },
-  header: {
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E8EAED',
-    borderBottomWidth: 1,
-    paddingBottom: 18,
-    paddingHorizontal: 12,
-    paddingTop: 28,
-  },
-  headerRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 16,
-    justifyContent: 'space-between',
-  },
-  headerCopy: {
-    flex: 1,
   },
   historyCount: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 16,
+    height: 32,
     justifyContent: 'center',
-    width: 44,
+    minWidth: 32,
+    paddingHorizontal: 8,
   },
   historyCountText: {
     color: '#1A73E8',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '600',
-  },
-  kicker: {
-    color: '#1A73E8',
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1.1,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: '#202124',
-    fontSize: 28,
-    fontWeight: '600',
-    letterSpacing: -0.8,
-    lineHeight: 34,
   },
   subtitle: {
     color: '#5F6368',
     fontSize: 16,
     lineHeight: 24,
-    marginTop: 10,
   },
   newChatButton: {
     alignItems: 'center',

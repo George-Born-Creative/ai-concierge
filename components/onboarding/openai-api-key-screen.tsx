@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +13,8 @@ import {
   View,
 } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { openaiApi } from '@/lib/api';
@@ -146,7 +147,8 @@ export function OpenAIApiKeyScreen() {
       : 'Add your OpenAI key to power voice commands.';
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell>
+      <PageHeader title={title} showBack onBack={goBack} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
@@ -154,10 +156,6 @@ export function OpenAIApiKeyScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <Pressable style={styles.backButton} onPress={goBack}>
-            <MaterialIcons name="arrow-back" size={22} color="#202124" />
-          </Pressable>
-
           <View style={styles.headerIcon}>
             <MaterialIcons name="key" size={34} color="#1A73E8" />
           </View>
@@ -237,15 +235,11 @@ export function OpenAIApiKeyScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   keyboardView: {
     flex: 1,
   },
@@ -254,17 +248,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 24,
     paddingBottom: 120,
-  },
-  backButton: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 22,
-    width: 44,
   },
   headerIcon: {
     alignItems: 'center',

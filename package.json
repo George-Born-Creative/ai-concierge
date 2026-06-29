@@ -63,5 +63,15 @@
     "postinstall-postinstall": "^2.1.0",
     "typescript": "~5.9.2"
   },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-background-timer",
+          "react-native-webrtc"
+        ]
+      }
+    }
+  },
   "private": true
 }

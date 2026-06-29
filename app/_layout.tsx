@@ -2,17 +2,24 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppSplashScreen } from '@/components/splash/app-splash-screen';
 import { StripeWrapper } from '@/components/stripe-wrapper';
+import { APP_BG } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AssistantHistoryProvider } from '@/lib/assistant-history';
 import { isBootstrapReady, subscribeBootstrap } from '@/lib/bootstrap-signal';
 import { useNotificationTapHandler } from '@/lib/push/notification-handler';
 import { ToastProvider } from '@/lib/toast';
+
+// Keep the Android system bars painted with the app background so the
+// status-bar area never shows a different color from the page.
+void SystemUI.setBackgroundColorAsync(APP_BG).catch(() => undefined);
 
 // Keep the OS splash visible until the JS splash overlay is mounted, then we
 // take over from JS so the dots logo can be shown instead of a static PNG.
@@ -59,40 +66,45 @@ export default function RootLayout() {
   }, [bootReady, overlayOpacity]);
 
   return (
-    <AssistantHistoryProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <ToastProvider>
-          <StripeWrapper>
-            <Stack initialRouteName="index">
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)/signup" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)/signin" options={{ headerShown: false }} />
-              <Stack.Screen name="(onboarding)/plan" options={{ headerShown: false }} />
-              <Stack.Screen name="(onboarding)/connect" options={{ headerShown: false }} />
-              <Stack.Screen name="oauth/[provider]" options={{ headerShown: false }} />
-              <Stack.Screen name="(onboarding)/openai-key" options={{ headerShown: false }} />
-              <Stack.Screen name="(chat)/chat" options={{ headerShown: false }} />
-              <Stack.Screen name="(stack)/settings" options={{ headerShown: false }} />
-              <Stack.Screen name="(stack)/edit-profile" options={{ headerShown: false }} />
-              <Stack.Screen name="(stack)/chats" options={{ headerShown: false }} />
-              <Stack.Screen name="(stack)/hubspot" options={{ headerShown: false }} />
-              <Stack.Screen name="(stack)/reminders" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
-            </Stack>
-            <StatusBar style="dark" />
-          </StripeWrapper>
-        </ToastProvider>
-      </ThemeProvider>
+    <SafeAreaProvider>
+      <AssistantHistoryProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <ToastProvider>
+            <StripeWrapper>
+              <Stack
+                initialRouteName="index"
+                screenOptions={{ contentStyle: { backgroundColor: APP_BG } }}>
+                <Stack.Screen name="index" options={{ headerShown: false }} />
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)/signup" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)/signin" options={{ headerShown: false }} />
+                <Stack.Screen name="(onboarding)/plan" options={{ headerShown: false }} />
+                <Stack.Screen name="(onboarding)/connect" options={{ headerShown: false }} />
+                <Stack.Screen name="oauth/[provider]" options={{ headerShown: false }} />
+                <Stack.Screen name="(onboarding)/openai-key" options={{ headerShown: false }} />
+                <Stack.Screen name="(chat)/chat" options={{ headerShown: false }} />
+                <Stack.Screen name="(stack)/settings" options={{ headerShown: false }} />
+                <Stack.Screen name="(stack)/edit-profile" options={{ headerShown: false }} />
+                <Stack.Screen name="(stack)/chats" options={{ headerShown: false }} />
+                <Stack.Screen name="(stack)/history" options={{ headerShown: false }} />
+                <Stack.Screen name="(stack)/hubspot" options={{ headerShown: false }} />
+                <Stack.Screen name="(stack)/reminders" options={{ headerShown: false }} />
+                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
+              </Stack>
+              <StatusBar style="dark" />
+            </StripeWrapper>
+          </ToastProvider>
+        </ThemeProvider>
 
-      {showOverlay && (
-        <Animated.View
-          pointerEvents={bootReady ? 'none' : 'auto'}
-          style={[StyleSheet.absoluteFill, styles.overlay, { opacity: overlayOpacity }]}>
-          <AppSplashScreen />
-        </Animated.View>
-      )}
-    </AssistantHistoryProvider>
+        {showOverlay && (
+          <Animated.View
+            pointerEvents={bootReady ? 'none' : 'auto'}
+            style={[StyleSheet.absoluteFill, styles.overlay, { opacity: overlayOpacity }]}>
+            <AppSplashScreen />
+          </Animated.View>
+        )}
+      </AssistantHistoryProvider>
+    </SafeAreaProvider>
   );
 }
 
