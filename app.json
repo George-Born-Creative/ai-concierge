@@ -11,11 +11,12 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "AI Concierge uses the microphone to record voice commands before sending them to chat."
-      }
+        "NSMicrophoneUsageDescription": "AI Concierge uses the microphone to record voice commands before sending them to chat.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.daveget.aiconcierge"
     },
     "android": {
-      "usesCleartextTraffic": true,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -71,8 +72,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b26e4552-7b6d-4281-8335-e45229df8dae"
+        "projectId": "388f78f9-6539-4fc8-831b-8c0b94b41cdd"
       }
-    }
+    },
+    "owner": "dave1s-team"
   }
 }
