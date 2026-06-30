@@ -32,6 +32,7 @@ export class UsersService {
       id: user.id,
       name: user.name,
       email: user.email,
+      emailVerified: user.emailVerified,
       timezone: user.timezone,
       hasPushToken: Boolean(user.expoPushToken),
       plan: user.subscription?.plan
@@ -106,19 +107,24 @@ export class UsersService {
     }
 
     if (hasPasswordChange) {
-      if (!currentPassword) {
-        throw new BadRequestException('Current password is required to set a new one');
+      if (user.passwordHash) {
+        // Existing password → require and verify the current one before change.
+        if (!currentPassword) {
+          throw new BadRequestException('Current password is required to set a new one');
+        }
+        const valid = await argon2.verify(user.passwordHash, currentPassword);
+        if (!valid) {
+          throw new UnauthorizedException('Current password is incorrect');
+        }
+        const sameAsOld = await argon2
+          .verify(user.passwordHash, newPassword)
+          .catch(() => false);
+        if (sameAsOld) {
+          throw new BadRequestException('New password must be different from the current one');
+        }
       }
-      const valid = await argon2.verify(user.passwordHash, currentPassword);
-      if (!valid) {
-        throw new UnauthorizedException('Current password is incorrect');
-      }
-      const sameAsOld = await argon2
-        .verify(user.passwordHash, newPassword)
-        .catch(() => false);
-      if (sameAsOld) {
-        throw new BadRequestException('New password must be different from the current one');
-      }
+      // No existing password (Google-only account) → this is a first-time
+      // "set password", so no current password is required.
       data.passwordHash = await argon2.hash(newPassword);
     }
 

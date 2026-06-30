@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { SigninDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -24,6 +25,22 @@ export class AuthController {
   @HttpCode(200)
   signin(@Body() dto: SigninDto) {
     return this.auth.signin(dto);
+  }
+
+  // Email verification. The user already holds a JWT from signup, so these are
+  // guarded and act on the token's userId.
+  @UseGuards(JwtAuthGuard)
+  @Post('verify-email')
+  @HttpCode(200)
+  verifyEmail(@CurrentUser() user: AuthenticatedUser, @Body() dto: VerifyEmailDto) {
+    return this.auth.verifyEmail(user.id, dto.code);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('resend-code')
+  @HttpCode(200)
+  resendCode(@CurrentUser() user: AuthenticatedUser) {
+    return this.auth.resendCode(user.id);
   }
 
   // JWT is stateless on the server. The mobile app drops the token on signout.
