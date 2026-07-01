@@ -92,7 +92,11 @@ export function ConnectIntegrationScreen() {
   return (
     <ScreenShell>
       <PageHeader title={`Connect ${integration.name}`} showBack onBack={() => router.replace('/plan')} />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never">
         <View style={styles.headerIcon}>
           <MaterialIcons name="lan" size={34} color="#1A73E8" />
         </View>

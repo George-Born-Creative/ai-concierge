@@ -49,7 +49,17 @@ model User {
   id               String   @id @default(cuid())
   email            String   @unique
   name             String
-  passwordHash     String
+  // Nullable: Google-only accounts have no password. Email/password accounts
+  // always set it. A Google user can later "set a password" via profile edit.
+  passwordHash     String?
+  // Google's stable account id (`sub` from the verified ID token). Set when the
+  // user signs in with Google; lets us match returning Google users directly.
+  googleId         String?  @unique
+  // Optional avatar URL pulled from the Google profile (`picture`).
+  avatarUrl        String?
+  // Email/password signups start false and flip true once the emailed code is
+  // confirmed. Google sign-ins are created already true (Google verifies email).
+  emailVerified    Boolean  @default(false)
   stripeCustomerId String?  @unique
   expoPushToken    String?
   timezone         String?
@@ -62,6 +72,25 @@ model User {
   auditLogs               AuditLog[]
   assistantConversations  AssistantConversation[]
   reminders               Reminder[]
+  emailVerifications      EmailVerification[]
+}
+
+// Short-lived 6-digit codes emailed during signup. Only the argon2 hash of the
+// code is stored. Codes expire (expiresAt), are single-use (consumedAt), and
+// `attempts` is incremented on each wrong guess so the verifier can lock out
+// brute-force attempts.
+model EmailVerification {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 // Per client spec: one subscription = one CRM integration.

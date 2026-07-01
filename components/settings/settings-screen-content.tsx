@@ -201,7 +201,11 @@ export function SettingsScreenContent() {
   return (
     <ScreenShell edges={['bottom']}>
       <PageHeader title="Settings" showBack onBack={() => router.back()} />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never">
         {/* ── Account group ─────────────────────────────────────────────────── */}
         <SectionLabel>Account</SectionLabel>
         <Group>

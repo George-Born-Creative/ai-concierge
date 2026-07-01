@@ -100,7 +100,9 @@ export function EditProfileScreenContent() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive">
+          keyboardDismissMode="interactive"
+          alwaysBounceVertical={false}
+          overScrollMode="never">
           <Text style={styles.subtitle}>
             Update your name, email, or password. Leave password fields empty to keep it unchanged.
           </Text>

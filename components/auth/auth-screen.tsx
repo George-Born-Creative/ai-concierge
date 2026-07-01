@@ -10,7 +10,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -59,7 +58,6 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
-  const { height: windowHeight } = useWindowDimensions();
   const redirected = useRef(false);
 
   useEffect(() => {
@@ -155,17 +153,16 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
   return (
     <ScreenShell>
-      <PageHeader showBack={!isSignup} onBack={() => router.replace('/signup')} />
+      <PageHeader showBack onBack={() => router.replace('/signup')} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            { minHeight: windowHeight - 48 },
-          ]}
+          contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never">
           <View style={styles.heroCard}>
             <View style={styles.heroTopRow}>
               <View style={styles.logoMark}>

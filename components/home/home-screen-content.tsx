@@ -59,7 +59,9 @@ export function HomeScreenContent() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled">
+        keyboardShouldPersistTaps="handled"
+        alwaysBounceVertical={false}
+        overScrollMode="never">
         <View style={styles.logoMark}>
           <View style={[styles.logoDot, styles.blueDot]} />
           <View style={[styles.logoDot, styles.redDot]} />
