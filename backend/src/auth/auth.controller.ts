@@ -4,6 +4,7 @@ import { AuthenticatedUser, CurrentUser } from '../common/current-user.decorator
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { GoogleSignInDto } from './dto/google-signin.dto';
 import { SigninDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -25,6 +26,12 @@ export class AuthController {
   @HttpCode(200)
   signin(@Body() dto: SigninDto) {
     return this.auth.signin(dto);
+  }
+
+  @Post('google')
+  @HttpCode(200)
+  google(@Body() dto: GoogleSignInDto) {
+    return this.auth.googleSignIn(dto);
   }
 
   // Email verification. The user already holds a JWT from signup, so these are
