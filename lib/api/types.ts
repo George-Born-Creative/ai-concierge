@@ -11,6 +11,12 @@ export type SignInRequest = {
   password: string;
 };
 
+// Google native sign-in: the app sends the Google ID token, the backend
+// verifies it and returns an app session (AuthResponse).
+export type GoogleAuthRequest = {
+  idToken: string;
+};
+
 export type AuthResponse = {
   token: string;
   user: User;
@@ -41,6 +47,10 @@ export type User = {
   id: string;
   name: string;
   email: string;
+  // False until the user confirms the code emailed at signup. Google sign-ins
+  // are created already verified. The auth gate routes unverified users to
+  // /verify-email. Optional so older cached sessions default to "not gated".
+  emailVerified?: boolean;
   // IANA timezone (e.g. "America/Los_Angeles"). Set by the mobile client on
   // signin via Intl.DateTimeFormat().resolvedOptions().timeZone, used by the
   // backend for reminder time parsing.
