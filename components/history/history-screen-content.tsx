@@ -47,7 +47,11 @@ export function HistoryScreenContent() {
         }
       />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never">
         <Text style={styles.subtitle}>
           Each block is one conversation. Open a chat to see all messages, or start a new one.
         </Text>

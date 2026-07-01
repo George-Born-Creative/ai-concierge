@@ -397,7 +397,11 @@ export function PlanSelectionScreen() {
   return (
     <ScreenShell>
       <PageHeader title="Choose plan" showBack onBack={() => router.replace('/signup')} />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never">
         <View style={styles.headerIcon}>
           <MaterialIcons name="workspace-premium" size={34} color="#1A73E8" />
         </View>

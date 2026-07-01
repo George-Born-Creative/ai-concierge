@@ -1,27 +1,46 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
+import * as nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 
-// Thin wrapper around the Resend SDK. Centralises the API key / from-address
-// config and the (small) HTML templates so callers just say "send this code".
+// Thin wrapper around Nodemailer. Uses a well-known service (Gmail by default)
+// so callers only need an account user + password (an App Password for Gmail).
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private readonly resend: Resend | null;
+  private readonly transporter: Transporter | null;
   private readonly from: string;
+  // Outside production, we never block signup on email. If SMTP isn't set up or
+  // the send fails, the 6-digit code is just printed to the server console so
+  // the flow can be tested without any mail credentials.
+  private readonly isProd: boolean;
 
   constructor(private readonly config: ConfigService) {
-    const apiKey = this.config.get<string>('RESEND_API_KEY');
+    this.isProd = this.config.get<string>('NODE_ENV') === 'production';
+    const service = this.config.get<string>('MAIL_SERVICE') ?? 'gmail';
+    const user = this.config.get<string>('MAIL_USER')?.trim();
+    // Gmail shows App Passwords grouped as "abcd efgh ijkl mnop"; strip any
+    // whitespace so a pasted-with-spaces password still authenticates.
+    const pass = this.config.get<string>('MAIL_PASS')?.replace(/\s+/g, '');
+
     this.from =
       this.config.get<string>('MAIL_FROM') ??
-      'AI Concierge <onboarding@resend.dev>';
+      user ??
+      'AI Concierge <no-reply@localhost>';
 
-    // Allow the server to boot without a key (e.g. local runs that don't touch
-    // signup). Sending will throw a clear error instead of crashing on import.
-    this.resend = apiKey ? new Resend(apiKey) : null;
-    if (!this.resend) {
+    // Allow the server to boot without mail config (e.g. local runs that don't
+    // touch signup). Sending throws a clear error instead of crashing on boot.
+    if (user && pass) {
+      this.transporter = nodemailer.createTransport({
+        service,
+        auth: { user, pass },
+      });
+    } else {
+      this.transporter = null;
       this.logger.warn(
-        'RESEND_API_KEY is not set — verification emails will fail to send.',
+        this.isProd
+          ? 'Mail is not configured (need MAIL_USER and MAIL_PASS) — verification emails will fail to send.'
+          : 'Mail is not configured — verification codes will be printed to the console (dev mode).',
       );
     }
   }
@@ -31,23 +50,44 @@ export class MailService {
     name: string | null,
     code: string,
   ): Promise<void> {
-    if (!this.resend) {
-      throw new Error('Email service is not configured (missing RESEND_API_KEY)');
+    if (!this.transporter) {
+      if (!this.isProd) {
+        this.logDevCode(email, code);
+        return;
+      }
+      throw new Error(
+        'Email service is not configured (missing MAIL_USER / MAIL_PASS)',
+      );
     }
 
     const greeting = name ? `Hi ${name},` : 'Hi,';
-    const { error } = await this.resend.emails.send({
-      from: this.from,
-      to: email,
-      subject: `${code} is your AI Concierge verification code`,
-      text: `${greeting}\n\nYour AI Concierge verification code is ${code}.\nIt expires shortly. If you didn't request this, you can ignore this email.`,
-      html: this.verificationHtml(greeting, code),
-    });
-
-    if (error) {
-      this.logger.error(`Resend failed to send verification code: ${error.message}`);
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: email,
+        subject: `${code} is your AI Concierge verification code`,
+        text: `${greeting}\n\nYour AI Concierge verification code is ${code}.\nIt expires shortly. If you didn't request this, you can ignore this email.`,
+        html: this.verificationHtml(greeting, code),
+      });
+    } catch (err) {
+      this.logger.error(
+        `Nodemailer failed to send verification code: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      // Credentials were configured but the send failed (e.g. bad login). Do
+      // NOT pretend it worked — surface the error so the app shows a real
+      // failure instead of a misleading "code sent". Use the console fallback
+      // only when no credentials are configured (transporter is null above).
       throw new Error('Failed to send verification email');
     }
+  }
+
+  // Dev-only: print the verification code so it can be used without email.
+  private logDevCode(email: string, code: string): void {
+    this.logger.warn(
+      `[DEV] Verification code for ${email}: ${code} (email not sent)`,
+    );
   }
 
   private verificationHtml(greeting: string, code: string): string {

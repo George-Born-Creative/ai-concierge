@@ -185,7 +185,11 @@ export function ProfileScreenContent() {
 
   return (
     <ScreenShell edges={[]}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never">
         {/* ── Profile card ──────────────────────────────────────────────────── */}
         <View style={styles.profileCard}>
           <View style={styles.avatar}>

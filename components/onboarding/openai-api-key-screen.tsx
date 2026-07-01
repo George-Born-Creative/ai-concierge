@@ -155,7 +155,9 @@ export function OpenAIApiKeyScreen() {
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never">
           <View style={styles.headerIcon}>
             <MaterialIcons name="key" size={34} color="#1A73E8" />
           </View>
