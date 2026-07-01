@@ -25,8 +25,9 @@ export function isActiveSubscription(plan?: UserPlan | null): boolean {
 export function routeForUser(user: User): Href {
   // Gate email/password signups until they confirm the emailed code. Checked
   // explicitly against `false` so older cached users (undefined) aren't gated.
-  // Cast: the /verify-email screen is added in a later step, so it isn't in the
-  // generated typed-routes union yet.
+  // Cast: the /verify-email route exists (app/(auth)/verify-email.tsx) but
+  // expo-router only regenerates the typed-routes union at Metro start, so it
+  // may not be in the committed types yet.
   if (user.emailVerified === false) {
     return '/verify-email' as Href;
   }
