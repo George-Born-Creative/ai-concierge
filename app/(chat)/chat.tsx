@@ -20,6 +20,7 @@ import {
   ChatVoiceActivity,
   ChatVoiceWaveOverlay,
 } from '@/components/chat/chat-voice-wave-overlay';
+import { MarkdownMessage } from '@/components/chat/markdown-message';
 import { TypewriterText } from '@/components/chat/typewriter-text';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
@@ -480,9 +481,7 @@ function CommandBubble({
                 onSettled={() => setAnimateResponse(false)}
               />
             ) : (
-              <Text style={styles.assistantText} selectable>
-                {entry.response}
-              </Text>
+              <MarkdownMessage content={entry.response} />
             )}
           </View>
           <View style={styles.assistantMetaRow}>
