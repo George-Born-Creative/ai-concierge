@@ -257,6 +257,18 @@ export class VoiceService {
       return { transcript: '' };
     }
 
+    // Whisper / gpt-4o-mini-transcribe routinely hallucinate a short stock
+    // phrase ("you", "Thank you.", "Bye.", "Thanks for watching") when handed
+    // silence or background noise. Treat those as no-speech so the caller
+    // surfaces "voice not detected" instead of running a phantom command.
+    if (isLikelyHallucination(transcript)) {
+      await this.audit(userId, 'voice.transcribe', 'success', {
+        stage: 'whisper_noise',
+        transcript,
+      });
+      return { transcript: '' };
+    }
+
     await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_only' });
 
     return { transcript };
@@ -538,6 +550,50 @@ function reconstructSpokenEmailsInText(text: string): string {
     const cleanedDomain = domain.replace(/[ ,.]+dot[ ,.]+/gi, '.').toLowerCase();
     return `${cleanedLocal}@${cleanedDomain}`;
   });
+}
+
+// Stock phrases Whisper / gpt-4o-mini-transcribe emit on silence or noise.
+// Normalized form: lowercased, punctuation stripped, whitespace collapsed.
+// Kept deliberately conservative — real conversational confirmations like
+// "yes", "yeah", "ok", "sure" are NOT here so follow-up answers still work.
+const WHISPER_HALLUCINATIONS: ReadonlySet<string> = new Set([
+  'you',
+  'thank you',
+  'thank you very much',
+  'thank you so much',
+  'thanks',
+  'thanks for watching',
+  'thank you for watching',
+  'thanks for watching everyone',
+  'please subscribe',
+  'subscribe',
+  'subscribe to my channel',
+  'bye',
+  'bye bye',
+  'goodbye',
+  'see you next time',
+  'see you in the next video',
+  'im sorry',
+  'i am sorry',
+  'the end',
+  'music',
+  'applause',
+  'silence',
+]);
+
+/**
+ * True when the transcript is empty once punctuation is stripped, or matches a
+ * known Whisper silence hallucination. Used to reject phantom transcripts so
+ * the app reports "voice not detected" instead of running a stray command.
+ */
+function isLikelyHallucination(transcript: string): boolean {
+  const normalized = transcript
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return true;
+  return WHISPER_HALLUCINATIONS.has(normalized);
 }
 
 function clamp01(value: unknown): number {

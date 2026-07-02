@@ -603,8 +603,8 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
                     m.id === optimisticId
                       ? {
                           ...m,
-                          command: '(no speech detected)',
-                          response: 'No speech detected. Try speaking closer to the microphone.',
+                          command: '(voice not detected)',
+                          response: 'Voice not detected. Please try again and speak clearly into the microphone.',
                           pending: false,
                           status: 'error' as const,
                         }
