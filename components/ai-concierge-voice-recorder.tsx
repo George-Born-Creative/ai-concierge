@@ -1,9 +1,11 @@
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Audio } from 'expo-av';
-import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { Audio } from "expo-av";
+import { useEffect, useRef, useState } from "react";
+import { Animated, Easing, StyleSheet, View } from "react-native";
 
-type VoiceActivity = 'idle' | 'recording' | 'sending';
+import { VoiceRecordingVisual } from "@/components/voice/voice-recording-visual";
+
+type VoiceActivity = "idle" | "recording" | "sending";
 
 type AIConciergeVoiceRecorderProps = {
   apiEndpoint?: string;
@@ -12,10 +14,8 @@ type AIConciergeVoiceRecorderProps = {
   onError?: (message: string) => void;
   onRecordingChange?: (isRecording: boolean) => void;
   onActivityChange?: (activity: VoiceActivity) => void;
-  variant?: 'tab' | 'composer';
+  variant?: "tab" | "composer";
 };
-
-const waveHeights = [22, 42, 30, 58, 36, 70, 44, 62, 34, 48, 26];
 
 // Silence gating. A recording is rejected (never transcribed) when it ends
 // almost instantly OR its loudness never rises above the silence floor.
@@ -33,9 +33,9 @@ export function AIConciergeVoiceRecorder({
   onError,
   onRecordingChange,
   onActivityChange,
-  variant = 'tab',
+  variant = "tab",
 }: AIConciergeVoiceRecorderProps) {
-  const isComposer = variant === 'composer';
+  const isComposer = variant === "composer";
   const recordingRef = useRef<Audio.Recording | null>(null);
   const hasStoppedRef = useRef(false);
   const isStartingRef = useRef(false);
@@ -46,10 +46,10 @@ export function AIConciergeVoiceRecorder({
   const meteringSamplesRef = useRef(0);
   const lastDurationRef = useRef(0);
   const glowAnim = useRef(new Animated.Value(0)).current;
-  const waveAnim = useRef(new Animated.Value(0)).current;
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
 
   const glowScale = glowAnim.interpolate({
     inputRange: [0, 1],
@@ -64,8 +64,23 @@ export function AIConciergeVoiceRecorder({
     onRecordingChange?.(isRecording);
   }, [isRecording, onRecordingChange]);
 
+  // Recording timer: counts up while recording, freezes while sending, and
+  // resets to 0 when the next recording starts.
   useEffect(() => {
-    const activity: VoiceActivity = isSending ? 'sending' : isRecording ? 'recording' : 'idle';
+    if (!isRecording) {
+      return;
+    }
+    setElapsed(0);
+    const id = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [isRecording]);
+
+  useEffect(() => {
+    const activity: VoiceActivity = isSending
+      ? "sending"
+      : isRecording
+        ? "recording"
+        : "idle";
     onActivityChange?.(activity);
   }, [isRecording, isSending, onActivityChange]);
 
@@ -76,9 +91,7 @@ export function AIConciergeVoiceRecorder({
 
     if (!isRecording) {
       glowAnim.stopAnimation();
-      waveAnim.stopAnimation();
       glowAnim.setValue(0);
-      waveAnim.setValue(0);
       return;
     }
 
@@ -88,33 +101,15 @@ export function AIConciergeVoiceRecorder({
         duration: 1200,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
-      })
-    );
-    const waveLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(waveAnim, {
-          toValue: 1,
-          duration: 680,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-        Animated.timing(waveAnim, {
-          toValue: 0,
-          duration: 680,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-      ])
+      }),
     );
 
     glowLoop.start();
-    waveLoop.start();
 
     return () => {
       glowLoop.stop();
-      waveLoop.stop();
     };
-  }, [glowAnim, isComposer, isRecording, waveAnim]);
+  }, [glowAnim, isComposer, isRecording]);
 
   useEffect(() => {
     return () => {
@@ -127,10 +122,16 @@ export function AIConciergeVoiceRecorder({
   // Sampled on every progress tick (and once more right before stop). Tracks
   // the loudest moment + latest duration so we can tell speech from silence.
   function handleRecordingStatus(status: Audio.RecordingStatus) {
-    if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
+    if (
+      typeof status.durationMillis === "number" &&
+      status.durationMillis > 0
+    ) {
       lastDurationRef.current = status.durationMillis;
     }
-    if (typeof status.metering === 'number' && Number.isFinite(status.metering)) {
+    if (
+      typeof status.metering === "number" &&
+      Number.isFinite(status.metering)
+    ) {
       meteringSamplesRef.current += 1;
       if (status.metering > maxMeteringRef.current) {
         maxMeteringRef.current = status.metering;
@@ -169,7 +170,9 @@ export function AIConciergeVoiceRecorder({
       const permission = await Audio.requestPermissionsAsync();
 
       if (!permission.granted) {
-        notifyError('Please allow microphone access to record a voice command.');
+        notifyError(
+          "Please allow microphone access to record a voice command.",
+        );
         return;
       }
 
@@ -198,7 +201,7 @@ export function AIConciergeVoiceRecorder({
     } catch {
       recordingRef.current = null;
       setIsRecording(false);
-      notifyError('I could not start recording. Please try again.');
+      notifyError("I could not start recording. Please try again.");
     } finally {
       isStartingRef.current = false;
     }
@@ -218,7 +221,7 @@ export function AIConciergeVoiceRecorder({
 
     if (!recording) {
       setIsRecording(false);
-      notifyError('I could not find an active recording. Please try again.');
+      notifyError("I could not find an active recording. Please try again.");
       return;
     }
 
@@ -247,18 +250,20 @@ export function AIConciergeVoiceRecorder({
       recordingRef.current = null;
 
       if (!uri) {
-        notifyError('I could not save the voice message. Please try again.');
+        notifyError("I could not save the voice message. Please try again.");
         return;
       }
 
       if (isProbablySilent()) {
-        notifyError('Voice not detected. Please try again and speak clearly into the microphone.');
+        notifyError(
+          "Voice not detected. Please try again and speak clearly into the microphone.",
+        );
         return;
       }
 
       await sendAudio(uri);
     } catch {
-      notifyError('I could not send the voice message. Please try again.');
+      notifyError("I could not send the voice message. Please try again.");
     } finally {
       recordingRef.current = null;
       setIsSending(false);
@@ -268,22 +273,19 @@ export function AIConciergeVoiceRecorder({
   async function sendAudio(uri: string) {
     if (apiEndpoint) {
       const formData = new FormData();
-      formData.append(
-        'audio',
-        {
-          uri,
-          name: 'ai-concierge-command.m4a',
-          type: 'audio/m4a',
-        } as unknown as Blob
-      );
+      formData.append("audio", {
+        uri,
+        name: "ai-concierge-command.m4a",
+        type: "audio/m4a",
+      } as unknown as Blob);
 
       const response = await fetch(apiEndpoint, {
-        method: 'POST',
+        method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error('Audio upload failed');
+        throw new Error("Audio upload failed");
       }
     }
 
@@ -300,39 +302,11 @@ export function AIConciergeVoiceRecorder({
         styles.shell,
         isComposer && styles.composerShell,
         isRecording && !isComposer && styles.recordingShell,
-      ]}>
+      ]}
+    >
       {(isRecording || isSending) && !isComposer ? (
         <View style={styles.recordingPanel}>
-          <View style={styles.headerRow}>
-            <View style={[styles.statusDot, isRecording && styles.recordingStatusDot]} />
-            <Text style={styles.statusText}>{isSending ? 'Sending audio' : 'Listening now'}</Text>
-          </View>
-
-          <View style={styles.waveform} accessibilityElementsHidden>
-            {waveHeights.map((height, index) => {
-              const animatedHeight = waveAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [height * 0.45, height],
-              });
-
-              return (
-                <Animated.View
-                  key={`${height}-${index}`}
-                  style={[
-                    styles.waveBar,
-                    {
-                      height: isRecording ? animatedHeight : height * 0.34,
-                      opacity: isRecording ? 1 : 0.35,
-                    },
-                  ]}
-                />
-              );
-            })}
-          </View>
-
-          <Text style={styles.helperText}>
-            {isSending ? 'Preparing your voice command...' : 'Release when you are done speaking'}
-          </Text>
+          <VoiceRecordingVisual seconds={elapsed} size={168} />
         </View>
       ) : null}
 
@@ -383,11 +357,16 @@ export function AIConciergeVoiceRecorder({
             isRecording && styles.recordingMicButton,
             (disabled || isSending) && styles.disabledButton,
             isPressed && !disabled && !isSending && styles.pressedButton,
-          ]}>
+          ]}
+        >
           {isComposer && isSending ? (
             <MaterialIcons name="hourglass-top" size={22} color="#FFFFFF" />
           ) : (
-            <MaterialIcons name="mic" size={isComposer ? 25 : 40} color="#FFFFFF" />
+            <MaterialIcons
+              name="mic"
+              size={isComposer ? 25 : 40}
+              color="#FFFFFF"
+            />
           )}
         </View>
       </View>
@@ -397,9 +376,9 @@ export function AIConciergeVoiceRecorder({
 
 const styles = StyleSheet.create({
   shell: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "visible",
     width: 120,
   },
   composerShell: {
@@ -409,51 +388,14 @@ const styles = StyleSheet.create({
     transform: [{ translateY: -4 }],
   },
   recordingPanel: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#D2E3FC',
-    borderRadius: 16,
-    borderWidth: 1,
-    elevation: 14,
-    minWidth: 294,
-    paddingHorizontal: 22,
-    paddingVertical: 18,
-    position: 'absolute',
-    bottom: 104,
-    shadowColor: '#1A73E8',
-    shadowOffset: { width: 0, height: 24 },
-    shadowOpacity: 0.2,
-    shadowRadius: 36,
-  },
-  headerRow: {
-    alignItems: 'center',
-    backgroundColor: '#F1F6FF',
-    borderRadius: 999,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  statusDot: {
-    backgroundColor: '#34A853',
-    borderRadius: 5,
-    height: 10,
-    width: 10,
-  },
-  recordingStatusDot: {
-    backgroundColor: '#EA4335',
-  },
-  statusText: {
-    color: '#174EA6',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    alignItems: "center",
+    bottom: 100,
+    position: "absolute",
   },
   micStage: {
-    alignItems: 'center',
+    alignItems: "center",
     height: 106,
-    justifyContent: 'center',
+    justifyContent: "center",
     width: 106,
   },
   composerMicStage: {
@@ -461,20 +403,20 @@ const styles = StyleSheet.create({
     width: 48,
   },
   glowRing: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: "#1A73E8",
     borderRadius: 68,
     height: 112,
-    position: 'absolute',
+    position: "absolute",
     width: 112,
   },
   micButton: {
-    alignItems: 'center',
-    backgroundColor: '#1A73E8',
+    alignItems: "center",
+    backgroundColor: "#1A73E8",
     borderRadius: 46,
     elevation: 10,
     height: 92,
-    justifyContent: 'center',
-    shadowColor: '#1A73E8',
+    justifyContent: "center",
+    shadowColor: "#1A73E8",
     shadowOffset: { width: 0, height: 18 },
     shadowOpacity: 0.32,
     shadowRadius: 26,
@@ -488,7 +430,7 @@ const styles = StyleSheet.create({
     width: 48,
   },
   recordingMicButton: {
-    backgroundColor: '#1558D6',
+    backgroundColor: "#1558D6",
     shadowOpacity: 0.5,
   },
   disabledButton: {
@@ -496,25 +438,5 @@ const styles = StyleSheet.create({
   },
   pressedButton: {
     transform: [{ scale: 0.96 }],
-  },
-  waveform: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 7,
-    height: 86,
-    justifyContent: 'center',
-    marginTop: 16,
-  },
-  waveBar: {
-    backgroundColor: '#1A73E8',
-    borderRadius: 999,
-    width: 7,
-  },
-  helperText: {
-    color: '#5F6368',
-    fontSize: 15,
-    fontWeight: '600',
-    marginTop: 4,
-    textAlign: 'center',
   },
 });
