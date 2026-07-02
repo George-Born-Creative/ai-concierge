@@ -136,6 +136,22 @@ export function HomeScreenContent() {
           </View>
         </View>
 
+        {/* Reminders */}
+        <Pressable
+          onPress={() => router.push('/reminders' as Href)}
+          style={({ pressed }) => [styles.reminderCard, pressed && { opacity: 0.9 }]}>
+          <View style={styles.reminderIcon}>
+            <MaterialIcons name="notifications-active" size={24} color="#1A73E8" />
+          </View>
+          <View style={styles.reminderCopy}>
+            <Text style={styles.reminderTitle}>Reminders</Text>
+            <Text style={styles.reminderSubtitle}>
+              Manage scheduled reminders & push notifications
+            </Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={22} color="#9AA0A6" />
+        </Pressable>
+
         {/* AI Assistant Card */}
         <Animated.View
           style={[styles.aiCard, { opacity: intro, transform: [{ translateY: introTranslate }] }]}>
@@ -266,6 +282,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginTop: 10,
+  },
+  // Reminders card
+  reminderCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 26,
+    padding: 16,
+    ...CARD_SHADOW,
+  },
+  reminderIcon: {
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    borderRadius: 24,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  reminderCopy: {
+    flex: 1,
+  },
+  reminderTitle: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  reminderSubtitle: {
+    color: '#6B7280',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
   },
   // AI Assistant Card
   aiCard: {
