@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Audio } from 'expo-av';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 type VoiceActivity = 'idle' | 'recording' | 'sending';
 
@@ -17,6 +17,15 @@ type AIConciergeVoiceRecorderProps = {
 
 const waveHeights = [22, 42, 30, 58, 36, 70, 44, 62, 34, 48, 26];
 
+// Silence gating. A recording is rejected (never transcribed) when it ends
+// almost instantly OR its loudness never rises above the silence floor.
+// Whisper hallucinates phantom phrases ("you", "thank you", "bye") on silent
+// or noise-only clips, so we stop those before they ever hit the network.
+// Metering is device-dependent, so the threshold is intentionally
+// conservative — it only blocks clips that are clearly silent.
+const MIN_RECORDING_MS = 400;
+const SILENCE_PEAK_DBFS = -50;
+
 export function AIConciergeVoiceRecorder({
   apiEndpoint,
   disabled = false,
@@ -31,10 +40,16 @@ export function AIConciergeVoiceRecorder({
   const hasStoppedRef = useRef(false);
   const isStartingRef = useRef(false);
   const pendingStopRef = useRef(false);
+  // Loudness/duration tracking for silence gating (see MIN_RECORDING_MS /
+  // SILENCE_PEAK_DBFS). Reset at the start of every recording.
+  const maxMeteringRef = useRef(-Infinity);
+  const meteringSamplesRef = useRef(0);
+  const lastDurationRef = useRef(0);
   const glowAnim = useRef(new Animated.Value(0)).current;
   const waveAnim = useRef(new Animated.Value(0)).current;
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
 
   const glowScale = glowAnim.interpolate({
     inputRange: [0, 1],
@@ -109,6 +124,35 @@ export function AIConciergeVoiceRecorder({
     };
   }, []);
 
+  // Sampled on every progress tick (and once more right before stop). Tracks
+  // the loudest moment + latest duration so we can tell speech from silence.
+  function handleRecordingStatus(status: Audio.RecordingStatus) {
+    if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
+      lastDurationRef.current = status.durationMillis;
+    }
+    if (typeof status.metering === 'number' && Number.isFinite(status.metering)) {
+      meteringSamplesRef.current += 1;
+      if (status.metering > maxMeteringRef.current) {
+        maxMeteringRef.current = status.metering;
+      }
+    }
+  }
+
+  // True when the clip almost certainly contains no spoken command.
+  function isProbablySilent(): boolean {
+    const durationMs = lastDurationRef.current;
+    const hadMetering = meteringSamplesRef.current > 0;
+    const peakDb = maxMeteringRef.current;
+
+    if (durationMs > 0 && durationMs < MIN_RECORDING_MS) {
+      return true;
+    }
+    if (hadMetering && peakDb < SILENCE_PEAK_DBFS) {
+      return true;
+    }
+    return false;
+  }
+
   async function startRecording() {
     if (disabled || isRecording || isSending) {
       return;
@@ -117,6 +161,9 @@ export function AIConciergeVoiceRecorder({
     hasStoppedRef.current = false;
     isStartingRef.current = true;
     pendingStopRef.current = false;
+    maxMeteringRef.current = -Infinity;
+    meteringSamplesRef.current = 0;
+    lastDurationRef.current = 0;
 
     try {
       const permission = await Audio.requestPermissionsAsync();
@@ -131,8 +178,15 @@ export function AIConciergeVoiceRecorder({
         playsInSilentModeIOS: true,
       });
 
+      const recordingOptions: Audio.RecordingOptions = {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      };
+
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+        recordingOptions,
+        handleRecordingStatus,
+        100,
       );
 
       recordingRef.current = recording;
@@ -177,6 +231,15 @@ export function AIConciergeVoiceRecorder({
     setIsSending(true);
 
     try {
+      // Grab a final duration + metering reading before unloading so ultra-
+      // short clips (whose progress tick never fired) are still measured.
+      try {
+        const finalStatus = await recording.getStatusAsync();
+        handleRecordingStatus(finalStatus);
+      } catch {
+        // Status unavailable — fall back to whatever was sampled live.
+      }
+
       await recording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
 
@@ -185,6 +248,11 @@ export function AIConciergeVoiceRecorder({
 
       if (!uri) {
         notifyError('I could not save the voice message. Please try again.');
+        return;
+      }
+
+      if (isProbablySilent()) {
+        notifyError('Voice not detected. Please try again and speak clearly into the microphone.');
         return;
       }
 
@@ -281,24 +349,47 @@ export function AIConciergeVoiceRecorder({
             ]}
           />
         ) : null}
-        <Pressable
+        {/*
+          Hold-to-record uses the raw touch-responder system rather than
+          Pressable. Pressable cancels the press on the slightest finger
+          movement (Android treats it as a scroll), so `onPressOut` often
+          never fires and the recording either won't stop or won't start.
+          Claiming the responder + refusing to release it on move + handling
+          termination makes press-and-hold reliable: press = start, release
+          (or interruption) = stop.
+        */}
+        <View
+          accessibilityRole="button"
           accessibilityLabel="Hold to record voice command"
-          disabled={disabled || isSending}
-          onPressIn={startRecording}
-          onPressOut={stopRecording}
-          style={({ pressed }) => [
+          accessibilityState={{ disabled: disabled || isSending }}
+          onStartShouldSetResponder={() => !disabled && !isSending}
+          onMoveShouldSetResponder={() => false}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={() => {
+            setIsPressed(true);
+            void startRecording();
+          }}
+          onResponderRelease={() => {
+            setIsPressed(false);
+            void stopRecording();
+          }}
+          onResponderTerminate={() => {
+            setIsPressed(false);
+            void stopRecording();
+          }}
+          style={[
             styles.micButton,
             isComposer && styles.composerMicButton,
             isRecording && styles.recordingMicButton,
             (disabled || isSending) && styles.disabledButton,
-            pressed && !disabled && !isSending && styles.pressedButton,
+            isPressed && !disabled && !isSending && styles.pressedButton,
           ]}>
           {isComposer && isSending ? (
             <MaterialIcons name="hourglass-top" size={22} color="#FFFFFF" />
           ) : (
             <MaterialIcons name="mic" size={isComposer ? 25 : 40} color="#FFFFFF" />
           )}
-        </Pressable>
+        </View>
       </View>
     </View>
   );

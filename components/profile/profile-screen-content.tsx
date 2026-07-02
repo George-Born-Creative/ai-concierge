@@ -182,6 +182,7 @@ export function ProfileScreenContent() {
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'AI-Concierge';
   const planLabel = user?.plan ? formatPlanLabel(user.plan.name, user.plan.status) : null;
   const crmLabel = getCrmLabel(crmStatus?.provider ?? null);
+  const planBadgeStyle = TONE_PILL_STYLES[user?.plan ? planTone(user.plan.status) : 'muted'];
 
   return (
     <ScreenShell edges={[]}>
@@ -192,25 +193,44 @@ export function ProfileScreenContent() {
         overScrollMode="never">
         {/* ── Profile card ──────────────────────────────────────────────────── */}
         <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
+          <View style={styles.profileHeader}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+            <View style={styles.profileHeaderCopy}>
+              <Text style={styles.name} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {user?.email ? (
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {user.email}
+                </Text>
+              ) : null}
+              {planLabel ? (
+                <View
+                  style={[
+                    styles.planBadge,
+                    { backgroundColor: planBadgeStyle.bg, borderColor: planBadgeStyle.border },
+                  ]}>
+                  <View style={[styles.planDot, { backgroundColor: planBadgeStyle.fg }]} />
+                  <Text
+                    style={[styles.planBadgeText, { color: planBadgeStyle.fg }]}
+                    numberOfLines={1}>
+                    {planLabel}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
-          <Text style={styles.name} numberOfLines={1}>
-            {displayName}
-          </Text>
-          {user?.email ? (
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {user.email}
-            </Text>
-          ) : null}
 
-          {/* Status pills directly under the profile image. */}
+          <View style={styles.profileDivider} />
+
+          {/* Connection status pills. */}
           <View style={styles.statusRow}>
             {loadingStatuses && !crmStatus && openAIConnected == null ? (
               <>
-                <Skeleton width={140} height={26} radius={999} />
-                <Skeleton width={120} height={26} radius={999} />
-                <Skeleton width={90} height={26} radius={999} />
+                <Skeleton width={150} height={30} radius={999} />
+                <Skeleton width={130} height={30} radius={999} />
               </>
             ) : (
               <>
@@ -224,9 +244,6 @@ export function ProfileScreenContent() {
                   label={openAIConnected ? 'OpenAI · Connected' : 'OpenAI · Not set'}
                   tone={openAIConnected ? 'success' : 'muted'}
                 />
-                {planLabel ? (
-                  <StatusPill icon="workspace-premium" label={planLabel} tone="brand" />
-                ) : null}
               </>
             )}
           </View>
@@ -501,46 +518,80 @@ const styles = StyleSheet.create({
   },
   // ── Profile card ──
   profileCard: {
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
+    borderColor: '#E5E7EB',
     borderRadius: 16,
     borderWidth: 1,
-    padding: 26,
+    elevation: 3,
+    padding: 20,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+  },
+  profileHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 16,
+  },
+  profileHeaderCopy: {
+    flex: 1,
   },
   avatar: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 42,
-    height: 84,
+    borderRadius: 32,
+    height: 64,
     justifyContent: 'center',
-    width: 84,
+    width: 64,
   },
   avatarText: {
     color: '#1A73E8',
-    fontSize: 30,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
   },
   name: {
-    color: '#202124',
-    fontSize: 26,
-    fontWeight: '600',
-    marginTop: 16,
-    textAlign: 'center',
+    color: '#111827',
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   subtitle: {
-    color: '#5F6368',
+    color: '#6B7280',
     fontSize: 14,
-    marginTop: 4,
+    marginTop: 2,
+  },
+  planBadge: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  planDot: {
+    borderRadius: 4,
+    height: 7,
+    width: 7,
+  },
+  planBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  profileDivider: {
+    backgroundColor: '#F0F1F3',
+    height: 1,
+    marginBottom: 16,
+    marginTop: 18,
   },
   statusRow: {
     alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    justifyContent: 'center',
-    marginTop: 18,
-    width: '100%',
   },
   statusPill: {
     alignItems: 'center',
