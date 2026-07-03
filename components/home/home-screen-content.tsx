@@ -59,6 +59,19 @@ export function HomeScreenContent() {
         bg: '#EDE9FE',
         ...(isHubspot ? { href: '/hubspot' as Href } : { command: 'Show my opportunities' }),
       },
+      // Tickets are a HubSpot-only object, so only surface the shortcut for
+      // HubSpot accounts. GHL users don't get a dead button.
+      ...(isHubspot
+        ? [
+            {
+              icon: 'confirmation-number' as const,
+              title: 'Tickets',
+              tint: '#EA4335',
+              bg: '#FCE8E6',
+              href: '/hubspot' as Href,
+            },
+          ]
+        : []),
       {
         icon: 'event',
         title: 'Calendar',

@@ -291,12 +291,28 @@ export type HubspotCompanySummary = {
   updatedAt?: string;
 };
 
+export type HubspotTicketSummary = {
+  id: string;
+  subject: string;
+  content?: string;
+  priority?: string;
+  pipeline?: string;
+  stage?: string;
+  ownerId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type ListHubspotParams = {
   limit?: number;
   after?: string;
 };
 
 export type SearchHubspotContactsParams = ListHubspotParams & {
+  q: string;
+};
+
+export type SearchHubspotTicketsParams = ListHubspotParams & {
   q: string;
 };
 

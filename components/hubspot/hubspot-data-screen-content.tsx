@@ -21,6 +21,7 @@ import type {
   HubspotCompanySummary,
   HubspotContactSummary,
   HubspotDealSummary,
+  HubspotTicketSummary,
 } from '@/lib/api/types';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
@@ -40,6 +41,7 @@ export function HubspotDataScreenContent() {
   const [contacts, setContacts] = useState<LoadState<HubspotContactSummary>>(INITIAL);
   const [deals, setDeals] = useState<LoadState<HubspotDealSummary>>(INITIAL);
   const [companies, setCompanies] = useState<LoadState<HubspotCompanySummary>>(INITIAL);
+  const [tickets, setTickets] = useState<LoadState<HubspotTicketSummary>>(INITIAL);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadAll = useCallback(async (mode: 'initial' | 'refresh') => {
@@ -47,18 +49,21 @@ export function HubspotDataScreenContent() {
       setContacts((s) => ({ ...s, loading: true, error: null }));
       setDeals((s) => ({ ...s, loading: true, error: null }));
       setCompanies((s) => ({ ...s, loading: true, error: null }));
+      setTickets((s) => ({ ...s, loading: true, error: null }));
     }
 
-    // Fire all three in parallel — one slow surface shouldn't gate the others.
-    const [c, d, co] = await Promise.allSettled([
+    // Fire all in parallel — one slow surface shouldn't gate the others.
+    const [c, d, co, t] = await Promise.allSettled([
       hubspotApi.listContacts({ limit: 10 }),
       hubspotApi.listDeals({ limit: 10 }),
       hubspotApi.listCompanies({ limit: 10 }),
+      hubspotApi.listTickets({ limit: 10 }),
     ]);
 
     setContacts(stateFor(c));
     setDeals(stateFor(d));
     setCompanies(stateFor(co));
+    setTickets(stateFor(t));
   }, []);
 
   useFocusEffect(
@@ -165,6 +170,22 @@ export function HubspotDataScreenContent() {
               subtitle={row.domain}
               meta={[row.industry, row.city, row.country].filter(Boolean).join(' · ') || undefined}
               onPress={() => handleCopy('Company id', row.id)}
+            />
+          )}
+        />
+
+        <Section
+          icon="confirmation-number"
+          title="Tickets"
+          state={tickets}
+          emptyText="No tickets in your HubSpot portal yet."
+          renderRow={(row) => (
+            <RowCard
+              key={row.id}
+              title={row.subject}
+              subtitle={row.content}
+              meta={[row.priority, row.stage].filter(Boolean).join(' · ') || undefined}
+              onPress={() => handleCopy('Ticket id', row.id)}
             />
           )}
         />

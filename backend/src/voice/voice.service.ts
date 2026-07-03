@@ -49,6 +49,17 @@ const SUPPORTED_INTENTS = [
   'detach_contact_from_company',
   'attach_deal_to_company',
   'detach_deal_from_company',
+  'list_tickets',
+  'find_ticket',
+  'create_ticket',
+  'update_ticket',
+  'delete_ticket',
+  'attach_ticket_to_contact',
+  'detach_ticket_from_contact',
+  'attach_ticket_to_company',
+  'detach_ticket_from_company',
+  'attach_ticket_to_deal',
+  'detach_ticket_from_deal',
   'create_note',
   'create_task',
   'create_deal',
@@ -132,6 +143,17 @@ Intent examples (informal → intent):
 - "detach John Smith from Acme", "unlink Sarah from Globex", "remove the contact association from Initech" → detach_contact_from_company
 - "attach the Website Redesign deal to Acme", "link deal 12345 to Globex", "associate that opportunity with Initech" → attach_deal_to_company
 - "detach the Website Redesign deal from Acme", "unlink deal 12345 from Globex" → detach_deal_from_company
+- "list my tickets", "show recent tickets", "what support tickets do I have", "any open tickets" → list_tickets
+- "find the login bug ticket", "look up the ticket about billing", "show me ticket 12345" → find_ticket
+- "create a ticket titled Login bug", "open a ticket about the checkout crash with high priority", "log a support ticket called Refund request" → create_ticket
+- "set the Login bug ticket priority to urgent", "rename that ticket to Payment failure", "move the ticket to stage Waiting on us", "change its priority to low" → update_ticket
+- "delete the Login bug ticket", "remove that ticket", "close out ticket 12345" → delete_ticket
+- "attach the Login bug ticket to John Smith", "link that ticket to jane@test.com" → attach_ticket_to_contact
+- "detach the Login bug ticket from John Smith", "unlink that ticket from Sarah" → detach_ticket_from_contact
+- "attach the Login bug ticket to Acme", "associate that ticket with the Globex company" → attach_ticket_to_company
+- "detach the Login bug ticket from Acme", "unlink that ticket from Globex" → detach_ticket_from_company
+- "attach the Login bug ticket to the Website Redesign deal", "link that ticket to deal 12345" → attach_ticket_to_deal
+- "detach the Login bug ticket from the Website Redesign deal" → detach_ticket_from_deal
 
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
@@ -158,6 +180,14 @@ Entity rules:
 - attach_contact_to_company / detach_contact_from_company: identify the company via "companyName"/"companyDomain"/"companyId" (or session lastCompanyId), and the contact via "contactName"/"contactId"/"contactEmail"/"contactPhone".
 - attach_deal_to_company / detach_deal_from_company: identify the company via "companyName"/"companyDomain"/"companyId" (or session lastCompanyId), and the deal via "dealName" or "dealId".
 - For any company intent that refers to "it" / "that company" / "the account", reuse lastCompanyId/lastCompanyName from session context.
+- list_tickets: no entities required.
+- find_ticket / delete_ticket: put the search target in "query" (ticket subject or keyword). Also set "ticketSubject" or "ticketId" when obvious.
+- create_ticket: "ticketSubject" (REQUIRED — extract from "titled X", "called X", "about X"), optional "ticketContent" (the description/body), optional "ticketPriority" (must be LOW/MEDIUM/HIGH/URGENT — map "urgent"→URGENT, "high"→HIGH, "normal"/"medium"→MEDIUM, "low"→LOW), optional "ticketPipeline", "ticketStage". If only "subject"/"name" is given, that is the ticket subject.
+- update_ticket: identify the ticket via "ticketId" or "ticketSubject" (or session lastTicketId); plus any of "newTicketSubject", "newTicketContent", "newTicketPriority" (LOW/MEDIUM/HIGH/URGENT), "newTicketStage" to set.
+- attach_ticket_to_contact / detach_ticket_from_contact: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the contact via "contactName"/"contactId"/"contactEmail"/"contactPhone".
+- attach_ticket_to_company / detach_ticket_from_company: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the company via "companyName"/"companyDomain"/"companyId".
+- attach_ticket_to_deal / detach_ticket_from_deal: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the deal via "dealName" or "dealId".
+- For any ticket intent that refers to "it" / "that ticket", reuse lastTicketId/lastTicketSubject from session context.
 - Normalize phone to digits with optional leading +.
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
@@ -183,7 +213,7 @@ Spoken email reconstruction (REQUIRED whenever you emit an "email" or "newEmail"
 
 Conversation context (when provided):
 - Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them", "that deal", "it").
-- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName, lastCompanyId, lastCompanyName when the user refers to "that" / "them" / "it".
+- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName, lastCompanyId, lastCompanyName, lastTicketId, lastTicketSubject when the user refers to "that" / "them" / "it".
 - If session context has a "pendingIntent" object, the backend is in the middle of collecting fields for it. Treat the latest user message as the answer to "pendingIntent.missing[0]" (the next missing field) and re-emit the SAME intent name with all previous entities plus the new piece. Do NOT switch intents.
 - If the latest message is a short follow-up answer (e.g. "Sales", "$2500", "tomorrow at 2", "John Smith", "yes", "sure", "go ahead", "do it"), look at the LAST assistant turn — if it was a clarification question, re-emit the ORIGINAL intent (e.g. create_opportunity) with all previously known entities PLUS the new piece of information the user just provided. Do not ask the same question again, and do not switch intents.
 - Treat "yes", "yeah", "yep", "sure", "ok", "okay", "right", "correct", "proceed", "continue", "go ahead", "do it", "sounds good" as positive confirmation of the most recent proposed action — re-emit that action's intent with all known entities and needs_clarification = false.

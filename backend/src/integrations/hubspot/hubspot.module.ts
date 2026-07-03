@@ -12,6 +12,8 @@ import { HubspotDealsService } from './deals/deals.service';
 import { HubspotApiClient } from './hubspot-api.client';
 import { HubspotController } from './hubspot.controller';
 import { HubspotService } from './hubspot.service';
+import { HubspotTicketsController } from './tickets/tickets.controller';
+import { HubspotTicketsService } from './tickets/tickets.service';
 
 // Reuses the global JWT_SECRET to sign short-lived OAuth `state` tokens.
 // Imports AuthModule so JwtStrategy is available for JwtAuthGuard on routes.
@@ -40,6 +42,7 @@ import { HubspotService } from './hubspot.service';
     HubspotContactsController,
     HubspotDealsController,
     HubspotCompaniesController,
+    HubspotTicketsController,
   ],
   providers: [
     HubspotService,
@@ -47,6 +50,7 @@ import { HubspotService } from './hubspot.service';
     HubspotContactsService,
     HubspotDealsService,
     HubspotCompaniesService,
+    HubspotTicketsService,
   ],
   exports: [
     HubspotService,
@@ -54,6 +58,7 @@ import { HubspotService } from './hubspot.service';
     HubspotContactsService,
     HubspotDealsService,
     HubspotCompaniesService,
+    HubspotTicketsService,
   ],
 })
 export class HubspotModule {}

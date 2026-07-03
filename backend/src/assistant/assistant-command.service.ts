@@ -30,6 +30,11 @@ import {
   extractOpportunityStatusDetails,
   extractOpportunityUpdateDetails,
   extractSearchQuery,
+  extractTicketCompanyAssociation,
+  extractTicketContactAssociation,
+  extractTicketCreateDetails,
+  extractTicketDealAssociation,
+  extractTicketUpdateDetails,
   mergeSessionIntoEntities,
   pendingIntentExpiry,
   shouldRunIntent,
@@ -205,6 +210,22 @@ export class AssistantCommandService {
         );
       case 'delete_opportunity':
         return this.deleteOpportunityByQuery(userId, extractOpportunityQuery(intent.entities));
+      case 'list_tickets':
+      case 'find_ticket':
+      case 'create_ticket':
+      case 'update_ticket':
+      case 'delete_ticket':
+      case 'attach_ticket_to_contact':
+      case 'detach_ticket_from_contact':
+      case 'attach_ticket_to_company':
+      case 'detach_ticket_from_company':
+      case 'attach_ticket_to_deal':
+      case 'detach_ticket_from_deal':
+        return {
+          response:
+            'Tickets are a HubSpot feature — your account is on GoHighLevel, which uses opportunities instead. Try "show my opportunities".',
+          status: 'error',
+        };
       default:
         return null;
     }
@@ -302,6 +323,52 @@ export class AssistantCommandService {
           userId,
           extractCompanyDealAssociation(intent.entities),
         );
+      case 'list_tickets':
+        return this.hubspot.listRecentTickets(userId);
+      case 'find_ticket':
+        return this.hubspot.findTicket(userId, extractSearchQuery(intent.entities));
+      case 'create_ticket':
+        return this.hubspot.createTicket(
+          userId,
+          extractTicketCreateDetails(intent.entities),
+        );
+      case 'update_ticket':
+        return this.hubspot.updateTicket(
+          userId,
+          extractTicketUpdateDetails(intent.entities),
+        );
+      case 'delete_ticket':
+        return this.hubspot.deleteTicket(userId, extractSearchQuery(intent.entities));
+      case 'attach_ticket_to_contact':
+        return this.hubspot.attachTicketToContact(
+          userId,
+          extractTicketContactAssociation(intent.entities),
+        );
+      case 'detach_ticket_from_contact':
+        return this.hubspot.detachTicketFromContact(
+          userId,
+          extractTicketContactAssociation(intent.entities),
+        );
+      case 'attach_ticket_to_company':
+        return this.hubspot.attachTicketToCompany(
+          userId,
+          extractTicketCompanyAssociation(intent.entities),
+        );
+      case 'detach_ticket_from_company':
+        return this.hubspot.detachTicketFromCompany(
+          userId,
+          extractTicketCompanyAssociation(intent.entities),
+        );
+      case 'attach_ticket_to_deal':
+        return this.hubspot.attachTicketToDeal(
+          userId,
+          extractTicketDealAssociation(intent.entities),
+        );
+      case 'detach_ticket_from_deal':
+        return this.hubspot.detachTicketFromDeal(
+          userId,
+          extractTicketDealAssociation(intent.entities),
+        );
       case 'find_opportunity':
       case 'create_opportunity':
       case 'update_opportunity':
@@ -360,6 +427,12 @@ export class AssistantCommandService {
     ) {
       return this.hubspot.listLatestCompanies(userId);
     }
+    if (
+      /\btickets?\b/.test(lower) &&
+      /\b(list|show|what|my|recent|open|all)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentTickets(userId);
+    }
 
     // Last-line-of-defense fallbacks for company writes when the LLM
     // mislabels the intent (e.g. emits "unknown" or routes to "create_deal"
@@ -397,7 +470,7 @@ export class AssistantCommandService {
 
     return {
       response:
-        'I can show your HubSpot contacts, deals, or companies. Try "pull up my contacts", "list my deals", "what companies do I have", or "create a company called Acme".',
+        'I can show your HubSpot contacts, deals, companies, or tickets. Try "pull up my contacts", "list my deals", "what companies do I have", "show my tickets", or "create a ticket titled Login bug".',
       status: 'error',
     };
   }

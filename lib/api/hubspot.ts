@@ -6,8 +6,10 @@ import type {
   HubspotDealSummary,
   HubspotPaginated,
   HubspotStatusResponse,
+  HubspotTicketSummary,
   ListHubspotParams,
   SearchHubspotContactsParams,
+  SearchHubspotTicketsParams,
 } from './types';
 
 // ─── OAuth lifecycle ─────────────────────────────────────────────────────────
@@ -93,6 +95,30 @@ export async function listCompanies(
 export async function getCompany(id: string): Promise<HubspotCompanySummary> {
   return apiRequest<HubspotCompanySummary>(
     `/integrations/hubspot/companies/${encodeURIComponent(id)}`,
+  );
+}
+
+// ─── CRM: tickets ────────────────────────────────────────────────────────────
+
+export async function listTickets(
+  params?: ListHubspotParams,
+): Promise<HubspotPaginated<HubspotTicketSummary>> {
+  return apiRequest<HubspotPaginated<HubspotTicketSummary>>(
+    withQuery('/integrations/hubspot/tickets', params),
+  );
+}
+
+export async function searchTickets(
+  params: SearchHubspotTicketsParams,
+): Promise<HubspotPaginated<HubspotTicketSummary>> {
+  return apiRequest<HubspotPaginated<HubspotTicketSummary>>(
+    withQuery('/integrations/hubspot/tickets/search', params),
+  );
+}
+
+export async function getTicket(id: string): Promise<HubspotTicketSummary> {
+  return apiRequest<HubspotTicketSummary>(
+    `/integrations/hubspot/tickets/${encodeURIComponent(id)}`,
   );
 }
 

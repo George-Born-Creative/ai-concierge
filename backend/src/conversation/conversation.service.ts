@@ -1,17 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
-import OpenAI from 'openai';
+import { Injectable, Logger } from "@nestjs/common";
+import OpenAI from "openai";
 
-import { OpenAIKeysService } from '../openai-keys/openai-keys.service';
-import type { PendingIntent } from '../assistant/assistant.types';
+import type { PendingIntent } from "../assistant/assistant.types";
+import { OpenAIKeysService } from "../openai-keys/openai-keys.service";
 
-const CHAT_MODEL = 'gpt-4o-mini';
+const CHAT_MODEL = "gpt-4o-mini";
 const MAX_HISTORY_TURNS = 10;
 
 const POLISH_SYSTEM_PROMPT = `You are the friendly voice of a CRM assistant inside a mobile app. The CRM system has just successfully run an action on the user's behalf and produced FACTUAL_RESPONSE — a deterministic, ground-truth description of exactly what happened. Your job is to rewrite FACTUAL_RESPONSE in a warmer, more conversational concierge tone, keeping the message tight (2–3 sentences for write actions; for list/find actions that include a bullet list, keep the bullets verbatim and only polish the surrounding sentences).
 
 Strict rules — these protect data integrity:
 - NEVER invent, add, omit, or alter facts. Names, phone numbers, emails, dollar amounts, ids, dates, times, statuses, pipeline names, calendar names, deal names, company names, and counts MUST match FACTUAL_RESPONSE exactly. If FACTUAL_RESPONSE says "Sarah Smith", you write "Sarah Smith" — never "Sarah", never "Sarah Jones".
-- If FACTUAL_RESPONSE contains a bullet list (lines starting with "·"), keep every bullet's text verbatim and in the same order (do not summarize, reorder, or skip bullets), but render each bullet as a Markdown list item — use a "- " prefix instead of "·".
+- If FACTUAL_RESPONSE contains a bullet list (lines starting with "·"), keep every item's text verbatim and in the same order (do not summarize, reorder, or skip items). Render them EITHER as Markdown list items ("- " prefix instead of "·") OR — when every item shares the same fields (e.g. contacts with name/email/phone, deals with name/amount/stage) — as a GitHub-flavored Markdown table with one column per field, a header row, and one row per item. Copy every value verbatim; never add, drop, or reorder columns/rows.
 - If FACTUAL_RESPONSE contains a follow-up suggestion (e.g. 'say "attach Sarah to it"'), keep an equivalent suggestion. You may rephrase it, but keep the same intent and any quoted user phrases unchanged.
 - NEVER claim an additional action ("…and I also…", "I'll go ahead and notify them"). Only describe what FACTUAL_RESPONSE describes.
 - NEVER apologize for the system, second-guess the action, or ask follow-up clarifying questions of your own.
@@ -21,7 +21,12 @@ Style:
 - Match the user's energy: short command → short reply.
 - Don't start with "Sure", "Of course", "I've", "Got it".
 - No greetings, sign-offs, or emoji.
-- Use light Markdown for readability: **bold** for key names, values, and counts; \`inline code\` for ids or exact field values; "- " for any list. Do NOT use Markdown headings (#) or tables.
+- Format with Markdown and pick the layout that best fits the content — the app renders it natively (bold, lists, tables, headings, code):
+  - Multiple items sharing the same fields (contact/deal/company/ticket lists) → a Markdown table, one column per field.
+  - A simple list of items or steps → "- " bullets (or a numbered list for ordered steps).
+  - A longer explanation → short, separate paragraphs, one idea each.
+  - **bold** for key names, values, and counts; \`inline code\` for ids or exact field values.
+  - Short headings (##) only when they genuinely organize a long reply. Don't over-format a one-line answer.
 
 Output: just the polished response text — no JSON, no preamble, no commentary about what you changed.`;
 
@@ -43,12 +48,16 @@ Style:
 - If the user asks about CRM concepts (e.g. "what does an opportunity do?", "what's the difference between a contact and a lead?"), explain it clearly in 2–4 sentences, like a friendly product expert.
 - Match the user's energy. Short messages get short replies.
 - If the user expresses frustration, acknowledge it and adjust.
-- Format with light Markdown when it aids clarity: **bold** for emphasis, "- " bullets for genuine lists (not capability menus), and \`inline code\` for ids, field values, or example commands. Avoid Markdown headings (#) and tables — keep it chat-friendly.
+- Format with Markdown, choosing the layout that fits the content — the app renders it natively:
+  - Break longer answers into short, separate paragraphs (one idea each), never a wall of text.
+  - Use "- " bullets or a numbered list for genuine lists/steps (not capability menus), and a Markdown table when presenting rows of data that share the same fields.
+  - **bold** for emphasis and key terms, \`inline code\` for ids/field values/example commands, and short headings (##) only to organize a genuinely long answer.
+  - Keep short replies plain — don't over-format.
 
 You are talking with a real CRM operator. Be respectful of their time.`;
 
 export type ConversationTurn = {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 };
 
@@ -76,12 +85,12 @@ export class ConversationService {
 
     const trimmedHistory = input.history.slice(-MAX_HISTORY_TURNS);
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
+      { role: "system", content: systemPrompt },
       ...trimmedHistory.map((turn) => ({
         role: turn.role,
         content: turn.content,
       })),
-      { role: 'user', content: input.userMessage },
+      { role: "user", content: input.userMessage },
     ];
 
     try {
@@ -94,7 +103,9 @@ export class ConversationService {
       const reply = completion.choices[0]?.message?.content?.trim();
       if (reply) return reply;
     } catch (err) {
-      this.logger.warn(`Chat completion failed for ${input.userId}: ${(err as Error).message}`);
+      this.logger.warn(
+        `Chat completion failed for ${input.userId}: ${(err as Error).message}`,
+      );
     }
 
     return this.staticFallback(input.pendingIntent);
@@ -128,12 +139,12 @@ export class ConversationService {
     const systemPrompt = this.buildSystemPrompt(input.pendingIntent);
     const trimmedHistory = input.history.slice(-MAX_HISTORY_TURNS);
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
+      { role: "system", content: systemPrompt },
       ...trimmedHistory.map((turn) => ({
         role: turn.role,
         content: turn.content,
       })),
-      { role: 'user', content: input.userMessage },
+      { role: "user", content: input.userMessage },
     ];
 
     let anyTokens = false;
@@ -218,12 +229,15 @@ export class ConversationService {
       `Intent that ran: ${input.intent}`,
       `FACTUAL_RESPONSE (rewrite this in concierge tone — do not change any facts):`,
       baseline,
-    ].join('\n\n');
+    ].join("\n\n");
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: POLISH_SYSTEM_PROMPT },
-      ...trimmedHistory.map((turn) => ({ role: turn.role, content: turn.content })),
-      { role: 'user', content: userBlock },
+      { role: "system", content: POLISH_SYSTEM_PROMPT },
+      ...trimmedHistory.map((turn) => ({
+        role: turn.role,
+        content: turn.content,
+      })),
+      { role: "user", content: userBlock },
     ];
 
     try {
@@ -288,12 +302,15 @@ export class ConversationService {
       `Intent that ran: ${input.intent}`,
       `FACTUAL_RESPONSE (rewrite this in concierge tone — do not change any facts):`,
       baseline,
-    ].join('\n\n');
+    ].join("\n\n");
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: POLISH_SYSTEM_PROMPT },
-      ...trimmedHistory.map((turn) => ({ role: turn.role, content: turn.content })),
-      { role: 'user', content: userBlock },
+      { role: "system", content: POLISH_SYSTEM_PROMPT },
+      ...trimmedHistory.map((turn) => ({
+        role: turn.role,
+        content: turn.content,
+      })),
+      { role: "user", content: userBlock },
     ];
 
     let anyTokens = false;
@@ -325,11 +342,11 @@ export class ConversationService {
 
   private buildSystemPrompt(pending?: PendingIntent | null): string {
     const now = new Date();
-    const dateLine = `Today is ${now.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+    const dateLine = `Today is ${now.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     })}.`;
 
     if (!pending) {
@@ -337,24 +354,24 @@ export class ConversationService {
     }
 
     const collected = Object.entries(pending.entities)
-      .filter(([, v]) => v !== null && v !== undefined && v !== '')
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
       .map(([k, v]) => `${k}=${String(v)}`)
-      .join(', ');
+      .join(", ");
 
     const next = pending.missing[0];
     const taskBlock = `Active task in progress: ${pending.intent}.
-Collected so far: ${collected || '(nothing yet)'}.
-Next thing the system needs from the user: ${pending.question}${next ? ` (field: ${next})` : ''}.
+Collected so far: ${collected || "(nothing yet)"}.
+Next thing the system needs from the user: ${pending.question}${next ? ` (field: ${next})` : ""}.
 
 If the user is answering this question, treat their reply as the answer and the system will continue automatically.
 If the user goes on a tangent (asks a question, changes subject), answer them naturally, then in one short sentence offer to pick the task back up — e.g. "Whenever you're ready, just tell me ${
-      next === 'name'
-        ? 'the opportunity name'
-        : next === 'monetaryValue'
-          ? 'the value'
-          : next === 'pipelineName'
-            ? 'the pipeline'
-            : 'and we can keep going'
+      next === "name"
+        ? "the opportunity name"
+        : next === "monetaryValue"
+          ? "the value"
+          : next === "pipelineName"
+            ? "the pipeline"
+            : "and we can keep going"
     }." Do NOT restart the task from scratch.`;
 
     return `${SYSTEM_PROMPT_BASE}\n\n${dateLine}\n\n${taskBlock}`;
