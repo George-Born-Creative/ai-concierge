@@ -88,6 +88,13 @@ export function HomeScreenContent() {
           href: { pathname: '/hubspot', params: { object: 'tickets' } } as Href,
         },
         {
+          icon: 'sell',
+          title: 'Products',
+          tint: '#F59E0B',
+          bg: '#FEF3C7',
+          href: { pathname: '/hubspot', params: { object: 'products' } } as Href,
+        },
+        {
           icon: 'task-alt',
           title: 'Tasks',
           tint: '#10B981',

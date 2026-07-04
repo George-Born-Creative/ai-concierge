@@ -5,10 +5,12 @@ import type {
   HubspotContactSummary,
   HubspotDealSummary,
   HubspotPaginated,
+  HubspotProductSummary,
   HubspotStatusResponse,
   HubspotTicketSummary,
   ListHubspotParams,
   SearchHubspotContactsParams,
+  SearchHubspotProductsParams,
   SearchHubspotTicketsParams,
 } from './types';
 
@@ -119,6 +121,30 @@ export async function searchTickets(
 export async function getTicket(id: string): Promise<HubspotTicketSummary> {
   return apiRequest<HubspotTicketSummary>(
     `/integrations/hubspot/tickets/${encodeURIComponent(id)}`,
+  );
+}
+
+// ─── CRM: products ───────────────────────────────────────────────────────────
+
+export async function listProducts(
+  params?: ListHubspotParams,
+): Promise<HubspotPaginated<HubspotProductSummary>> {
+  return apiRequest<HubspotPaginated<HubspotProductSummary>>(
+    withQuery('/integrations/hubspot/products', params),
+  );
+}
+
+export async function searchProducts(
+  params: SearchHubspotProductsParams,
+): Promise<HubspotPaginated<HubspotProductSummary>> {
+  return apiRequest<HubspotPaginated<HubspotProductSummary>>(
+    withQuery('/integrations/hubspot/products/search', params),
+  );
+}
+
+export async function getProduct(id: string): Promise<HubspotProductSummary> {
+  return apiRequest<HubspotProductSummary>(
+    `/integrations/hubspot/products/${encodeURIComponent(id)}`,
   );
 }
 

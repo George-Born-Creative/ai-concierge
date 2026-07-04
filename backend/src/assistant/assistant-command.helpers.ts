@@ -514,6 +514,21 @@ export function mergeSessionIntoEntities(
   ) {
     merged.ticketSubject = ctx.lastTicketSubject;
   }
+  // Products — same wrong-target safety: only fill from session when the user
+  // didn't name a product themselves.
+  if (
+    !entityString(merged, 'productId', 'product_id') &&
+    !entityString(merged, 'productName', 'product_name') &&
+    ctx.lastProductId
+  ) {
+    merged.productId = ctx.lastProductId;
+  }
+  if (
+    !entityString(merged, 'productName', 'product_name') &&
+    ctx.lastProductName
+  ) {
+    merged.productName = ctx.lastProductName;
+  }
   return merged;
 }
 
@@ -562,6 +577,11 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'detach_ticket_from_company',
     'attach_ticket_to_deal',
     'detach_ticket_from_deal',
+    'list_products',
+    'find_product',
+    'create_product',
+    'update_product',
+    'delete_product',
   ]);
   return supported.has(intent.intent);
 }
@@ -832,5 +852,81 @@ export function extractTicketDealAssociation(
         entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
         '',
     },
+  };
+}
+
+// ── HubSpot products extractors ─────────────────────────────────────────────
+//
+// Products are a HubSpot library object (CRUD + search, no associations). The
+// helpers tolerate snake_case from the LLM, fall back to generic keys like
+// `name` / `query` / `sku`, and never throw on missing fields.
+
+export type ProductQuery = {
+  id?: string;
+  name?: string;
+};
+
+export function extractProductQuery(
+  entities: Record<string, string | number | boolean | null>,
+): ProductQuery {
+  return {
+    id: entityString(entities, 'productId', 'product_id'),
+    name:
+      entityString(entities, 'productName', 'product_name') ||
+      entityString(entities, 'query', 'name', 'sku'),
+  };
+}
+
+export function extractProductCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    name:
+      entityString(entities, 'productName', 'product_name') ||
+      entityString(entities, 'name', 'title') ||
+      '',
+    price: entityNumber(entities, 'productPrice', 'product_price', 'price', 'amount'),
+    sku: entityString(entities, 'productSku', 'product_sku', 'sku'),
+    description: entityString(
+      entities,
+      'productDescription',
+      'product_description',
+      'description',
+      'body',
+    ),
+    cost: entityNumber(entities, 'productCost', 'product_cost', 'cost'),
+  };
+}
+
+export function extractProductUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: a bare "productName" (without "newProductName") identifies WHICH
+  // product to update, not the new value — same convention as updateTicket.
+  const query: ProductQuery = {
+    id: entityString(entities, 'productId', 'product_id'),
+    name: entityString(entities, 'productName', 'product_name', 'query'),
+  };
+
+  return {
+    query,
+    name: entityString(entities, 'newProductName', 'new_product_name', 'newName'),
+    price: entityNumber(
+      entities,
+      'newProductPrice',
+      'new_product_price',
+      'newPrice',
+      'price',
+      'amount',
+    ),
+    sku: entityString(entities, 'newProductSku', 'new_product_sku', 'productSku', 'sku'),
+    description: entityString(
+      entities,
+      'newProductDescription',
+      'new_product_description',
+      'productDescription',
+      'description',
+    ),
+    cost: entityNumber(entities, 'newProductCost', 'new_product_cost', 'productCost', 'cost'),
   };
 }

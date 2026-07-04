@@ -60,6 +60,11 @@ const SUPPORTED_INTENTS = [
   'detach_ticket_from_company',
   'attach_ticket_to_deal',
   'detach_ticket_from_deal',
+  'list_products',
+  'find_product',
+  'create_product',
+  'update_product',
+  'delete_product',
   'create_note',
   'create_task',
   'create_deal',
@@ -154,6 +159,11 @@ Intent examples (informal → intent):
 - "detach the Login bug ticket from Acme", "unlink that ticket from Globex" → detach_ticket_from_company
 - "attach the Login bug ticket to the Website Redesign deal", "link that ticket to deal 12345" → attach_ticket_to_deal
 - "detach the Login bug ticket from the Website Redesign deal" → detach_ticket_from_deal
+- "list my products", "show my product catalog", "what products do I sell", "show recent products" → list_products
+- "find the Pro Plan product", "look up the product with SKU ABC-123", "show me product 12345" → find_product
+- "create a product called Pro Plan for $99", "add a product named Onboarding Fee priced at 250 with SKU OB-1" → create_product
+- "raise the Pro Plan price to 129", "rename that product to Pro Plan Annual", "update the product SKU to PP-2", "change its cost to 40" → update_product
+- "delete the Pro Plan product", "remove that product", "delete product 12345" → delete_product
 
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
@@ -188,6 +198,11 @@ Entity rules:
 - attach_ticket_to_company / detach_ticket_from_company: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the company via "companyName"/"companyDomain"/"companyId".
 - attach_ticket_to_deal / detach_ticket_from_deal: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the deal via "dealName" or "dealId".
 - For any ticket intent that refers to "it" / "that ticket", reuse lastTicketId/lastTicketSubject from session context.
+- list_products / find_product: for find_product put the search target (name or SKU) in "query"; also set "productName" or "productSku" when obvious.
+- create_product: "productName" (REQUIRED — extract from "called X", "named X"), optional "productPrice" (number — from "for $99", "priced at 250"), optional "productSku" (from "SKU X"), optional "productDescription", optional "productCost" (number — from "cost 40").
+- update_product: identify the product via "productId" or "productName" (or session lastProductId); plus any of "newProductName", "newProductPrice" (number), "newProductSku", "newProductDescription", "newProductCost" (number) to set. A bare "productName" identifies which product, not the new name.
+- delete_product: put the product name or SKU in "query" (or "productName"/"productId").
+- For any product intent that refers to "it" / "that product", reuse lastProductId/lastProductName from session context.
 - Normalize phone to digits with optional leading +.
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
@@ -213,7 +228,7 @@ Spoken email reconstruction (REQUIRED whenever you emit an "email" or "newEmail"
 
 Conversation context (when provided):
 - Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them", "that deal", "it").
-- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName, lastCompanyId, lastCompanyName, lastTicketId, lastTicketSubject when the user refers to "that" / "them" / "it".
+- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName, lastCompanyId, lastCompanyName, lastTicketId, lastTicketSubject, lastProductId, lastProductName when the user refers to "that" / "them" / "it".
 - If session context has a "pendingIntent" object, the backend is in the middle of collecting fields for it. Treat the latest user message as the answer to "pendingIntent.missing[0]" (the next missing field) and re-emit the SAME intent name with all previous entities plus the new piece. Do NOT switch intents.
 - If the latest message is a short follow-up answer (e.g. "Sales", "$2500", "tomorrow at 2", "John Smith", "yes", "sure", "go ahead", "do it"), look at the LAST assistant turn — if it was a clarification question, re-emit the ORIGINAL intent (e.g. create_opportunity) with all previously known entities PLUS the new piece of information the user just provided. Do not ask the same question again, and do not switch intents.
 - Treat "yes", "yeah", "yep", "sure", "ok", "okay", "right", "correct", "proceed", "continue", "go ahead", "do it", "sounds good" as positive confirmation of the most recent proposed action — re-emit that action's intent with all known entities and needs_clarification = false.
