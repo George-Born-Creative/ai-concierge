@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Clipboard from 'expo-clipboard';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   Pressable,
@@ -21,6 +21,8 @@ import type {
   HubspotCompanySummary,
   HubspotContactSummary,
   HubspotDealSummary,
+  HubspotPaginated,
+  HubspotTicketSummary,
 } from '@/lib/api/types';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
@@ -33,33 +35,68 @@ type LoadState<T> = {
 
 const INITIAL = <T,>(): LoadState<T> => ({ data: [], loading: true, error: null });
 
+// The four HubSpot objects this screen can browse. A single screen serves both
+// the combined overview (no `object` param) and a focused single-object list
+// page (e.g. /hubspot?object=contacts) that the Home quick actions link to.
+const OBJECT_KEYS = ['contacts', 'deals', 'companies', 'tickets'] as const;
+type ObjectKey = (typeof OBJECT_KEYS)[number];
+
+const OBJECT_TITLES: Record<ObjectKey, string> = {
+  contacts: 'Contacts',
+  deals: 'Deals',
+  companies: 'Companies',
+  tickets: 'Tickets',
+};
+
+function isObjectKey(value: unknown): value is ObjectKey {
+  return typeof value === 'string' && (OBJECT_KEYS as readonly string[]).includes(value);
+}
+
+const SKIP: HubspotPaginated<never> = { results: [], after: null };
+
 export function HubspotDataScreenContent() {
   const router = useRouter();
   const { show } = useToast();
 
+  const params = useLocalSearchParams<{ object?: string }>();
+  // When a single object is requested, render ONLY that list; otherwise show
+  // the combined overview.
+  const active = isObjectKey(params.object) ? params.object : null;
+  const want = useCallback((key: ObjectKey) => !active || active === key, [active]);
+  // A dedicated list page can afford to fetch more rows than the overview.
+  const limit = active ? 50 : 10;
+
   const [contacts, setContacts] = useState<LoadState<HubspotContactSummary>>(INITIAL);
   const [deals, setDeals] = useState<LoadState<HubspotDealSummary>>(INITIAL);
   const [companies, setCompanies] = useState<LoadState<HubspotCompanySummary>>(INITIAL);
+  const [tickets, setTickets] = useState<LoadState<HubspotTicketSummary>>(INITIAL);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadAll = useCallback(async (mode: 'initial' | 'refresh') => {
-    if (mode === 'initial') {
-      setContacts((s) => ({ ...s, loading: true, error: null }));
-      setDeals((s) => ({ ...s, loading: true, error: null }));
-      setCompanies((s) => ({ ...s, loading: true, error: null }));
-    }
+  const loadAll = useCallback(
+    async (mode: 'initial' | 'refresh') => {
+      if (mode === 'initial') {
+        setContacts((s) => ({ ...s, loading: want('contacts'), error: null }));
+        setDeals((s) => ({ ...s, loading: want('deals'), error: null }));
+        setCompanies((s) => ({ ...s, loading: want('companies'), error: null }));
+        setTickets((s) => ({ ...s, loading: want('tickets'), error: null }));
+      }
 
-    // Fire all three in parallel — one slow surface shouldn't gate the others.
-    const [c, d, co] = await Promise.allSettled([
-      hubspotApi.listContacts({ limit: 10 }),
-      hubspotApi.listDeals({ limit: 10 }),
-      hubspotApi.listCompanies({ limit: 10 }),
-    ]);
+      // Fetch only the objects we're going to render. Fire in parallel — one
+      // slow surface shouldn't gate the others.
+      const [c, d, co, t] = await Promise.allSettled([
+        want('contacts') ? hubspotApi.listContacts({ limit }) : Promise.resolve(SKIP),
+        want('deals') ? hubspotApi.listDeals({ limit }) : Promise.resolve(SKIP),
+        want('companies') ? hubspotApi.listCompanies({ limit }) : Promise.resolve(SKIP),
+        want('tickets') ? hubspotApi.listTickets({ limit }) : Promise.resolve(SKIP),
+      ]);
 
-    setContacts(stateFor(c));
-    setDeals(stateFor(d));
-    setCompanies(stateFor(co));
-  }, []);
+      if (want('contacts')) setContacts(stateFor(c));
+      if (want('deals')) setDeals(stateFor(d));
+      if (want('companies')) setCompanies(stateFor(co));
+      if (want('tickets')) setTickets(stateFor(t));
+    },
+    [want, limit],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -106,7 +143,11 @@ export function HubspotDataScreenContent() {
 
   return (
     <ScreenShell edges={['bottom']}>
-      <PageHeader title="HubSpot data" showBack onBack={() => router.back()} />
+      <PageHeader
+        title={active ? `HubSpot ${OBJECT_TITLES[active]}` : 'HubSpot data'}
+        showBack
+        onBack={() => router.back()}
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -117,57 +158,81 @@ export function HubspotDataScreenContent() {
             tintColor="#1A73E8"
           />
         }>
-        <Section
-          icon="people"
-          title="Contacts"
-          state={contacts}
-          emptyText="No contacts in your HubSpot portal yet."
-          renderRow={(row) => (
-            <RowCard
-              key={row.id}
-              title={row.name}
-              subtitle={[row.email, row.phone].filter(Boolean).join(' · ') || undefined}
-              meta={row.company}
-              onPress={() => handleCopy('Contact id', row.id)}
-            />
-          )}
-        />
+        {want('contacts') && (
+          <Section
+            icon="people"
+            title="Contacts"
+            state={contacts}
+            emptyText="No contacts in your HubSpot portal yet."
+            renderRow={(row) => (
+              <RowCard
+                key={row.id}
+                title={row.name}
+                subtitle={[row.email, row.phone].filter(Boolean).join(' · ') || undefined}
+                meta={row.company}
+                onPress={() => handleCopy('Contact id', row.id)}
+              />
+            )}
+          />
+        )}
 
-        <Section
-          icon="trending-up"
-          title="Deals"
-          state={deals}
-          emptyText="No deals in your HubSpot portal yet."
-          renderRow={(row) => (
-            <RowCard
-              key={row.id}
-              title={row.name}
-              subtitle={
-                typeof row.amount === 'number'
-                  ? `$${row.amount.toLocaleString()}`
-                  : undefined
-              }
-              meta={[row.stage, row.pipeline].filter(Boolean).join(' · ') || undefined}
-              onPress={() => handleCopy('Deal id', row.id)}
-            />
-          )}
-        />
+        {want('deals') && (
+          <Section
+            icon="trending-up"
+            title="Deals"
+            state={deals}
+            emptyText="No deals in your HubSpot portal yet."
+            renderRow={(row) => (
+              <RowCard
+                key={row.id}
+                title={row.name}
+                subtitle={
+                  typeof row.amount === 'number'
+                    ? `$${row.amount.toLocaleString()}`
+                    : undefined
+                }
+                meta={[row.stage, row.pipeline].filter(Boolean).join(' · ') || undefined}
+                onPress={() => handleCopy('Deal id', row.id)}
+              />
+            )}
+          />
+        )}
 
-        <Section
-          icon="business"
-          title="Companies"
-          state={companies}
-          emptyText="No companies in your HubSpot portal yet."
-          renderRow={(row) => (
-            <RowCard
-              key={row.id}
-              title={row.name}
-              subtitle={row.domain}
-              meta={[row.industry, row.city, row.country].filter(Boolean).join(' · ') || undefined}
-              onPress={() => handleCopy('Company id', row.id)}
-            />
-          )}
-        />
+        {want('companies') && (
+          <Section
+            icon="business"
+            title="Companies"
+            state={companies}
+            emptyText="No companies in your HubSpot portal yet."
+            renderRow={(row) => (
+              <RowCard
+                key={row.id}
+                title={row.name}
+                subtitle={row.domain}
+                meta={[row.industry, row.city, row.country].filter(Boolean).join(' · ') || undefined}
+                onPress={() => handleCopy('Company id', row.id)}
+              />
+            )}
+          />
+        )}
+
+        {want('tickets') && (
+          <Section
+            icon="confirmation-number"
+            title="Tickets"
+            state={tickets}
+            emptyText="No tickets in your HubSpot portal yet."
+            renderRow={(row) => (
+              <RowCard
+                key={row.id}
+                title={row.subject}
+                subtitle={row.content}
+                meta={[row.priority, row.stage].filter(Boolean).join(' · ') || undefined}
+                onPress={() => handleCopy('Ticket id', row.id)}
+              />
+            )}
+          />
+        )}
 
         <Text style={styles.footnote}>
           Read-only browse view. Use the chat assistant for search and conversational

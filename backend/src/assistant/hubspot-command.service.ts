@@ -10,7 +10,12 @@ import {
   HubspotCompanySummary,
   HubspotContactSummary,
   HubspotDealSummary,
+  HubspotTicketSummary,
 } from '../integrations/hubspot/hubspot.types';
+import {
+  HubspotTicketsService,
+  HubspotTicketWriteInput,
+} from '../integrations/hubspot/tickets/tickets.service';
 import type {
   CompanyQuery,
   extractCompanyContactAssociation,
@@ -19,6 +24,12 @@ import type {
   extractCompanyUpdateDetails,
   extractContactUpdateDetails,
   extractCreateDetails,
+  extractTicketCompanyAssociation,
+  extractTicketContactAssociation,
+  extractTicketCreateDetails,
+  extractTicketDealAssociation,
+  extractTicketUpdateDetails,
+  TicketQuery,
 } from './assistant-command.helpers';
 import type { AssistantCommandResult } from './assistant.types';
 
@@ -36,6 +47,7 @@ export class HubspotCommandService {
     private readonly contacts: HubspotContactsService,
     private readonly deals: HubspotDealsService,
     private readonly companies: HubspotCompaniesService,
+    private readonly tickets: HubspotTicketsService,
   ) {}
 
   // ── Contacts ───────────────────────────────────────────────────────────────
@@ -687,6 +699,323 @@ export class HubspotCommandService {
     return results;
   }
 
+  // ── Tickets ──────────────────────────────────────────────────────────────
+  //
+  // CRUD + association surface mirroring the companies methods above. Writes
+  // resolve the target ticket via `resolveTicket` (by id or subject search),
+  // then delegate to `HubspotTicketsService`. Successful writes set
+  // `contextPatch.lastTicketId/Subject` so follow-ups like "close it" or
+  // "attach it to Acme" resolve via session merge.
+
+  async listRecentTickets(userId: string): Promise<AssistantCommandResult> {
+    const { results } = await this.tickets.list(userId, { limit: 10 });
+    if (results.length === 0) {
+      return { response: "You don't have any tickets in HubSpot yet.", status: 'success' };
+    }
+    return {
+      response:
+        `Here are your most recent tickets in HubSpot:\n${results
+          .map((t) => this.formatTicket(t))
+          .join('\n')}\n\n` +
+        "Want to open one, change its priority, or attach it to a contact or company? Just say the word.",
+      status: 'success',
+      contextPatch: { lastTicketId: results[0].id, lastTicketSubject: results[0].subject },
+    };
+  }
+
+  async findTicket(userId: string, query: string): Promise<AssistantCommandResult> {
+    if (!query?.trim()) {
+      return {
+        response: 'Which ticket are you looking for? A subject or keyword works.',
+        status: 'error',
+      };
+    }
+    const matches = await this.findMatchingTickets(userId, query);
+    if (matches.length === 0) {
+      return { response: `No ticket in HubSpot matches "${query}".`, status: 'error' };
+    }
+    const top = matches[0];
+    return {
+      response:
+        matches.length === 1
+          ? `Found it in HubSpot:\n${this.formatTicket(top)}\n\n` +
+            "I'll keep this ticket in mind — say \"raise its priority\" or \"attach it to Acme\" and I'll know which one you mean."
+          : `Found ${matches.length} tickets in HubSpot — here are the closest matches:\n${matches
+              .slice(0, 5)
+              .map((t) => this.formatTicket(t))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (the subject works) and I'll zero in.",
+      status: 'success',
+      contextPatch: { lastTicketId: top.id, lastTicketSubject: top.subject },
+    };
+  }
+
+  async createTicket(
+    userId: string,
+    details: ReturnType<typeof extractTicketCreateDetails>,
+  ): Promise<AssistantCommandResult> {
+    if (!details.subject) {
+      return { response: 'What should the ticket be about? Give me a subject.', status: 'error' };
+    }
+    const created = await this.tickets.create(userId, {
+      subject: details.subject,
+      content: details.content,
+      priority: details.priority,
+      pipeline: details.pipeline,
+      stage: details.stage,
+    });
+    const bits = [
+      created.priority ? `priority ${created.priority}` : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      response:
+        `Done — the "${created.subject}" ticket is now in HubSpot${bits ? ` (${bits})` : ''}. ` +
+        "I'll keep this ticket in mind, so you can say things like " +
+        '"raise its priority" or "attach it to Acme" and I\'ll know which one you mean.',
+      status: 'success',
+      contextPatch: { lastTicketId: created.id, lastTicketSubject: created.subject },
+    };
+  }
+
+  async updateTicket(
+    userId: string,
+    details: ReturnType<typeof extractTicketUpdateDetails>,
+  ): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveTicket(userId, details.query);
+    if (resolved.kind === 'missing') return resolved.result;
+
+    const patch: HubspotTicketWriteInput = {};
+    if (details.subject) patch.subject = details.subject;
+    if (details.content) patch.content = details.content;
+    if (details.priority) patch.priority = details.priority;
+    if (details.pipeline) patch.pipeline = details.pipeline;
+    if (details.stage) patch.stage = details.stage;
+
+    if (Object.keys(patch).length === 0) {
+      return {
+        response: `What should I change on "${resolved.ticket.subject}"? (subject, content, priority, pipeline, or stage)`,
+        status: 'error',
+      };
+    }
+
+    const updated = await this.tickets.update(userId, resolved.ticket.id, patch);
+    const changed = Object.entries(patch)
+      .map(([k, v]) => `${k} → ${v}`)
+      .join(', ');
+    return {
+      response:
+        `All set — the "${updated.subject}" ticket is updated in HubSpot (${changed}). ` +
+        "Want me to change another field, or attach it to a contact, company, or deal next?",
+      status: 'success',
+      contextPatch: { lastTicketId: updated.id, lastTicketSubject: updated.subject },
+      clearPendingIntent: true,
+    };
+  }
+
+  async deleteTicket(userId: string, query: string): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveTicket(userId, { subject: query });
+    if (resolved.kind === 'missing') return resolved.result;
+    await this.tickets.delete(userId, resolved.ticket.id);
+    return {
+      response:
+        `Done — the "${resolved.ticket.subject}" ticket is removed from HubSpot. ` +
+        "If that was a mistake, let me know and I can recreate it; otherwise, anything else you'd like me to tidy up?",
+      status: 'success',
+    };
+  }
+
+  async attachTicketToContact(
+    userId: string,
+    details: ReturnType<typeof extractTicketContactAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const ticket = await this.resolveTicket(userId, details.ticket);
+    if (ticket.kind === 'missing') return ticket.result;
+    const contact = await this.resolveContact(userId, details.contact);
+    if (contact.kind === 'missing') return contact.result;
+    await this.tickets.associateContact(userId, ticket.ticket.id, contact.contact.id);
+    return {
+      response:
+        `Linked the "${ticket.ticket.subject}" ticket to ${contact.contact.name} in HubSpot. ` +
+        "I'll remember both, so you can keep working with either one.",
+      status: 'success',
+      contextPatch: {
+        lastTicketId: ticket.ticket.id,
+        lastTicketSubject: ticket.ticket.subject,
+        lastContactId: contact.contact.id,
+        lastContactName: contact.contact.name,
+      },
+    };
+  }
+
+  async detachTicketFromContact(
+    userId: string,
+    details: ReturnType<typeof extractTicketContactAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const ticket = await this.resolveTicket(userId, details.ticket);
+    if (ticket.kind === 'missing') return ticket.result;
+    const contact = await this.resolveContact(userId, details.contact);
+    if (contact.kind === 'missing') return contact.result;
+    await this.tickets.disassociateContact(userId, ticket.ticket.id, contact.contact.id);
+    return {
+      response:
+        `Unlinked the "${ticket.ticket.subject}" ticket from ${contact.contact.name} in HubSpot. ` +
+        "Both records are still there — just not associated anymore.",
+      status: 'success',
+      contextPatch: {
+        lastTicketId: ticket.ticket.id,
+        lastTicketSubject: ticket.ticket.subject,
+        lastContactId: contact.contact.id,
+        lastContactName: contact.contact.name,
+      },
+    };
+  }
+
+  async attachTicketToCompany(
+    userId: string,
+    details: ReturnType<typeof extractTicketCompanyAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const ticket = await this.resolveTicket(userId, details.ticket);
+    if (ticket.kind === 'missing') return ticket.result;
+    const company = await this.resolveCompany(userId, details.company);
+    if (company.kind === 'missing') return company.result;
+    await this.tickets.associateCompany(userId, ticket.ticket.id, company.company.id);
+    return {
+      response:
+        `Linked the "${ticket.ticket.subject}" ticket to ${company.company.name} in HubSpot. ` +
+        "I'll remember both, so you can keep working with either one.",
+      status: 'success',
+      contextPatch: {
+        lastTicketId: ticket.ticket.id,
+        lastTicketSubject: ticket.ticket.subject,
+        lastCompanyId: company.company.id,
+        lastCompanyName: company.company.name,
+      },
+    };
+  }
+
+  async detachTicketFromCompany(
+    userId: string,
+    details: ReturnType<typeof extractTicketCompanyAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const ticket = await this.resolveTicket(userId, details.ticket);
+    if (ticket.kind === 'missing') return ticket.result;
+    const company = await this.resolveCompany(userId, details.company);
+    if (company.kind === 'missing') return company.result;
+    await this.tickets.disassociateCompany(userId, ticket.ticket.id, company.company.id);
+    return {
+      response:
+        `Unlinked the "${ticket.ticket.subject}" ticket from ${company.company.name} in HubSpot. ` +
+        "Both records are still there — just not associated anymore.",
+      status: 'success',
+      contextPatch: {
+        lastTicketId: ticket.ticket.id,
+        lastTicketSubject: ticket.ticket.subject,
+        lastCompanyId: company.company.id,
+        lastCompanyName: company.company.name,
+      },
+    };
+  }
+
+  async attachTicketToDeal(
+    userId: string,
+    details: ReturnType<typeof extractTicketDealAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const ticket = await this.resolveTicket(userId, details.ticket);
+    if (ticket.kind === 'missing') return ticket.result;
+    const deal = await this.resolveDeal(userId, details.deal);
+    if (deal.kind === 'missing') return deal.result;
+    await this.tickets.associateDeal(userId, ticket.ticket.id, deal.deal.id);
+    return {
+      response:
+        `Linked the "${ticket.ticket.subject}" ticket to the "${deal.deal.name}" deal in HubSpot. ` +
+        "I'll remember both, so you can keep working with either one.",
+      status: 'success',
+      contextPatch: {
+        lastTicketId: ticket.ticket.id,
+        lastTicketSubject: ticket.ticket.subject,
+      },
+    };
+  }
+
+  async detachTicketFromDeal(
+    userId: string,
+    details: ReturnType<typeof extractTicketDealAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const ticket = await this.resolveTicket(userId, details.ticket);
+    if (ticket.kind === 'missing') return ticket.result;
+    const deal = await this.resolveDeal(userId, details.deal);
+    if (deal.kind === 'missing') return deal.result;
+    await this.tickets.disassociateDeal(userId, ticket.ticket.id, deal.deal.id);
+    return {
+      response:
+        `Unlinked the "${ticket.ticket.subject}" ticket from the "${deal.deal.name}" deal in HubSpot. ` +
+        "Both records are still there — just not associated anymore.",
+      status: 'success',
+      contextPatch: {
+        lastTicketId: ticket.ticket.id,
+        lastTicketSubject: ticket.ticket.subject,
+      },
+    };
+  }
+
+  /**
+   * Resolve a ticket by id (fast path) or by subject search. Mirrors
+   * `resolveCompany`: returns an `ok` shape carrying the ticket, or a
+   * `missing` shape carrying a friendly response the caller short-circuits on.
+   */
+  private async resolveTicket(
+    userId: string,
+    query: TicketQuery,
+  ): Promise<
+    | { kind: 'ok'; ticket: HubspotTicketSummary }
+    | { kind: 'missing'; result: AssistantCommandResult }
+  > {
+    if (query.id?.trim()) {
+      const ticket = await this.tickets.getById(userId, query.id.trim());
+      return { kind: 'ok', ticket };
+    }
+    const term = query.subject?.trim();
+    if (!term) {
+      return {
+        kind: 'missing',
+        result: { response: 'Which ticket? Give me a subject or keyword.', status: 'error' },
+      };
+    }
+    const matches = await this.findMatchingTickets(userId, term);
+    if (matches.length === 0) {
+      return {
+        kind: 'missing',
+        result: { response: `No ticket in HubSpot matches "${term}".`, status: 'error' },
+      };
+    }
+    if (matches.length > 1) {
+      return {
+        kind: 'missing',
+        result: {
+          response: `Which one?\n${matches
+            .slice(0, 5)
+            .map((t) => this.formatTicket(t))
+            .join('\n')}`,
+          status: 'error',
+        },
+      };
+    }
+    return { kind: 'ok', ticket: matches[0] };
+  }
+
+  private async findMatchingTickets(
+    userId: string,
+    query: string,
+  ): Promise<HubspotTicketSummary[]> {
+    const { results } = await this.tickets.search(userId, {
+      q: query.trim(),
+      limit: 10,
+    });
+    return results;
+  }
+
   // ── Formatters ─────────────────────────────────────────────────────────────
 
   private formatContact(contact: HubspotContactSummary): string {
@@ -706,6 +1035,11 @@ export class HubspotCommandService {
   private formatCompany(company: HubspotCompanySummary): string {
     const trailing = [company.domain, company.industry, company.city].filter(Boolean).join(' · ');
     return `· ${company.name}${trailing ? ` — ${trailing}` : ''}`;
+  }
+
+  private formatTicket(ticket: HubspotTicketSummary): string {
+    const trailing = [ticket.priority, ticket.stage].filter(Boolean).join(' · ');
+    return `· ${ticket.subject}${trailing ? ` — ${trailing}` : ''}`;
   }
 }
 

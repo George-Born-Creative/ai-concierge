@@ -19,8 +19,15 @@ const OAUTH_TOKEN_URL = 'https://api.hubapi.com/oauth/v1/token';
 // the access token belongs to. HubSpot doesn't return that in the token
 // response itself.
 const OAUTH_INTROSPECT_URL = 'https://api.hubapi.com/oauth/v1/access-tokens';
+// NOTE: HubSpot tickets use the single legacy `tickets` scope (covers read +
+// write). The granular `crm.objects.tickets.*` scopes are NOT accepted for
+// public-app OAuth — requesting them makes the install/authorize step fail.
+//
+// products + orders scopes are REQUIRED by the public app's configuration, so
+// they must be present in the authorize request or HubSpot rejects the install
+// with "provided scopes are missing […]".
 const DEFAULT_SCOPES =
-  'crm.objects.contacts.read crm.objects.contacts.write crm.objects.deals.read crm.objects.deals.write crm.objects.companies.read crm.objects.companies.write oauth';
+  'crm.objects.contacts.read crm.objects.contacts.write crm.objects.deals.read crm.objects.deals.write crm.objects.companies.read crm.objects.companies.write crm.objects.products.read crm.objects.products.write crm.objects.orders.read crm.objects.orders.write tickets oauth';
 const STATE_PURPOSE = 'hubspot-oauth-state';
 const STATE_TTL = '10m';
 // Refresh ~60s before actual expiry so in-flight calls never get a 401.

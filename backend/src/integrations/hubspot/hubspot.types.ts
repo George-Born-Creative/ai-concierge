@@ -56,6 +56,23 @@ export type HubspotCompanySummary = {
   updatedAt?: string;
 };
 
+export type HubspotTicketSummary = {
+  id: string;
+  /** Ticket title. HubSpot stores this as `subject`. */
+  subject: string;
+  /** Ticket body / description. HubSpot stores this as `content`. */
+  content?: string;
+  /** LOW / MEDIUM / HIGH / URGENT — HubSpot's `hs_ticket_priority`. */
+  priority?: string;
+  /** Pipeline id (HubSpot uses ids like `0` for the default support pipeline). */
+  pipeline?: string;
+  /** Pipeline stage id (HubSpot uses ids like `1` for "New"). */
+  stage?: string;
+  ownerId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 /** Raw HubSpot CRM object as returned by /crm/v3/objects/{type}. */
 export type HubspotRawObject = {
   id: string;

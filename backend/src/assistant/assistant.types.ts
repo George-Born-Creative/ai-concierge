@@ -25,6 +25,8 @@ export type AssistantSessionContext = {
   lastPipelineStageId?: string;
   lastCompanyId?: string;
   lastCompanyName?: string;
+  lastTicketId?: string;
+  lastTicketSubject?: string;
   /** Multi-turn task state; null clears it. */
   pendingIntent?: PendingIntent | null;
 };

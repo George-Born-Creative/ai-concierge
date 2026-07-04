@@ -17,11 +17,18 @@ type QuickAction = {
   command?: string;
 };
 
-const TRY_SAYING = [
+const TRY_SAYING_GHL = [
   'Call John',
   'Schedule a meeting',
   "Show today's opportunities",
   'Create a contact',
+];
+
+const TRY_SAYING_HUBSPOT = [
+  'Show my contacts',
+  'Create a ticket',
+  'Show my open deals',
+  'Add a new company',
 ];
 
 function greetingForHour(hour: number): string {
@@ -42,22 +49,70 @@ export function HomeScreenContent() {
 
   const user = getUser();
   const isHubspot = user?.provider === 'hubspot';
+  const trySaying = isHubspot ? TRY_SAYING_HUBSPOT : TRY_SAYING_GHL;
 
-  const quickActions = useMemo<readonly QuickAction[]>(
-    () => [
+  // Quick actions are provider-specific. HubSpot and GoHighLevel expose
+  // different objects, so we never show a shortcut for something the active
+  // CRM can't do (e.g. HubSpot has no calendar; GHL has no companies/tickets).
+  const quickActions = useMemo<readonly QuickAction[]>(() => {
+    if (isHubspot) {
+      // HubSpot cards each open their OWN focused list page (via the `object`
+      // param) instead of dumping every object onto one screen.
+      return [
+        {
+          icon: 'contacts',
+          title: 'Contacts',
+          tint: '#1A73E8',
+          bg: '#E8F0FE',
+          href: { pathname: '/hubspot', params: { object: 'contacts' } } as Href,
+        },
+        {
+          icon: 'trending-up',
+          title: 'Deals',
+          tint: '#7C3AED',
+          bg: '#EDE9FE',
+          href: { pathname: '/hubspot', params: { object: 'deals' } } as Href,
+        },
+        {
+          icon: 'business',
+          title: 'Companies',
+          tint: '#06B6D4',
+          bg: '#E0F7FB',
+          href: { pathname: '/hubspot', params: { object: 'companies' } } as Href,
+        },
+        {
+          icon: 'confirmation-number',
+          title: 'Tickets',
+          tint: '#EA4335',
+          bg: '#FCE8E6',
+          href: { pathname: '/hubspot', params: { object: 'tickets' } } as Href,
+        },
+        {
+          icon: 'task-alt',
+          title: 'Tasks',
+          tint: '#10B981',
+          bg: '#E7F6EF',
+          href: '/reminders' as Href,
+        },
+      ];
+    }
+
+    // GoHighLevel: contacts, opportunities and calendar run through the chat
+    // assistant. GHL has no companies/tickets objects, so those aren't shown.
+    return [
       {
         icon: 'contacts',
         title: 'Contacts',
         tint: '#1A73E8',
         bg: '#E8F0FE',
-        ...(isHubspot ? { href: '/hubspot' as Href } : { command: 'Show my contacts' }),
+        command: 'Show my contacts',
       },
       {
         icon: 'business-center',
         title: 'Opportunities',
         tint: '#7C3AED',
         bg: '#EDE9FE',
-        ...(isHubspot ? { href: '/hubspot' as Href } : { command: 'Show my opportunities' }),
+        command: 'Show my opportunities',
       },
       {
         icon: 'event',
@@ -73,9 +128,8 @@ export function HomeScreenContent() {
         bg: '#E7F6EF',
         href: '/reminders' as Href,
       },
-    ],
-    [isHubspot],
-  );
+    ];
+  }, [isHubspot]);
 
   // Mount animation: hero content fades up.
   const intro = useRef(new Animated.Value(0)).current;
@@ -169,7 +223,7 @@ export function HomeScreenContent() {
           <Text style={styles.aiTitle}>What would you like to do?</Text>
           <Text style={styles.trySaying}>Try saying:</Text>
           <View style={styles.tryList}>
-            {TRY_SAYING.map((phrase) => (
+            {trySaying.map((phrase) => (
               <View key={phrase} style={styles.tryRow}>
                 <View style={styles.tryDot} />
                 <Text style={styles.tryText}>{phrase}</Text>

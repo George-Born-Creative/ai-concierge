@@ -499,6 +499,21 @@ export function mergeSessionIntoEntities(
   ) {
     merged.companyName = ctx.lastCompanyName;
   }
+  // Tickets — same wrong-target safety: only fill from session when the user
+  // didn't name a ticket themselves.
+  if (
+    !entityString(merged, 'ticketId', 'ticket_id') &&
+    !entityString(merged, 'ticketSubject', 'ticket_subject') &&
+    ctx.lastTicketId
+  ) {
+    merged.ticketId = ctx.lastTicketId;
+  }
+  if (
+    !entityString(merged, 'ticketSubject', 'ticket_subject') &&
+    ctx.lastTicketSubject
+  ) {
+    merged.ticketSubject = ctx.lastTicketSubject;
+  }
   return merged;
 }
 
@@ -536,6 +551,17 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'detach_contact_from_company',
     'attach_deal_to_company',
     'detach_deal_from_company',
+    'list_tickets',
+    'find_ticket',
+    'create_ticket',
+    'update_ticket',
+    'delete_ticket',
+    'attach_ticket_to_contact',
+    'detach_ticket_from_contact',
+    'attach_ticket_to_company',
+    'detach_ticket_from_company',
+    'attach_ticket_to_deal',
+    'detach_ticket_from_deal',
   ]);
   return supported.has(intent.intent);
 }
@@ -677,6 +703,129 @@ export function extractCompanyDealAssociation(
 ) {
   return {
     company: extractCompanyQuery(entities),
+    deal: {
+      id: entityString(entities, 'dealId', 'deal_id', 'opportunityId', 'opportunity_id'),
+      name:
+        entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
+        '',
+    },
+  };
+}
+
+// ── HubSpot tickets extractors ──────────────────────────────────────────────
+//
+// Same conventions as the companies extractors: tolerate snake_case, fall back
+// to generic keys like `subject` / `query`, never throw on missing fields.
+
+export type TicketQuery = {
+  id?: string;
+  subject?: string;
+};
+
+export function extractTicketQuery(
+  entities: Record<string, string | number | boolean | null>,
+): TicketQuery {
+  return {
+    id: entityString(entities, 'ticketId', 'ticket_id'),
+    subject:
+      entityString(entities, 'ticketSubject', 'ticket_subject') ||
+      entityString(entities, 'query', 'subject', 'name'),
+  };
+}
+
+export function extractTicketCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    subject:
+      entityString(entities, 'ticketSubject', 'ticket_subject') ||
+      entityString(entities, 'subject', 'name', 'title') ||
+      '',
+    content: entityString(
+      entities,
+      'ticketContent',
+      'ticket_content',
+      'content',
+      'description',
+      'body',
+    ),
+    priority: entityString(entities, 'ticketPriority', 'ticket_priority', 'priority'),
+    pipeline: entityString(entities, 'ticketPipeline', 'ticket_pipeline', 'pipeline'),
+    stage: entityString(entities, 'ticketStage', 'ticket_stage', 'stage'),
+  };
+}
+
+export function extractTicketUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: how do we identify which ticket to update? A bare "ticketSubject"
+  // (without "newTicketSubject") means SELECTOR, not the new value — same
+  // convention as updateCompany's `query` vs `newName`.
+  const query: TicketQuery = {
+    id: entityString(entities, 'ticketId', 'ticket_id'),
+    subject: entityString(entities, 'ticketSubject', 'ticket_subject', 'query'),
+  };
+
+  return {
+    query,
+    subject: entityString(entities, 'newTicketSubject', 'new_ticket_subject', 'newSubject'),
+    content: entityString(
+      entities,
+      'newTicketContent',
+      'new_ticket_content',
+      'ticketContent',
+      'content',
+      'description',
+    ),
+    priority: entityString(
+      entities,
+      'newTicketPriority',
+      'new_ticket_priority',
+      'ticketPriority',
+      'priority',
+    ),
+    pipeline: entityString(entities, 'newTicketPipeline', 'ticketPipeline', 'pipeline'),
+    stage: entityString(
+      entities,
+      'newTicketStage',
+      'new_ticket_stage',
+      'ticketStage',
+      'stage',
+    ),
+  };
+}
+
+export function extractTicketContactAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    ticket: extractTicketQuery(entities),
+    contact: {
+      id: entityString(entities, 'contactId', 'contact_id'),
+      query:
+        entityString(entities, 'contactName', 'contact_name') ||
+        buildNameFromEntities(entities) ||
+        entityString(entities, 'contactEmail', 'contact_email', 'email') ||
+        entityString(entities, 'contactPhone', 'contact_phone', 'phone') ||
+        '',
+    },
+  };
+}
+
+export function extractTicketCompanyAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    ticket: extractTicketQuery(entities),
+    company: extractCompanyQuery(entities),
+  };
+}
+
+export function extractTicketDealAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    ticket: extractTicketQuery(entities),
     deal: {
       id: entityString(entities, 'dealId', 'deal_id', 'opportunityId', 'opportunity_id'),
       name:
