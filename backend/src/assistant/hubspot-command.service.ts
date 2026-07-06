@@ -10,8 +10,13 @@ import {
   HubspotCompanySummary,
   HubspotContactSummary,
   HubspotDealSummary,
+  HubspotProductSummary,
   HubspotTicketSummary,
 } from '../integrations/hubspot/hubspot.types';
+import {
+  HubspotProductsService,
+  HubspotProductWriteInput,
+} from '../integrations/hubspot/products/products.service';
 import {
   HubspotTicketsService,
   HubspotTicketWriteInput,
@@ -24,11 +29,14 @@ import type {
   extractCompanyUpdateDetails,
   extractContactUpdateDetails,
   extractCreateDetails,
+  extractProductCreateDetails,
+  extractProductUpdateDetails,
   extractTicketCompanyAssociation,
   extractTicketContactAssociation,
   extractTicketCreateDetails,
   extractTicketDealAssociation,
   extractTicketUpdateDetails,
+  ProductQuery,
   TicketQuery,
 } from './assistant-command.helpers';
 import type { AssistantCommandResult } from './assistant.types';
@@ -48,6 +56,7 @@ export class HubspotCommandService {
     private readonly deals: HubspotDealsService,
     private readonly companies: HubspotCompaniesService,
     private readonly tickets: HubspotTicketsService,
+    private readonly products: HubspotProductsService,
   ) {}
 
   // ── Contacts ───────────────────────────────────────────────────────────────
@@ -1040,6 +1049,198 @@ export class HubspotCommandService {
   private formatTicket(ticket: HubspotTicketSummary): string {
     const trailing = [ticket.priority, ticket.stage].filter(Boolean).join(' · ');
     return `· ${ticket.subject}${trailing ? ` — ${trailing}` : ''}`;
+  }
+
+  // ── Products ───────────────────────────────────────────────────────────────
+  //
+  // CRUD surface mirroring the tickets methods above. Products are a HubSpot
+  // *library* object with no contact/company/deal associations, so there are no
+  // attach/detach methods. Writes resolve the target product via
+  // `resolveProduct` (by id or name search) and set `contextPatch.lastProductId
+  // /Name` so follow-ups like "raise its price" resolve via session merge.
+
+  async listRecentProducts(userId: string): Promise<AssistantCommandResult> {
+    const { results } = await this.products.list(userId, { limit: 10 });
+    if (results.length === 0) {
+      return { response: "You don't have any products in HubSpot yet.", status: 'success' };
+    }
+    return {
+      response:
+        `Here are your most recent products in HubSpot:\n${results
+          .map((p) => this.formatProduct(p))
+          .join('\n')}\n\n` +
+        'Want to open one, change its price, or add a new product? Just say the word.',
+      status: 'success',
+      contextPatch: { lastProductId: results[0].id, lastProductName: results[0].name },
+    };
+  }
+
+  async findProduct(userId: string, query: string): Promise<AssistantCommandResult> {
+    if (!query?.trim()) {
+      return {
+        response: 'Which product are you looking for? A name or SKU works.',
+        status: 'error',
+      };
+    }
+    const matches = await this.findMatchingProducts(userId, query);
+    if (matches.length === 0) {
+      return { response: `No product in HubSpot matches "${query}".`, status: 'error' };
+    }
+    const top = matches[0];
+    return {
+      response:
+        matches.length === 1
+          ? `Found it in HubSpot:\n${this.formatProduct(top)}\n\n` +
+            "I'll keep this product in mind — say \"raise its price\" and I'll know which one you mean."
+          : `Found ${matches.length} products in HubSpot — here are the closest matches:\n${matches
+              .slice(0, 5)
+              .map((p) => this.formatProduct(p))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (the name works) and I'll zero in.",
+      status: 'success',
+      contextPatch: { lastProductId: top.id, lastProductName: top.name },
+    };
+  }
+
+  async createProduct(
+    userId: string,
+    details: ReturnType<typeof extractProductCreateDetails>,
+  ): Promise<AssistantCommandResult> {
+    if (!details.name) {
+      return { response: 'What should the product be called? Give me a name.', status: 'error' };
+    }
+    const created = await this.products.create(userId, {
+      name: details.name,
+      price: details.price,
+      sku: details.sku,
+      description: details.description,
+      cost: details.cost,
+    });
+    const bits = [
+      typeof created.price === 'number' ? `$${created.price.toLocaleString()}` : null,
+      created.sku ? `SKU ${created.sku}` : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      response:
+        `Done — the "${created.name}" product is now in HubSpot${bits ? ` (${bits})` : ''}. ` +
+        'I\'ll keep this product in mind, so you can say things like "raise its price" and I\'ll know which one you mean.',
+      status: 'success',
+      contextPatch: { lastProductId: created.id, lastProductName: created.name },
+    };
+  }
+
+  async updateProduct(
+    userId: string,
+    details: ReturnType<typeof extractProductUpdateDetails>,
+  ): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveProduct(userId, details.query);
+    if (resolved.kind === 'missing') return resolved.result;
+
+    const patch: HubspotProductWriteInput = {};
+    if (details.name) patch.name = details.name;
+    if (details.price !== undefined) patch.price = details.price;
+    if (details.sku) patch.sku = details.sku;
+    if (details.description) patch.description = details.description;
+    if (details.cost !== undefined) patch.cost = details.cost;
+
+    if (Object.keys(patch).length === 0) {
+      return {
+        response: `What should I change on "${resolved.product.name}"? (name, price, SKU, description, or cost)`,
+        status: 'error',
+      };
+    }
+
+    const updated = await this.products.update(userId, resolved.product.id, patch);
+    const changed = Object.entries(patch)
+      .map(([k, v]) => `${k} → ${v}`)
+      .join(', ');
+    return {
+      response:
+        `All set — the "${updated.name}" product is updated in HubSpot (${changed}). ` +
+        'Want me to change another field?',
+      status: 'success',
+      contextPatch: { lastProductId: updated.id, lastProductName: updated.name },
+      clearPendingIntent: true,
+    };
+  }
+
+  async deleteProduct(userId: string, query: string): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveProduct(userId, { name: query });
+    if (resolved.kind === 'missing') return resolved.result;
+    await this.products.delete(userId, resolved.product.id);
+    return {
+      response:
+        `Done — the "${resolved.product.name}" product is removed from HubSpot. ` +
+        "If that was a mistake, let me know and I can recreate it; otherwise, anything else you'd like me to tidy up?",
+      status: 'success',
+    };
+  }
+
+  /**
+   * Resolve a product by id (fast path) or by name search. Mirrors
+   * `resolveTicket`: returns an `ok` shape carrying the product, or a `missing`
+   * shape carrying a friendly response the caller short-circuits on.
+   */
+  private async resolveProduct(
+    userId: string,
+    query: ProductQuery,
+  ): Promise<
+    | { kind: 'ok'; product: HubspotProductSummary }
+    | { kind: 'missing'; result: AssistantCommandResult }
+  > {
+    if (query.id?.trim()) {
+      const product = await this.products.getById(userId, query.id.trim());
+      return { kind: 'ok', product };
+    }
+    const term = query.name?.trim();
+    if (!term) {
+      return {
+        kind: 'missing',
+        result: { response: 'Which product? Give me a name or SKU.', status: 'error' },
+      };
+    }
+    const matches = await this.findMatchingProducts(userId, term);
+    if (matches.length === 0) {
+      return {
+        kind: 'missing',
+        result: { response: `No product in HubSpot matches "${term}".`, status: 'error' },
+      };
+    }
+    if (matches.length > 1) {
+      return {
+        kind: 'missing',
+        result: {
+          response: `Which one?\n${matches
+            .slice(0, 5)
+            .map((p) => this.formatProduct(p))
+            .join('\n')}`,
+          status: 'error',
+        },
+      };
+    }
+    return { kind: 'ok', product: matches[0] };
+  }
+
+  private async findMatchingProducts(
+    userId: string,
+    query: string,
+  ): Promise<HubspotProductSummary[]> {
+    const { results } = await this.products.search(userId, {
+      q: query.trim(),
+      limit: 10,
+    });
+    return results;
+  }
+
+  private formatProduct(product: HubspotProductSummary): string {
+    const money =
+      typeof product.price === 'number' && Number.isFinite(product.price)
+        ? ` — $${product.price.toLocaleString()}`
+        : '';
+    const sku = product.sku ? ` (SKU ${product.sku})` : '';
+    return `· ${product.name}${money}${sku}`;
   }
 }
 

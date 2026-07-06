@@ -73,6 +73,21 @@ export type HubspotTicketSummary = {
   updatedAt?: string;
 };
 
+export type HubspotProductSummary = {
+  id: string;
+  /** Product name. HubSpot stores this as `name`. */
+  name: string;
+  /** Unit price. HubSpot stores `price` as a string; we expose a number. */
+  price?: number | null;
+  /** Stock-keeping unit — HubSpot's `hs_sku`. */
+  sku?: string;
+  description?: string;
+  /** Cost of goods sold — HubSpot's `hs_cost_of_goods_sold`. */
+  cost?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 /** Raw HubSpot CRM object as returned by /crm/v3/objects/{type}. */
 export type HubspotRawObject = {
   id: string;

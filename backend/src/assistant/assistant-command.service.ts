@@ -29,6 +29,8 @@ import {
   extractOpportunityQuery,
   extractOpportunityStatusDetails,
   extractOpportunityUpdateDetails,
+  extractProductCreateDetails,
+  extractProductUpdateDetails,
   extractSearchQuery,
   extractTicketCompanyAssociation,
   extractTicketContactAssociation,
@@ -226,6 +228,16 @@ export class AssistantCommandService {
             'Tickets are a HubSpot feature — your account is on GoHighLevel, which uses opportunities instead. Try "show my opportunities".',
           status: 'error',
         };
+      case 'list_products':
+      case 'find_product':
+      case 'create_product':
+      case 'update_product':
+      case 'delete_product':
+        return {
+          response:
+            'Products are a HubSpot feature — your account is on GoHighLevel, which doesn\'t have a product catalog. Try "show my opportunities" instead.',
+          status: 'error',
+        };
       default:
         return null;
     }
@@ -369,6 +381,22 @@ export class AssistantCommandService {
           userId,
           extractTicketDealAssociation(intent.entities),
         );
+      case 'list_products':
+        return this.hubspot.listRecentProducts(userId);
+      case 'find_product':
+        return this.hubspot.findProduct(userId, extractSearchQuery(intent.entities));
+      case 'create_product':
+        return this.hubspot.createProduct(
+          userId,
+          extractProductCreateDetails(intent.entities),
+        );
+      case 'update_product':
+        return this.hubspot.updateProduct(
+          userId,
+          extractProductUpdateDetails(intent.entities),
+        );
+      case 'delete_product':
+        return this.hubspot.deleteProduct(userId, extractSearchQuery(intent.entities));
       case 'find_opportunity':
       case 'create_opportunity':
       case 'update_opportunity':
@@ -433,6 +461,12 @@ export class AssistantCommandService {
     ) {
       return this.hubspot.listRecentTickets(userId);
     }
+    if (
+      /\b(products?|catalog|catalogue|sku)\b/.test(lower) &&
+      /\b(list|show|what|my|recent|all|sell)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentProducts(userId);
+    }
 
     // Last-line-of-defense fallbacks for company writes when the LLM
     // mislabels the intent (e.g. emits "unknown" or routes to "create_deal"
@@ -470,7 +504,7 @@ export class AssistantCommandService {
 
     return {
       response:
-        'I can show your HubSpot contacts, deals, companies, or tickets. Try "pull up my contacts", "list my deals", "what companies do I have", "show my tickets", or "create a ticket titled Login bug".',
+        'I can show your HubSpot contacts, deals, companies, tickets, or products. Try "pull up my contacts", "list my deals", "what companies do I have", "show my tickets", "show my products", or "create a ticket titled Login bug".',
       status: 'error',
     };
   }

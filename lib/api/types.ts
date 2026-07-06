@@ -303,6 +303,17 @@ export type HubspotTicketSummary = {
   updatedAt?: string;
 };
 
+export type HubspotProductSummary = {
+  id: string;
+  name: string;
+  price?: number | null;
+  sku?: string;
+  description?: string;
+  cost?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type ListHubspotParams = {
   limit?: number;
   after?: string;
@@ -313,6 +324,10 @@ export type SearchHubspotContactsParams = ListHubspotParams & {
 };
 
 export type SearchHubspotTicketsParams = ListHubspotParams & {
+  q: string;
+};
+
+export type SearchHubspotProductsParams = ListHubspotParams & {
   q: string;
 };
 

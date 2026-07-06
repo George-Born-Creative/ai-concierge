@@ -22,6 +22,7 @@ import type {
   HubspotContactSummary,
   HubspotDealSummary,
   HubspotPaginated,
+  HubspotProductSummary,
   HubspotTicketSummary,
 } from '@/lib/api/types';
 import { getUser } from '@/lib/session';
@@ -38,7 +39,7 @@ const INITIAL = <T,>(): LoadState<T> => ({ data: [], loading: true, error: null 
 // The four HubSpot objects this screen can browse. A single screen serves both
 // the combined overview (no `object` param) and a focused single-object list
 // page (e.g. /hubspot?object=contacts) that the Home quick actions link to.
-const OBJECT_KEYS = ['contacts', 'deals', 'companies', 'tickets'] as const;
+const OBJECT_KEYS = ['contacts', 'deals', 'companies', 'tickets', 'products'] as const;
 type ObjectKey = (typeof OBJECT_KEYS)[number];
 
 const OBJECT_TITLES: Record<ObjectKey, string> = {
@@ -46,6 +47,7 @@ const OBJECT_TITLES: Record<ObjectKey, string> = {
   deals: 'Deals',
   companies: 'Companies',
   tickets: 'Tickets',
+  products: 'Products',
 };
 
 function isObjectKey(value: unknown): value is ObjectKey {
@@ -70,6 +72,7 @@ export function HubspotDataScreenContent() {
   const [deals, setDeals] = useState<LoadState<HubspotDealSummary>>(INITIAL);
   const [companies, setCompanies] = useState<LoadState<HubspotCompanySummary>>(INITIAL);
   const [tickets, setTickets] = useState<LoadState<HubspotTicketSummary>>(INITIAL);
+  const [products, setProducts] = useState<LoadState<HubspotProductSummary>>(INITIAL);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadAll = useCallback(
@@ -79,21 +82,24 @@ export function HubspotDataScreenContent() {
         setDeals((s) => ({ ...s, loading: want('deals'), error: null }));
         setCompanies((s) => ({ ...s, loading: want('companies'), error: null }));
         setTickets((s) => ({ ...s, loading: want('tickets'), error: null }));
+        setProducts((s) => ({ ...s, loading: want('products'), error: null }));
       }
 
       // Fetch only the objects we're going to render. Fire in parallel — one
       // slow surface shouldn't gate the others.
-      const [c, d, co, t] = await Promise.allSettled([
+      const [c, d, co, t, p] = await Promise.allSettled([
         want('contacts') ? hubspotApi.listContacts({ limit }) : Promise.resolve(SKIP),
         want('deals') ? hubspotApi.listDeals({ limit }) : Promise.resolve(SKIP),
         want('companies') ? hubspotApi.listCompanies({ limit }) : Promise.resolve(SKIP),
         want('tickets') ? hubspotApi.listTickets({ limit }) : Promise.resolve(SKIP),
+        want('products') ? hubspotApi.listProducts({ limit }) : Promise.resolve(SKIP),
       ]);
 
       if (want('contacts')) setContacts(stateFor(c));
       if (want('deals')) setDeals(stateFor(d));
       if (want('companies')) setCompanies(stateFor(co));
       if (want('tickets')) setTickets(stateFor(t));
+      if (want('products')) setProducts(stateFor(p));
     },
     [want, limit],
   );
@@ -229,6 +235,32 @@ export function HubspotDataScreenContent() {
                 subtitle={row.content}
                 meta={[row.priority, row.stage].filter(Boolean).join(' · ') || undefined}
                 onPress={() => handleCopy('Ticket id', row.id)}
+              />
+            )}
+          />
+        )}
+
+        {want('products') && (
+          <Section
+            icon="sell"
+            title="Products"
+            state={products}
+            emptyText="No products in your HubSpot portal yet."
+            renderRow={(row) => (
+              <RowCard
+                key={row.id}
+                title={row.name}
+                subtitle={
+                  typeof row.price === 'number'
+                    ? `$${row.price.toLocaleString()}`
+                    : undefined
+                }
+                meta={
+                  [row.sku ? `SKU ${row.sku}` : undefined, row.description]
+                    .filter(Boolean)
+                    .join(' · ') || undefined
+                }
+                onPress={() => handleCopy('Product id', row.id)}
               />
             )}
           />

@@ -164,6 +164,12 @@ export class HubspotApiClient {
         'Go to Profile → Settings → Reconnect HubSpot and approve ticket access.'
       );
     }
+    if (/products/i.test(path)) {
+      return (
+        'Your HubSpot connection is missing product scopes. ' +
+        'Go to Profile → Settings → Reconnect HubSpot and approve product access.'
+      );
+    }
     return this.genericReconnectMessage();
   }
 
