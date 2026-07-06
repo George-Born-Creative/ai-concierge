@@ -4,12 +4,14 @@ import type {
   HubspotCompanySummary,
   HubspotContactSummary,
   HubspotDealSummary,
+  HubspotOrderSummary,
   HubspotPaginated,
   HubspotProductSummary,
   HubspotStatusResponse,
   HubspotTicketSummary,
   ListHubspotParams,
   SearchHubspotContactsParams,
+  SearchHubspotOrdersParams,
   SearchHubspotProductsParams,
   SearchHubspotTicketsParams,
 } from './types';
@@ -145,6 +147,30 @@ export async function searchProducts(
 export async function getProduct(id: string): Promise<HubspotProductSummary> {
   return apiRequest<HubspotProductSummary>(
     `/integrations/hubspot/products/${encodeURIComponent(id)}`,
+  );
+}
+
+// ─── CRM: orders ─────────────────────────────────────────────────────────────
+
+export async function listOrders(
+  params?: ListHubspotParams,
+): Promise<HubspotPaginated<HubspotOrderSummary>> {
+  return apiRequest<HubspotPaginated<HubspotOrderSummary>>(
+    withQuery('/integrations/hubspot/orders', params),
+  );
+}
+
+export async function searchOrders(
+  params: SearchHubspotOrdersParams,
+): Promise<HubspotPaginated<HubspotOrderSummary>> {
+  return apiRequest<HubspotPaginated<HubspotOrderSummary>>(
+    withQuery('/integrations/hubspot/orders/search', params),
+  );
+}
+
+export async function getOrder(id: string): Promise<HubspotOrderSummary> {
+  return apiRequest<HubspotOrderSummary>(
+    `/integrations/hubspot/orders/${encodeURIComponent(id)}`,
   );
 }
 

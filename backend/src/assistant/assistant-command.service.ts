@@ -29,6 +29,11 @@ import {
   extractOpportunityQuery,
   extractOpportunityStatusDetails,
   extractOpportunityUpdateDetails,
+  extractOrderCompanyAssociation,
+  extractOrderContactAssociation,
+  extractOrderCreateDetails,
+  extractOrderDealAssociation,
+  extractOrderUpdateDetails,
   extractProductCreateDetails,
   extractProductUpdateDetails,
   extractSearchQuery,
@@ -238,6 +243,22 @@ export class AssistantCommandService {
             'Products are a HubSpot feature — your account is on GoHighLevel, which doesn\'t have a product catalog. Try "show my opportunities" instead.',
           status: 'error',
         };
+      case 'list_orders':
+      case 'find_order':
+      case 'create_order':
+      case 'update_order':
+      case 'delete_order':
+      case 'attach_order_to_contact':
+      case 'detach_order_from_contact':
+      case 'attach_order_to_company':
+      case 'detach_order_from_company':
+      case 'attach_order_to_deal':
+      case 'detach_order_from_deal':
+        return {
+          response:
+            'Orders are a HubSpot feature — your account is on GoHighLevel, which uses opportunities instead. Try "show my opportunities".',
+          status: 'error',
+        };
       default:
         return null;
     }
@@ -397,6 +418,52 @@ export class AssistantCommandService {
         );
       case 'delete_product':
         return this.hubspot.deleteProduct(userId, extractSearchQuery(intent.entities));
+      case 'list_orders':
+        return this.hubspot.listRecentOrders(userId);
+      case 'find_order':
+        return this.hubspot.findOrder(userId, extractSearchQuery(intent.entities));
+      case 'create_order':
+        return this.hubspot.createOrder(
+          userId,
+          extractOrderCreateDetails(intent.entities),
+        );
+      case 'update_order':
+        return this.hubspot.updateOrder(
+          userId,
+          extractOrderUpdateDetails(intent.entities),
+        );
+      case 'delete_order':
+        return this.hubspot.deleteOrder(userId, extractSearchQuery(intent.entities));
+      case 'attach_order_to_contact':
+        return this.hubspot.attachOrderToContact(
+          userId,
+          extractOrderContactAssociation(intent.entities),
+        );
+      case 'detach_order_from_contact':
+        return this.hubspot.detachOrderFromContact(
+          userId,
+          extractOrderContactAssociation(intent.entities),
+        );
+      case 'attach_order_to_company':
+        return this.hubspot.attachOrderToCompany(
+          userId,
+          extractOrderCompanyAssociation(intent.entities),
+        );
+      case 'detach_order_from_company':
+        return this.hubspot.detachOrderFromCompany(
+          userId,
+          extractOrderCompanyAssociation(intent.entities),
+        );
+      case 'attach_order_to_deal':
+        return this.hubspot.attachOrderToDeal(
+          userId,
+          extractOrderDealAssociation(intent.entities),
+        );
+      case 'detach_order_from_deal':
+        return this.hubspot.detachOrderFromDeal(
+          userId,
+          extractOrderDealAssociation(intent.entities),
+        );
       case 'find_opportunity':
       case 'create_opportunity':
       case 'update_opportunity':
@@ -466,6 +533,12 @@ export class AssistantCommandService {
       /\b(list|show|what|my|recent|all|sell)\b/.test(lower)
     ) {
       return this.hubspot.listRecentProducts(userId);
+    }
+    if (
+      /\borders?\b/.test(lower) &&
+      /\b(list|show|what|my|recent|all|history)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentOrders(userId);
     }
 
     // Last-line-of-defense fallbacks for company writes when the LLM

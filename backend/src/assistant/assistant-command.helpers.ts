@@ -529,6 +529,21 @@ export function mergeSessionIntoEntities(
   ) {
     merged.productName = ctx.lastProductName;
   }
+  // Orders — same wrong-target safety: only fill from session when the user
+  // didn't name an order themselves.
+  if (
+    !entityString(merged, 'orderId', 'order_id') &&
+    !entityString(merged, 'orderName', 'order_name') &&
+    ctx.lastOrderId
+  ) {
+    merged.orderId = ctx.lastOrderId;
+  }
+  if (
+    !entityString(merged, 'orderName', 'order_name') &&
+    ctx.lastOrderName
+  ) {
+    merged.orderName = ctx.lastOrderName;
+  }
   return merged;
 }
 
@@ -582,6 +597,17 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'create_product',
     'update_product',
     'delete_product',
+    'list_orders',
+    'find_order',
+    'create_order',
+    'update_order',
+    'delete_order',
+    'attach_order_to_contact',
+    'detach_order_from_contact',
+    'attach_order_to_company',
+    'detach_order_from_company',
+    'attach_order_to_deal',
+    'detach_order_from_deal',
   ]);
   return supported.has(intent.intent);
 }
@@ -928,5 +954,145 @@ export function extractProductUpdateDetails(
       'description',
     ),
     cost: entityNumber(entities, 'newProductCost', 'new_product_cost', 'productCost', 'cost'),
+  };
+}
+
+// ── HubSpot orders extractors ───────────────────────────────────────────────
+//
+// Orders mirror tickets (CRUD + search + Contact/Company/Deal associations) but
+// carry commerce fields (total price, currency, fulfillment status) and use
+// order pipelines/stages. Same conventions: tolerate snake_case, fall back to
+// generic keys like `name` / `query`, never throw on missing fields.
+
+export type OrderQuery = {
+  id?: string;
+  name?: string;
+};
+
+export function extractOrderQuery(
+  entities: Record<string, string | number | boolean | null>,
+): OrderQuery {
+  return {
+    id: entityString(entities, 'orderId', 'order_id'),
+    name:
+      entityString(entities, 'orderName', 'order_name') ||
+      entityString(entities, 'query', 'name'),
+  };
+}
+
+export function extractOrderCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    name:
+      entityString(entities, 'orderName', 'order_name') ||
+      entityString(entities, 'name', 'title') ||
+      '',
+    pipeline: entityString(entities, 'orderPipeline', 'order_pipeline', 'pipeline'),
+    stage: entityString(entities, 'orderStage', 'order_stage', 'stage'),
+    totalPrice: entityNumber(
+      entities,
+      'orderTotalPrice',
+      'order_total_price',
+      'totalPrice',
+      'total_price',
+      'total',
+      'amount',
+      'price',
+    ),
+    currency: entityString(entities, 'orderCurrency', 'order_currency', 'currency'),
+    status: entityString(
+      entities,
+      'orderStatus',
+      'order_status',
+      'fulfillmentStatus',
+      'fulfillment_status',
+      'status',
+    ),
+    ownerId: entityString(entities, 'ownerId', 'owner_id', 'orderOwnerId'),
+  };
+}
+
+export function extractOrderUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: a bare "orderName" (without "newOrderName") identifies WHICH
+  // order to update, not the new value — same convention as updateTicket.
+  const query: OrderQuery = {
+    id: entityString(entities, 'orderId', 'order_id'),
+    name: entityString(entities, 'orderName', 'order_name', 'query'),
+  };
+
+  return {
+    query,
+    name: entityString(entities, 'newOrderName', 'new_order_name', 'newName'),
+    pipeline: entityString(entities, 'newOrderPipeline', 'orderPipeline', 'pipeline'),
+    stage: entityString(entities, 'newOrderStage', 'new_order_stage', 'orderStage', 'stage'),
+    totalPrice: entityNumber(
+      entities,
+      'newOrderTotalPrice',
+      'new_order_total_price',
+      'newTotalPrice',
+      'totalPrice',
+      'total_price',
+      'total',
+      'amount',
+    ),
+    currency: entityString(
+      entities,
+      'newOrderCurrency',
+      'new_order_currency',
+      'orderCurrency',
+      'currency',
+    ),
+    status: entityString(
+      entities,
+      'newOrderStatus',
+      'new_order_status',
+      'orderStatus',
+      'fulfillmentStatus',
+      'status',
+    ),
+    ownerId: entityString(entities, 'newOwnerId', 'ownerId', 'owner_id'),
+  };
+}
+
+export function extractOrderContactAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    order: extractOrderQuery(entities),
+    contact: {
+      id: entityString(entities, 'contactId', 'contact_id'),
+      query:
+        entityString(entities, 'contactName', 'contact_name') ||
+        buildNameFromEntities(entities) ||
+        entityString(entities, 'contactEmail', 'contact_email', 'email') ||
+        entityString(entities, 'contactPhone', 'contact_phone', 'phone') ||
+        '',
+    },
+  };
+}
+
+export function extractOrderCompanyAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    order: extractOrderQuery(entities),
+    company: extractCompanyQuery(entities),
+  };
+}
+
+export function extractOrderDealAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    order: extractOrderQuery(entities),
+    deal: {
+      id: entityString(entities, 'dealId', 'deal_id', 'opportunityId', 'opportunity_id'),
+      name:
+        entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
+        '',
+    },
   };
 }
