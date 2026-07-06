@@ -29,6 +29,8 @@ export type AssistantSessionContext = {
   lastTicketSubject?: string;
   lastProductId?: string;
   lastProductName?: string;
+  lastOrderId?: string;
+  lastOrderName?: string;
   /** Multi-turn task state; null clears it. */
   pendingIntent?: PendingIntent | null;
 };

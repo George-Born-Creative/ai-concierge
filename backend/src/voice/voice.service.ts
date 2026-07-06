@@ -65,6 +65,17 @@ const SUPPORTED_INTENTS = [
   'create_product',
   'update_product',
   'delete_product',
+  'list_orders',
+  'find_order',
+  'create_order',
+  'update_order',
+  'delete_order',
+  'attach_order_to_contact',
+  'detach_order_from_contact',
+  'attach_order_to_company',
+  'detach_order_from_company',
+  'attach_order_to_deal',
+  'detach_order_from_deal',
   'create_note',
   'create_task',
   'create_deal',
@@ -164,6 +175,17 @@ Intent examples (informal → intent):
 - "create a product called Pro Plan for $99", "add a product named Onboarding Fee priced at 250 with SKU OB-1" → create_product
 - "raise the Pro Plan price to 129", "rename that product to Pro Plan Annual", "update the product SKU to PP-2", "change its cost to 40" → update_product
 - "delete the Pro Plan product", "remove that product", "delete product 12345" → delete_product
+- "list my orders", "show recent orders", "what orders do I have", "show my order history" → list_orders
+- "find the order for Acme", "look up order 12345", "show me the March renewal order" → find_order
+- "create an order called March Renewal for $499", "add an order named Q2 Hardware with status Packing", "open an order for 1200 dollars" → create_order
+- "mark the March Renewal order as shipped", "set that order total to 650", "rename the order to Q2 Renewal", "move the order to stage Processing" → update_order
+- "delete the March Renewal order", "remove that order", "delete order 12345" → delete_order
+- "attach the March Renewal order to John Smith", "link that order to jane@test.com" → attach_order_to_contact
+- "detach the March Renewal order from John Smith", "unlink that order from Sarah" → detach_order_from_contact
+- "attach the March Renewal order to Acme", "associate that order with the Globex company" → attach_order_to_company
+- "detach the March Renewal order from Acme", "unlink that order from Globex" → detach_order_from_company
+- "attach the March Renewal order to the Website Redesign deal", "link that order to deal 12345" → attach_order_to_deal
+- "detach the March Renewal order from the Website Redesign deal" → detach_order_from_deal
 
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
@@ -203,6 +225,14 @@ Entity rules:
 - update_product: identify the product via "productId" or "productName" (or session lastProductId); plus any of "newProductName", "newProductPrice" (number), "newProductSku", "newProductDescription", "newProductCost" (number) to set. A bare "productName" identifies which product, not the new name.
 - delete_product: put the product name or SKU in "query" (or "productName"/"productId").
 - For any product intent that refers to "it" / "that product", reuse lastProductId/lastProductName from session context.
+- list_orders: no entities required.
+- find_order / delete_order: put the search target in "query" (order name or keyword). Also set "orderName" or "orderId" when obvious.
+- create_order: "orderName" (REQUIRED — extract from "called X", "named X", "for X"), optional "orderTotalPrice" (number — from "for $499", "total 1200", "worth 650"), optional "orderCurrency" (ISO code like USD), optional "orderStatus" (fulfillment status such as Packing/Shipped/Delivered), optional "orderPipeline", "orderStage", "ownerId". Pipeline/stage are defaulted server-side, so don't ask for them. If only "name" is given, that is the order name.
+- update_order: identify the order via "orderId" or "orderName" (or session lastOrderId); plus any of "newOrderName", "newOrderTotalPrice" (number), "newOrderStatus", "newOrderCurrency", "newOrderStage" to set. A bare "orderName" identifies which order, not the new name.
+- attach_order_to_contact / detach_order_from_contact: identify the order via "orderName"/"orderId" (or session lastOrderId), and the contact via "contactName"/"contactId"/"contactEmail"/"contactPhone".
+- attach_order_to_company / detach_order_from_company: identify the order via "orderName"/"orderId" (or session lastOrderId), and the company via "companyName"/"companyDomain"/"companyId".
+- attach_order_to_deal / detach_order_from_deal: identify the order via "orderName"/"orderId" (or session lastOrderId), and the deal via "dealName" or "dealId".
+- For any order intent that refers to "it" / "that order", reuse lastOrderId/lastOrderName from session context.
 - Normalize phone to digits with optional leading +.
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
@@ -228,7 +258,7 @@ Spoken email reconstruction (REQUIRED whenever you emit an "email" or "newEmail"
 
 Conversation context (when provided):
 - Use prior user/assistant turns to resolve pronouns and omissions ("him", "her", "that appointment", "same calendar", "book them", "that deal", "it").
-- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName, lastCompanyId, lastCompanyName, lastTicketId, lastTicketSubject, lastProductId, lastProductName when the user refers to "that" / "them" / "it".
+- Use session context JSON for lastContactName, lastCalendarName, lastAppointmentId, lastOpportunityId, lastOpportunityName, lastPipelineId, lastPipelineName, lastCompanyId, lastCompanyName, lastTicketId, lastTicketSubject, lastProductId, lastProductName, lastOrderId, lastOrderName when the user refers to "that" / "them" / "it".
 - If session context has a "pendingIntent" object, the backend is in the middle of collecting fields for it. Treat the latest user message as the answer to "pendingIntent.missing[0]" (the next missing field) and re-emit the SAME intent name with all previous entities plus the new piece. Do NOT switch intents.
 - If the latest message is a short follow-up answer (e.g. "Sales", "$2500", "tomorrow at 2", "John Smith", "yes", "sure", "go ahead", "do it"), look at the LAST assistant turn — if it was a clarification question, re-emit the ORIGINAL intent (e.g. create_opportunity) with all previously known entities PLUS the new piece of information the user just provided. Do not ask the same question again, and do not switch intents.
 - Treat "yes", "yeah", "yep", "sure", "ok", "okay", "right", "correct", "proceed", "continue", "go ahead", "do it", "sounds good" as positive confirmation of the most recent proposed action — re-emit that action's intent with all known entities and needs_clarification = false.

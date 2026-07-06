@@ -10,9 +10,14 @@ import {
   HubspotCompanySummary,
   HubspotContactSummary,
   HubspotDealSummary,
+  HubspotOrderSummary,
   HubspotProductSummary,
   HubspotTicketSummary,
 } from '../integrations/hubspot/hubspot.types';
+import {
+  HubspotOrdersService,
+  HubspotOrderWriteInput,
+} from '../integrations/hubspot/orders/orders.service';
 import {
   HubspotProductsService,
   HubspotProductWriteInput,
@@ -29,6 +34,11 @@ import type {
   extractCompanyUpdateDetails,
   extractContactUpdateDetails,
   extractCreateDetails,
+  extractOrderCompanyAssociation,
+  extractOrderContactAssociation,
+  extractOrderCreateDetails,
+  extractOrderDealAssociation,
+  extractOrderUpdateDetails,
   extractProductCreateDetails,
   extractProductUpdateDetails,
   extractTicketCompanyAssociation,
@@ -36,6 +46,7 @@ import type {
   extractTicketCreateDetails,
   extractTicketDealAssociation,
   extractTicketUpdateDetails,
+  OrderQuery,
   ProductQuery,
   TicketQuery,
 } from './assistant-command.helpers';
@@ -57,6 +68,7 @@ export class HubspotCommandService {
     private readonly companies: HubspotCompaniesService,
     private readonly tickets: HubspotTicketsService,
     private readonly products: HubspotProductsService,
+    private readonly orders: HubspotOrdersService,
   ) {}
 
   // ── Contacts ───────────────────────────────────────────────────────────────
@@ -1241,6 +1253,339 @@ export class HubspotCommandService {
         : '';
     const sku = product.sku ? ` (SKU ${product.sku})` : '';
     return `· ${product.name}${money}${sku}`;
+  }
+
+  // ── Orders ─────────────────────────────────────────────────────────────────
+  //
+  // CRUD + association surface mirroring the tickets methods above. Orders use
+  // HubSpot's commerce pipelines/stages (defaulted server-side on create) and
+  // support Contact / Company / Deal associations. Writes resolve the target
+  // order via `resolveOrder` (by id or name search), then delegate to
+  // `HubspotOrdersService`. Successful writes set `contextPatch.lastOrderId
+  // /Name` so follow-ups like "mark it shipped" or "attach it to Acme" resolve
+  // via session merge.
+
+  async listRecentOrders(userId: string): Promise<AssistantCommandResult> {
+    const { results } = await this.orders.list(userId, { limit: 10 });
+    if (results.length === 0) {
+      return { response: "You don't have any orders in HubSpot yet.", status: 'success' };
+    }
+    return {
+      response:
+        `Here are your most recent orders in HubSpot:\n${results
+          .map((o) => this.formatOrder(o))
+          .join('\n')}\n\n` +
+        "Want to open one, change its status, or attach it to a contact, company, or deal? Just say the word.",
+      status: 'success',
+      contextPatch: { lastOrderId: results[0].id, lastOrderName: results[0].name },
+    };
+  }
+
+  async findOrder(userId: string, query: string): Promise<AssistantCommandResult> {
+    if (!query?.trim()) {
+      return {
+        response: 'Which order are you looking for? A name or keyword works.',
+        status: 'error',
+      };
+    }
+    const matches = await this.findMatchingOrders(userId, query);
+    if (matches.length === 0) {
+      return { response: `No order in HubSpot matches "${query}".`, status: 'error' };
+    }
+    const top = matches[0];
+    return {
+      response:
+        matches.length === 1
+          ? `Found it in HubSpot:\n${this.formatOrder(top)}\n\n` +
+            "I'll keep this order in mind — say \"mark it shipped\" or \"attach it to Acme\" and I'll know which one you mean."
+          : `Found ${matches.length} orders in HubSpot — here are the closest matches:\n${matches
+              .slice(0, 5)
+              .map((o) => this.formatOrder(o))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (the name works) and I'll zero in.",
+      status: 'success',
+      contextPatch: { lastOrderId: top.id, lastOrderName: top.name },
+    };
+  }
+
+  async createOrder(
+    userId: string,
+    details: ReturnType<typeof extractOrderCreateDetails>,
+  ): Promise<AssistantCommandResult> {
+    if (!details.name) {
+      return { response: 'What should the order be called? Give me a name.', status: 'error' };
+    }
+    const created = await this.orders.create(userId, {
+      name: details.name,
+      pipeline: details.pipeline,
+      stage: details.stage,
+      totalPrice: details.totalPrice,
+      currency: details.currency,
+      status: details.status,
+      ownerId: details.ownerId,
+    });
+    const bits = [
+      typeof created.totalPrice === 'number' ? `$${created.totalPrice.toLocaleString()}` : null,
+      created.status ? `status ${created.status}` : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      response:
+        `Done — the "${created.name}" order is now in HubSpot${bits ? ` (${bits})` : ''}. ` +
+        "I'll keep this order in mind, so you can say things like " +
+        '"mark it shipped" or "attach it to Acme" and I\'ll know which one you mean.',
+      status: 'success',
+      contextPatch: { lastOrderId: created.id, lastOrderName: created.name },
+    };
+  }
+
+  async updateOrder(
+    userId: string,
+    details: ReturnType<typeof extractOrderUpdateDetails>,
+  ): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveOrder(userId, details.query);
+    if (resolved.kind === 'missing') return resolved.result;
+
+    const patch: HubspotOrderWriteInput = {};
+    if (details.name) patch.name = details.name;
+    if (details.pipeline) patch.pipeline = details.pipeline;
+    if (details.stage) patch.stage = details.stage;
+    if (details.totalPrice !== undefined) patch.totalPrice = details.totalPrice;
+    if (details.currency) patch.currency = details.currency;
+    if (details.status) patch.status = details.status;
+    if (details.ownerId) patch.ownerId = details.ownerId;
+
+    if (Object.keys(patch).length === 0) {
+      return {
+        response: `What should I change on "${resolved.order.name}"? (name, total price, status, currency, pipeline, or stage)`,
+        status: 'error',
+      };
+    }
+
+    const updated = await this.orders.update(userId, resolved.order.id, patch);
+    const changed = Object.entries(patch)
+      .map(([k, v]) => `${k} → ${v}`)
+      .join(', ');
+    return {
+      response:
+        `All set — the "${updated.name}" order is updated in HubSpot (${changed}). ` +
+        "Want me to change another field, or attach it to a contact, company, or deal next?",
+      status: 'success',
+      contextPatch: { lastOrderId: updated.id, lastOrderName: updated.name },
+      clearPendingIntent: true,
+    };
+  }
+
+  async deleteOrder(userId: string, query: string): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveOrder(userId, { name: query });
+    if (resolved.kind === 'missing') return resolved.result;
+    await this.orders.delete(userId, resolved.order.id);
+    return {
+      response:
+        `Done — the "${resolved.order.name}" order is removed from HubSpot. ` +
+        "If that was a mistake, let me know and I can recreate it; otherwise, anything else you'd like me to tidy up?",
+      status: 'success',
+    };
+  }
+
+  async attachOrderToContact(
+    userId: string,
+    details: ReturnType<typeof extractOrderContactAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const order = await this.resolveOrder(userId, details.order);
+    if (order.kind === 'missing') return order.result;
+    const contact = await this.resolveContact(userId, details.contact);
+    if (contact.kind === 'missing') return contact.result;
+    await this.orders.associateContact(userId, order.order.id, contact.contact.id);
+    return {
+      response:
+        `Linked the "${order.order.name}" order to ${contact.contact.name} in HubSpot. ` +
+        "I'll remember both, so you can keep working with either one.",
+      status: 'success',
+      contextPatch: {
+        lastOrderId: order.order.id,
+        lastOrderName: order.order.name,
+        lastContactId: contact.contact.id,
+        lastContactName: contact.contact.name,
+      },
+    };
+  }
+
+  async detachOrderFromContact(
+    userId: string,
+    details: ReturnType<typeof extractOrderContactAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const order = await this.resolveOrder(userId, details.order);
+    if (order.kind === 'missing') return order.result;
+    const contact = await this.resolveContact(userId, details.contact);
+    if (contact.kind === 'missing') return contact.result;
+    await this.orders.disassociateContact(userId, order.order.id, contact.contact.id);
+    return {
+      response:
+        `Unlinked the "${order.order.name}" order from ${contact.contact.name} in HubSpot. ` +
+        "Both records are still there — just not associated anymore.",
+      status: 'success',
+      contextPatch: {
+        lastOrderId: order.order.id,
+        lastOrderName: order.order.name,
+        lastContactId: contact.contact.id,
+        lastContactName: contact.contact.name,
+      },
+    };
+  }
+
+  async attachOrderToCompany(
+    userId: string,
+    details: ReturnType<typeof extractOrderCompanyAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const order = await this.resolveOrder(userId, details.order);
+    if (order.kind === 'missing') return order.result;
+    const company = await this.resolveCompany(userId, details.company);
+    if (company.kind === 'missing') return company.result;
+    await this.orders.associateCompany(userId, order.order.id, company.company.id);
+    return {
+      response:
+        `Linked the "${order.order.name}" order to ${company.company.name} in HubSpot. ` +
+        "I'll remember both, so you can keep working with either one.",
+      status: 'success',
+      contextPatch: {
+        lastOrderId: order.order.id,
+        lastOrderName: order.order.name,
+        lastCompanyId: company.company.id,
+        lastCompanyName: company.company.name,
+      },
+    };
+  }
+
+  async detachOrderFromCompany(
+    userId: string,
+    details: ReturnType<typeof extractOrderCompanyAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const order = await this.resolveOrder(userId, details.order);
+    if (order.kind === 'missing') return order.result;
+    const company = await this.resolveCompany(userId, details.company);
+    if (company.kind === 'missing') return company.result;
+    await this.orders.disassociateCompany(userId, order.order.id, company.company.id);
+    return {
+      response:
+        `Unlinked the "${order.order.name}" order from ${company.company.name} in HubSpot. ` +
+        "Both records are still there — just not associated anymore.",
+      status: 'success',
+      contextPatch: {
+        lastOrderId: order.order.id,
+        lastOrderName: order.order.name,
+        lastCompanyId: company.company.id,
+        lastCompanyName: company.company.name,
+      },
+    };
+  }
+
+  async attachOrderToDeal(
+    userId: string,
+    details: ReturnType<typeof extractOrderDealAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const order = await this.resolveOrder(userId, details.order);
+    if (order.kind === 'missing') return order.result;
+    const deal = await this.resolveDeal(userId, details.deal);
+    if (deal.kind === 'missing') return deal.result;
+    await this.orders.associateDeal(userId, order.order.id, deal.deal.id);
+    return {
+      response:
+        `Linked the "${order.order.name}" order to the "${deal.deal.name}" deal in HubSpot. ` +
+        "I'll remember both, so you can keep working with either one.",
+      status: 'success',
+      contextPatch: {
+        lastOrderId: order.order.id,
+        lastOrderName: order.order.name,
+      },
+    };
+  }
+
+  async detachOrderFromDeal(
+    userId: string,
+    details: ReturnType<typeof extractOrderDealAssociation>,
+  ): Promise<AssistantCommandResult> {
+    const order = await this.resolveOrder(userId, details.order);
+    if (order.kind === 'missing') return order.result;
+    const deal = await this.resolveDeal(userId, details.deal);
+    if (deal.kind === 'missing') return deal.result;
+    await this.orders.disassociateDeal(userId, order.order.id, deal.deal.id);
+    return {
+      response:
+        `Unlinked the "${order.order.name}" order from the "${deal.deal.name}" deal in HubSpot. ` +
+        "Both records are still there — just not associated anymore.",
+      status: 'success',
+      contextPatch: {
+        lastOrderId: order.order.id,
+        lastOrderName: order.order.name,
+      },
+    };
+  }
+
+  /**
+   * Resolve an order by id (fast path) or by name search. Mirrors
+   * `resolveTicket`: returns an `ok` shape carrying the order, or a `missing`
+   * shape carrying a friendly response the caller short-circuits on.
+   */
+  private async resolveOrder(
+    userId: string,
+    query: OrderQuery,
+  ): Promise<
+    | { kind: 'ok'; order: HubspotOrderSummary }
+    | { kind: 'missing'; result: AssistantCommandResult }
+  > {
+    if (query.id?.trim()) {
+      const order = await this.orders.getById(userId, query.id.trim());
+      return { kind: 'ok', order };
+    }
+    const term = query.name?.trim();
+    if (!term) {
+      return {
+        kind: 'missing',
+        result: { response: 'Which order? Give me a name or keyword.', status: 'error' },
+      };
+    }
+    const matches = await this.findMatchingOrders(userId, term);
+    if (matches.length === 0) {
+      return {
+        kind: 'missing',
+        result: { response: `No order in HubSpot matches "${term}".`, status: 'error' },
+      };
+    }
+    if (matches.length > 1) {
+      return {
+        kind: 'missing',
+        result: {
+          response: `Which one?\n${matches
+            .slice(0, 5)
+            .map((o) => this.formatOrder(o))
+            .join('\n')}`,
+          status: 'error',
+        },
+      };
+    }
+    return { kind: 'ok', order: matches[0] };
+  }
+
+  private async findMatchingOrders(
+    userId: string,
+    query: string,
+  ): Promise<HubspotOrderSummary[]> {
+    const { results } = await this.orders.search(userId, {
+      q: query.trim(),
+      limit: 10,
+    });
+    return results;
+  }
+
+  private formatOrder(order: HubspotOrderSummary): string {
+    const money =
+      typeof order.totalPrice === 'number' && Number.isFinite(order.totalPrice)
+        ? ` — $${order.totalPrice.toLocaleString()}`
+        : '';
+    const status = order.status ? ` · ${order.status}` : '';
+    return `· ${order.name}${money}${status}`;
   }
 }
 

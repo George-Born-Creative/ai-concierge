@@ -88,6 +88,27 @@ export type HubspotProductSummary = {
   updatedAt?: string;
 };
 
+export type HubspotOrderSummary = {
+  id: string;
+  /** Order name. HubSpot stores this as `hs_order_name`. */
+  name: string;
+  /** Order total. HubSpot stores `hs_total_price` as a string; we expose a number. */
+  totalPrice?: number | null;
+  /** ISO currency code — HubSpot's `hs_currency_code`. */
+  currency?: string;
+  /** Fulfillment / shipping status — HubSpot's `hs_fulfillment_status`. */
+  status?: string;
+  /** Pipeline id — HubSpot's `hs_pipeline`. */
+  pipeline?: string;
+  /** Pipeline stage id — HubSpot's `hs_pipeline_stage`. */
+  stage?: string;
+  ownerId?: string;
+  /** Source store — HubSpot's `hs_source_store`. */
+  sourceStore?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 /** Raw HubSpot CRM object as returned by /crm/v3/objects/{type}. */
 export type HubspotRawObject = {
   id: string;

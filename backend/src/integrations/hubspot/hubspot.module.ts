@@ -12,6 +12,8 @@ import { HubspotDealsService } from './deals/deals.service';
 import { HubspotApiClient } from './hubspot-api.client';
 import { HubspotController } from './hubspot.controller';
 import { HubspotService } from './hubspot.service';
+import { HubspotOrdersController } from './orders/orders.controller';
+import { HubspotOrdersService } from './orders/orders.service';
 import { HubspotProductsController } from './products/products.controller';
 import { HubspotProductsService } from './products/products.service';
 import { HubspotTicketsController } from './tickets/tickets.controller';
@@ -46,6 +48,7 @@ import { HubspotTicketsService } from './tickets/tickets.service';
     HubspotCompaniesController,
     HubspotTicketsController,
     HubspotProductsController,
+    HubspotOrdersController,
   ],
   providers: [
     HubspotService,
@@ -55,6 +58,7 @@ import { HubspotTicketsService } from './tickets/tickets.service';
     HubspotCompaniesService,
     HubspotTicketsService,
     HubspotProductsService,
+    HubspotOrdersService,
   ],
   exports: [
     HubspotService,
@@ -64,6 +68,7 @@ import { HubspotTicketsService } from './tickets/tickets.service';
     HubspotCompaniesService,
     HubspotTicketsService,
     HubspotProductsService,
+    HubspotOrdersService,
   ],
 })
 export class HubspotModule {}

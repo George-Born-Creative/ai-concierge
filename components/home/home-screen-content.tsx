@@ -95,11 +95,11 @@ export function HomeScreenContent() {
           href: { pathname: '/hubspot', params: { object: 'products' } } as Href,
         },
         {
-          icon: 'task-alt',
-          title: 'Tasks',
-          tint: '#10B981',
-          bg: '#E7F6EF',
-          href: '/reminders' as Href,
+          icon: 'receipt-long',
+          title: 'Orders',
+          tint: '#8B5CF6',
+          bg: '#EDE9FE',
+          href: { pathname: '/hubspot', params: { object: 'orders' } } as Href,
         },
       ];
     }
@@ -127,13 +127,6 @@ export function HomeScreenContent() {
         tint: '#06B6D4',
         bg: '#E0F7FB',
         command: 'Show my calendar for today',
-      },
-      {
-        icon: 'task-alt',
-        title: 'Tasks',
-        tint: '#10B981',
-        bg: '#E7F6EF',
-        href: '/reminders' as Href,
       },
     ];
   }, [isHubspot]);

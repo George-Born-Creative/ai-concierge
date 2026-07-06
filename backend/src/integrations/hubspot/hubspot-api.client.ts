@@ -140,6 +140,15 @@ export class HubspotApiClient {
    */
   private scopeMismatchMessage(path?: string): string {
     if (!path) return this.genericReconnectMessage();
+    // Checked before contacts/companies/deals: order association paths embed
+    // those words (…/orders/:id/associations/default/contacts/…), so the order
+    // scope message must win for any orders route.
+    if (/orders/i.test(path)) {
+      return (
+        'Your HubSpot connection is missing order scopes. ' +
+        'Go to Profile → Settings → Reconnect HubSpot and approve order access.'
+      );
+    }
     if (/contacts/i.test(path)) {
       return (
         'Your HubSpot connection is missing contact scopes. ' +
