@@ -73,6 +73,7 @@ model User {
   assistantConversations  AssistantConversation[]
   reminders               Reminder[]
   emailVerifications      EmailVerification[]
+  passwordResets          PasswordReset[]
 }
 
 // Short-lived 6-digit codes emailed during signup. Only the argon2 hash of the
@@ -80,6 +81,24 @@ model User {
 // `attempts` is incremented on each wrong guess so the verifier can lock out
 // brute-force attempts.
 model EmailVerification {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// Short-lived 6-digit codes emailed for password resets. Mirrors
+// EmailVerification (argon2-hashed, single-use, expiring, attempt-limited) but
+// has its own lifecycle: consuming a code sets the user's new passwordHash
+// rather than flipping emailVerified.
+model PasswordReset {
   id         String    @id @default(cuid())
   userId     String
   codeHash   String

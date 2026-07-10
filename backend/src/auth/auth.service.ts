@@ -12,7 +12,9 @@ import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { EmailVerificationService } from './email-verification.service';
+import { PasswordResetService } from './password-reset.service';
 import { GoogleSignInDto } from './dto/google-signin.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SigninDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
 
@@ -37,6 +39,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly users: UsersService,
     private readonly emailVerification: EmailVerificationService,
+    private readonly passwordReset: PasswordResetService,
     private readonly config: ConfigService,
   ) {
     this.googleClientIds = (this.config.get<string>('GOOGLE_CLIENT_IDS') ?? '')
@@ -96,6 +99,21 @@ export class AuthService {
     if (user && !user.emailVerified) {
       await this.emailVerification.issueCode(userId, user.email, user.name);
     }
+    return { ok: true };
+  }
+
+  // Called by POST /auth/request-password-reset. Always returns { ok: true } —
+  // PasswordResetService silently ignores unknown / password-less accounts so
+  // the response can't be used to probe which emails are registered.
+  async requestPasswordReset(email: string): Promise<{ ok: true }> {
+    await this.passwordReset.issueCode(email);
+    return { ok: true };
+  }
+
+  // Called by POST /auth/reset-password. Verifies the emailed code and sets the
+  // new password; throws on invalid/expired codes.
+  async resetPassword(dto: ResetPasswordDto): Promise<{ ok: true }> {
+    await this.passwordReset.resetPassword(dto.email, dto.code, dto.newPassword);
     return { ok: true };
   }
 

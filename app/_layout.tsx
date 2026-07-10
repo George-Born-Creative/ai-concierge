@@ -80,6 +80,8 @@ export default function RootLayout() {
                 <Stack.Screen name="(auth)/signup-email" options={{ headerShown: false }} />
                 <Stack.Screen name="(auth)/signin" options={{ headerShown: false }} />
                 <Stack.Screen name="(auth)/verify-email" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)/forgot-password" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)/reset-password" options={{ headerShown: false }} />
                 <Stack.Screen name="(onboarding)/plan" options={{ headerShown: false }} />
                 <Stack.Screen name="(onboarding)/connect" options={{ headerShown: false }} />
                 <Stack.Screen name="oauth/[provider]" options={{ headerShown: false }} />

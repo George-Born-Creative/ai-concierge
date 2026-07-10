@@ -2,6 +2,8 @@ import { apiRequest } from './client';
 import type {
   AuthResponse,
   GoogleAuthRequest,
+  RequestPasswordResetRequest,
+  ResetPasswordRequest,
   SignInRequest,
   SignUpRequest,
   User,
@@ -46,6 +48,31 @@ export async function verifyEmail(code: string): Promise<User> {
 // Re-sends the verification code to the signed-in (but unverified) user.
 export async function resendCode(): Promise<{ ok: true }> {
   return apiRequest<{ ok: true }>('/auth/resend-code', { method: 'POST' });
+}
+
+// Forgot-password step 1. Unauthenticated (token: null). Always resolves for
+// existing password accounts; the backend is enumeration-safe and returns
+// { ok: true } even for unknown or Google-only emails.
+export async function requestPasswordReset(
+  data: RequestPasswordResetRequest,
+): Promise<{ ok: true }> {
+  return apiRequest<{ ok: true }>('/auth/request-password-reset', {
+    method: 'POST',
+    body: data,
+    token: null,
+  });
+}
+
+// Forgot-password step 2. Unauthenticated (token: null). Verifies the emailed
+// code and sets the new password.
+export async function resetPassword(
+  data: ResetPasswordRequest,
+): Promise<{ ok: true }> {
+  return apiRequest<{ ok: true }>('/auth/reset-password', {
+    method: 'POST',
+    body: data,
+    token: null,
+  });
 }
 
 export async function signOut(): Promise<void> {

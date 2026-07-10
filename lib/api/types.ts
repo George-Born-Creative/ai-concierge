@@ -17,6 +17,18 @@ export type GoogleAuthRequest = {
   idToken: string;
 };
 
+// Forgot-password step 1: request a 6-digit reset code by email.
+export type RequestPasswordResetRequest = {
+  email: string;
+};
+
+// Forgot-password step 2: submit the emailed code + a new password.
+export type ResetPasswordRequest = {
+  email: string;
+  code: string;
+  newPassword: string;
+};
+
 export type AuthResponse = {
   token: string;
   user: User;
