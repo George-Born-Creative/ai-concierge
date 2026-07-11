@@ -13,7 +13,6 @@ import {
   View,
 } from 'react-native';
 
-import { LogoDotsIcon } from '@/components/brand/logo-dots-icon';
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
 import { requestPasswordReset, resetPassword } from '@/lib/api/auth';
@@ -106,10 +105,6 @@ export function ResetPasswordScreen() {
           showsVerticalScrollIndicator={false}
           alwaysBounceVertical={false}
           overScrollMode="never">
-          <View style={styles.iconBadge}>
-            <LogoDotsIcon size={72} />
-          </View>
-
           <Text style={styles.title}>Reset password</Text>
           <Text style={styles.subtitle}>
             We sent a {CODE_LENGTH}-digit code to{' '}
@@ -223,17 +218,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 24,
-  },
-  iconBadge: {
-    alignItems: 'center',
-    backgroundColor: '#EDF4FF',
-    borderColor: '#D7E6FF',
-    borderRadius: 28,
-    borderWidth: 1,
-    height: 120,
-    justifyContent: 'center',
-    marginBottom: 28,
-    width: 120,
   },
   title: {
     color: '#202124',

@@ -4,6 +4,7 @@ import {
   HttpStatus,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomInt } from 'crypto';
@@ -54,9 +55,9 @@ export class PasswordResetService {
 
   // Generate + email a fresh reset code for the account with this email. Any
   // prior unconsumed codes for the user are invalidated so only the newest one
-  // works. Silently returns for unknown or password-less (Google-only) accounts
-  // so the response can't be used to probe which emails are registered. Throws
-  // only when a code was already sent within the cooldown window.
+  // works. Tells the caller when no account exists (so the app can send them to
+  // sign up) or when the account is Google-only (nothing to reset). Also throws
+  // when a code was already sent within the cooldown window.
   async issueCode(email: string): Promise<void> {
     const normalized = email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
@@ -64,10 +65,19 @@ export class PasswordResetService {
       select: { id: true, email: true, name: true, passwordHash: true },
     });
 
-    // No account, or a Google-only account with no password to reset. Do
-    // nothing — but don't leak that back to the caller.
-    if (!user || !user.passwordHash) {
-      return;
+    // No account for this email — the user needs to sign up instead.
+    if (!user) {
+      throw new NotFoundException(
+        'No account found with this email. Please sign up first.',
+      );
+    }
+
+    // Account exists but was created with Google Sign-In, so there's no
+    // password to reset. Point them at the Google flow instead.
+    if (!user.passwordHash) {
+      throw new BadRequestException(
+        'This account uses Google Sign-In. Use "Continue with Google" to sign in.',
+      );
     }
 
     const latest = await this.prisma.passwordReset.findFirst({

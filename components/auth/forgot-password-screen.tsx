@@ -12,7 +12,6 @@ import {
   View,
 } from 'react-native';
 
-import { LogoDotsIcon } from '@/components/brand/logo-dots-icon';
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
 import { requestPasswordReset } from '@/lib/api/auth';
@@ -38,13 +37,18 @@ export function ForgotPasswordScreen() {
     setSubmitting(true);
     try {
       await requestPasswordReset({ email: trimmed });
-      // Enumeration-safe: the backend returns { ok: true } regardless, so we
-      // always advance and show a neutral message.
-      show('If an account exists, we sent a reset code.', 'success');
+      show('We sent a reset code to your email.', 'success');
       router.push(
         `/reset-password?email=${encodeURIComponent(trimmed)}` as Href,
       );
     } catch (err) {
+      // No account for this email — the user needs to sign up first, so surface
+      // the message and route them to the sign-up screen.
+      if (err instanceof ApiError && err.status === 404) {
+        show('No account found with this email. Please sign up first.', 'error');
+        router.replace('/signup');
+        return;
+      }
       const message =
         err instanceof ApiError
           ? err.message || 'Could not start the reset.'
@@ -62,10 +66,6 @@ export function ForgotPasswordScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <View style={styles.content}>
-          <View style={styles.iconBadge}>
-            <LogoDotsIcon size={72} />
-          </View>
-
           <Text style={styles.title}>Forgot password?</Text>
           <Text style={styles.subtitle}>
             Enter the email for your account and we&apos;ll send you a 6-digit
@@ -123,17 +123,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
-  },
-  iconBadge: {
-    alignItems: 'center',
-    backgroundColor: '#EDF4FF',
-    borderColor: '#D7E6FF',
-    borderRadius: 28,
-    borderWidth: 1,
-    height: 120,
-    justifyContent: 'center',
-    marginBottom: 28,
-    width: 120,
   },
   title: {
     color: '#202124',

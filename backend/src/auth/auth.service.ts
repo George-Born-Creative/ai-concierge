@@ -102,9 +102,9 @@ export class AuthService {
     return { ok: true };
   }
 
-  // Called by POST /auth/request-password-reset. Always returns { ok: true } —
-  // PasswordResetService silently ignores unknown / password-less accounts so
-  // the response can't be used to probe which emails are registered.
+  // Called by POST /auth/request-password-reset. Returns { ok: true } once a
+  // code has been emailed; throws 404 when no account exists (so the app can
+  // route the user to sign up) or 400 for Google-only accounts.
   async requestPasswordReset(email: string): Promise<{ ok: true }> {
     await this.passwordReset.issueCode(email);
     return { ok: true };
