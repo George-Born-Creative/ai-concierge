@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -246,6 +246,15 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               </Pressable>
             </View>
 
+            {!isSignup ? (
+              <Pressable
+                style={styles.forgotButton}
+                hitSlop={8}
+                onPress={() => router.push('/forgot-password' as Href)}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+            ) : null}
+
             <Pressable
               style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
               onPress={submitAuthForm}
@@ -452,6 +461,16 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  forgotButton: {
+    alignItems: 'flex-end',
+    marginBottom: 2,
+    marginTop: -2,
+  },
+  forgotText: {
+    color: '#1A73E8',
+    fontSize: 14,
     fontWeight: '600',
   },
   switchButton: {

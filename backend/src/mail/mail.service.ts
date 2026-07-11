@@ -83,10 +83,51 @@ export class MailService {
     }
   }
 
+  async sendPasswordResetCode(
+    email: string,
+    name: string | null,
+    code: string,
+  ): Promise<void> {
+    if (!this.transporter) {
+      if (!this.isProd) {
+        this.logDevResetCode(email, code);
+        return;
+      }
+      throw new Error(
+        'Email service is not configured (missing MAIL_USER / MAIL_PASS)',
+      );
+    }
+
+    const greeting = name ? `Hi ${name},` : 'Hi,';
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: email,
+        subject: `${code} is your AI Concierge password reset code`,
+        text: `${greeting}\n\nYour AI Concierge password reset code is ${code}.\nEnter it in the app to set a new password. It expires shortly. If you didn't request this, you can ignore this email and your password will stay the same.`,
+        html: this.resetHtml(greeting, code),
+      });
+    } catch (err) {
+      this.logger.error(
+        `Nodemailer failed to send password reset code: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      throw new Error('Failed to send password reset email');
+    }
+  }
+
   // Dev-only: print the verification code so it can be used without email.
   private logDevCode(email: string, code: string): void {
     this.logger.warn(
       `[DEV] Verification code for ${email}: ${code} (email not sent)`,
+    );
+  }
+
+  // Dev-only: print the password reset code so it can be used without email.
+  private logDevResetCode(email: string, code: string): void {
+    this.logger.warn(
+      `[DEV] Password reset code for ${email}: ${code} (email not sent)`,
     );
   }
 
@@ -97,6 +138,17 @@ export class MailService {
         <p style="font-size: 15px;">Use the code below to verify your email address and finish setting up your AI Concierge account.</p>
         <div style="font-size: 32px; font-weight: 700; letter-spacing: 8px; text-align: center; padding: 16px 0; color: #1A73E8;">${code}</div>
         <p style="font-size: 13px; color: #5F6368;">This code expires shortly. If you didn't request it, you can safely ignore this email.</p>
+      </div>
+    `;
+  }
+
+  private resetHtml(greeting: string, code: string): string {
+    return `
+      <div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 420px; margin: 0 auto; padding: 24px; color: #202124;">
+        <p style="font-size: 15px;">${greeting}</p>
+        <p style="font-size: 15px;">Use the code below to reset your AI Concierge password. Enter it in the app, then choose a new password.</p>
+        <div style="font-size: 32px; font-weight: 700; letter-spacing: 8px; text-align: center; padding: 16px 0; color: #1A73E8;">${code}</div>
+        <p style="font-size: 13px; color: #5F6368;">This code expires shortly. If you didn't request a password reset, you can safely ignore this email and your password will stay the same.</p>
       </div>
     `;
   }
