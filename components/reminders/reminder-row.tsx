@@ -35,6 +35,18 @@ export function ReminderRow({ reminder, focused, onPress, onMore }: Props) {
             {relative}
           </Text>
           <Text style={styles.dueAbsolute}>{absolute}</Text>
+          {reminder.remindOffsetMinutes > 0 ? (
+            <View style={styles.offsetChip}>
+              <MaterialIcons
+                name="notifications-active"
+                size={11}
+                color="#5B6B82"
+              />
+              <Text style={styles.offsetChipText}>
+                {formatOffset(reminder.remindOffsetMinutes)}
+              </Text>
+            </View>
+          ) : null}
           {reminder.linkLabel ? (
             <View style={styles.linkChip}>
               <MaterialIcons name="link" size={12} color="#1F49E0" />
@@ -85,6 +97,14 @@ function formatDueTime(due: Date): { relative: string; absolute: string } {
   return { relative, absolute };
 }
 
+function formatOffset(minutes: number): string {
+  if (minutes % 60 === 0) {
+    const h = minutes / 60;
+    return `${h}h before`;
+  }
+  return `${minutes}m before`;
+}
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
@@ -122,5 +142,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   linkChipText: { fontSize: 12, color: '#1F49E0', maxWidth: 120 },
+  offsetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 999,
+  },
+  offsetChipText: { fontSize: 11, color: '#5B6B82', fontWeight: '500' },
   moreButton: { padding: 4 },
 });

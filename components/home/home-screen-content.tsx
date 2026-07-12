@@ -104,29 +104,30 @@ export function HomeScreenContent() {
       ];
     }
 
-    // GoHighLevel: contacts, opportunities and calendar run through the chat
-    // assistant. GHL has no companies/tickets objects, so those aren't shown.
+    // GoHighLevel cards each open their OWN focused list page (via the `object`
+    // param), matching the HubSpot behavior, instead of routing into the chat.
+    // GHL has no companies/tickets objects, so those aren't shown.
     return [
       {
         icon: 'contacts',
         title: 'Contacts',
         tint: '#1A73E8',
         bg: '#E8F0FE',
-        command: 'Show my contacts',
+        href: { pathname: '/ghl', params: { object: 'contacts' } } as Href,
       },
       {
         icon: 'business-center',
         title: 'Opportunities',
         tint: '#7C3AED',
         bg: '#EDE9FE',
-        command: 'Show my opportunities',
+        href: { pathname: '/ghl', params: { object: 'opportunities' } } as Href,
       },
       {
         icon: 'event',
         title: 'Calendar',
         tint: '#06B6D4',
         bg: '#E0F7FB',
-        command: 'Show my calendar for today',
+        href: { pathname: '/ghl', params: { object: 'calendar' } } as Href,
       },
     ];
   }, [isHubspot]);

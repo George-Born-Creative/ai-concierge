@@ -92,6 +92,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(stack)/chats" options={{ headerShown: false }} />
                 <Stack.Screen name="(stack)/history" options={{ headerShown: false }} />
                 <Stack.Screen name="(stack)/hubspot" options={{ headerShown: false }} />
+                <Stack.Screen name="(stack)/ghl" options={{ headerShown: false }} />
                 <Stack.Screen name="(stack)/reminders" options={{ headerShown: false }} />
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
               </Stack>

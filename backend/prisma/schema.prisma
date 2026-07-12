@@ -261,26 +261,33 @@ model AssistantMessage {
 // CRM entity so the notification can deep-link to it; the snapshot doesn't
 // stay in sync with CRM renames.
 model Reminder {
-  id              String                  @id @default(cuid())
-  userId          String
-  title           String
-  notes           String?
-  dueAt           DateTime
-  status          ReminderStatus          @default(SCHEDULED)
-  snoozedUntil    DateTime?
-  linkType        ReminderLinkType?
-  linkProvider    CrmProvider?
-  linkExternalId  String?
-  linkLabel       String?
-  attempts        Int                     @default(0)
-  lastError       String?
-  deliveredAt     DateTime?
-  source          AssistantMessageSource  @default(text)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  id                  String                  @id @default(cuid())
+  userId              String
+  title               String
+  notes               String?
+  // The event/target time the user cares about (what they picked, or the
+  // appointment start). Displayed and sorted on.
+  dueAt               DateTime
+  // How many minutes before dueAt to fire. Default 15; 0 means "at the event".
+  remindOffsetMinutes Int                     @default(15)
+  // The actual time the notification fires = clamp(dueAt - offset). This is what
+  // the dispatch cron and on-device local notifications schedule against.
+  notifyAt            DateTime
+  status              ReminderStatus          @default(SCHEDULED)
+  snoozedUntil        DateTime?
+  linkType            ReminderLinkType?
+  linkProvider        CrmProvider?
+  linkExternalId      String?
+  linkLabel           String?
+  attempts            Int                     @default(0)
+  lastError           String?
+  deliveredAt         DateTime?
+  source              AssistantMessageSource  @default(text)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
-  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, dueAt])
-  @@index([status, dueAt])
+  @@index([status, notifyAt])
 }

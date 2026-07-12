@@ -120,7 +120,11 @@ export type GhlAppointmentSummary = {
   startTime?: string;
   endTime?: string;
   contactId?: string;
+  contactName?: string;
   calendarId?: string;
+  calendarName?: string;
+  ownerId?: string;
+  ownerName?: string;
   status?: string;
 };
 
@@ -150,6 +154,7 @@ type GhlRawEvent = {
   endTime?: string | number | Record<string, unknown>;
   contactId?: string;
   calendarId?: string;
+  assignedUserId?: string;
   appointmentStatus?: string;
 };
 
@@ -702,13 +707,75 @@ export class GhlService {
         calendarTimeZones.set(calendarId, timeZone);
       }
 
+      const events = raw.events ?? [];
       appointments.push(
-        ...(raw.events ?? []).map((event) => this.toAppointmentSummary(event, timeZone)),
+        ...events.map((event) => {
+          const summary = this.toAppointmentSummary(event, timeZone);
+          // The events-by-calendar endpoint frequently omits calendarId on each
+          // event; fall back to the calendar we queried so the name resolves.
+          if (!summary.calendarId) summary.calendarId = calendarId;
+          return summary;
+        }),
       );
     }
 
+    await this.enrichAppointments(userId, appointments);
+
     appointments.sort((a, b) => this.appointmentSortKey(a) - this.appointmentSortKey(b));
     return { appointments };
+  }
+
+  // Resolve the human-readable calendar / contact / owner names for a batch of
+  // appointments. Each lookup is best-effort and cached by id within the batch
+  // so we never fetch the same contact/user twice, and a failure just leaves
+  // that name blank rather than failing the whole list.
+  private async enrichAppointments(
+    userId: string,
+    appointments: GhlAppointmentSummary[],
+  ): Promise<void> {
+    if (appointments.length === 0) return;
+
+    // Calendar names come from a single list call.
+    const calendarNameById = new Map<string, string>();
+    try {
+      const { calendars } = await this.listCalendars(userId);
+      for (const calendar of calendars) calendarNameById.set(calendar.id, calendar.name);
+    } catch {
+      // Names are optional; leave calendarName undefined.
+    }
+
+    const uniqueContactIds = [
+      ...new Set(appointments.map((a) => a.contactId).filter((id): id is string => !!id)),
+    ];
+    const uniqueOwnerIds = [
+      ...new Set(appointments.map((a) => a.ownerId).filter((id): id is string => !!id)),
+    ];
+
+    const contactNames = new Map<string, string>();
+    const ownerNames = new Map<string, string>();
+
+    await Promise.all([
+      ...uniqueContactIds.map(async (id) => {
+        const name = await this.getContactName(userId, id).catch(() => undefined);
+        if (name) contactNames.set(id, name);
+      }),
+      ...uniqueOwnerIds.map(async (id) => {
+        const name = await this.getUserName(userId, id).catch(() => undefined);
+        if (name) ownerNames.set(id, name);
+      }),
+    ]);
+
+    for (const appointment of appointments) {
+      if (appointment.calendarId) {
+        appointment.calendarName = calendarNameById.get(appointment.calendarId);
+      }
+      if (appointment.contactId) {
+        appointment.contactName = contactNames.get(appointment.contactId);
+      }
+      if (appointment.ownerId) {
+        appointment.ownerName = ownerNames.get(appointment.ownerId);
+      }
+    }
   }
 
   async createAppointment(
@@ -1516,8 +1583,45 @@ export class GhlService {
       endTime: this.normalizeEventTime(event.endTime, tz),
       contactId: event.contactId,
       calendarId: event.calendarId,
+      ownerId: event.assignedUserId,
       status: event.appointmentStatus,
     };
+  }
+
+  // Best-effort lookup of a contact's display name from its id. Returns
+  // undefined on any failure so appointment enrichment can degrade gracefully.
+  private async getContactName(userId: string, contactId: string): Promise<string | undefined> {
+    const raw = await this.ghlRequest<{ contact?: GhlRawContact } & GhlRawContact>(
+      userId,
+      'GET',
+      `/contacts/${contactId}`,
+    );
+    const contact = raw.contact ?? raw;
+    return (
+      [contact.firstName, contact.lastName].filter(Boolean).join(' ') ||
+      contact.name ||
+      undefined
+    );
+  }
+
+  // Best-effort lookup of a GHL user's (appointment owner's) display name.
+  // The /users endpoint may be out of scope for some connections; callers
+  // should catch and treat a rejection as "owner unknown".
+  private async getUserName(userId: string, ghlUserId: string): Promise<string | undefined> {
+    const raw = await this.ghlRequest<{
+      user?: { name?: string; firstName?: string; lastName?: string; email?: string };
+      name?: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+    }>(userId, 'GET', `/users/${ghlUserId}`);
+    const user = raw.user ?? raw;
+    return (
+      user.name ||
+      [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+      user.email ||
+      undefined
+    );
   }
 
   /**

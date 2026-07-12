@@ -7,6 +7,7 @@ import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { markBootstrapReady } from '@/lib/bootstrap-signal';
 import { routeForUser } from '@/lib/onboarding-route';
+import { registerPushToken } from '@/lib/push/register-push-token';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 import { APP_BG } from '@/constants/theme';
 
@@ -43,6 +44,11 @@ export default function RootIndex() {
           go('/signup');
           return;
         }
+
+        // Returning users skip the auth screens, so re-register the push token
+        // on every cold start to keep the backend's token fresh (and ensure the
+        // notification channel/handler are set up). Fire-and-forget.
+        void registerPushToken();
 
         try {
           const me = await withTimeout(getMe(), ME_TIMEOUT_MS);

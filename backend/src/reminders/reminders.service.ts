@@ -15,6 +15,8 @@ import { UpdateReminderDto } from './dto/update-reminder.dto';
 const MAX_ATTEMPTS = 3;
 const DISPATCH_BATCH = 50;
 const PAST_GRACE_MS = 60_000;
+const DEFAULT_OFFSET_MINUTES = 15;
+const MAX_OFFSET_MINUTES = 7 * 24 * 60; // one week
 const ACTIVE_STATUSES: ReminderStatus[] = [
   ReminderStatus.SCHEDULED,
   ReminderStatus.SNOOZED,
@@ -33,12 +35,16 @@ export class RemindersService {
 
   async create(userId: string, dto: CreateReminderDto) {
     const dueAt = this.parseDueAt(dto.dueAt);
+    const remindOffsetMinutes = this.normalizeOffset(dto.remindOffsetMinutes);
+    const notifyAt = this.computeNotifyAt(dueAt, remindOffsetMinutes);
     const reminder = await this.prisma.reminder.create({
       data: {
         userId,
         title: dto.title,
         notes: dto.notes ?? null,
         dueAt,
+        remindOffsetMinutes,
+        notifyAt,
         linkType: dto.linkType ?? null,
         linkProvider: dto.linkProvider ?? null,
         linkExternalId: dto.linkExternalId ?? null,
@@ -50,6 +56,7 @@ export class RemindersService {
       reminderId: reminder.id,
       title: reminder.title,
       dueAt: reminder.dueAt.toISOString(),
+      notifyAt: reminder.notifyAt.toISOString(),
     });
     return reminder;
   }
@@ -104,8 +111,19 @@ export class RemindersService {
 
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.notes !== undefined) data.notes = dto.notes;
-    if (dto.dueAt !== undefined) {
-      data.dueAt = this.parseDueAt(dto.dueAt);
+    // Recompute notifyAt whenever the event time or the offset changes, and
+    // reset delivery bookkeeping so the (possibly re-scheduled) reminder fires
+    // again.
+    if (dto.dueAt !== undefined || dto.remindOffsetMinutes !== undefined) {
+      const dueAt =
+        dto.dueAt !== undefined ? this.parseDueAt(dto.dueAt) : existing.dueAt;
+      const remindOffsetMinutes =
+        dto.remindOffsetMinutes !== undefined
+          ? this.normalizeOffset(dto.remindOffsetMinutes)
+          : existing.remindOffsetMinutes;
+      data.dueAt = dueAt;
+      data.remindOffsetMinutes = remindOffsetMinutes;
+      data.notifyAt = this.computeNotifyAt(dueAt, remindOffsetMinutes);
       data.status = ReminderStatus.SCHEDULED;
       data.attempts = 0;
       data.lastError = null;
@@ -130,6 +148,9 @@ export class RemindersService {
       where: { id },
       data: {
         dueAt: newDueAt,
+        // A snooze fires exactly at the chosen time, so drop the lead offset.
+        notifyAt: newDueAt,
+        remindOffsetMinutes: 0,
         snoozedUntil: newDueAt,
         status: ReminderStatus.SNOOZED,
         attempts: 0,
@@ -163,10 +184,10 @@ export class RemindersService {
     const due = await this.prisma.reminder.findMany({
       where: {
         status: { in: ACTIVE_STATUSES },
-        dueAt: { lte: new Date() },
+        notifyAt: { lte: new Date() },
         attempts: { lt: MAX_ATTEMPTS },
       },
-      orderBy: { dueAt: 'asc' },
+      orderBy: { notifyAt: 'asc' },
       take: DISPATCH_BATCH,
     });
 
@@ -233,6 +254,22 @@ export class RemindersService {
       throw new BadRequestException('dueAt is in the past');
     }
     return d;
+  }
+
+  private normalizeOffset(raw: number | undefined): number {
+    if (raw === undefined || raw === null) return DEFAULT_OFFSET_MINUTES;
+    if (!Number.isFinite(raw) || raw < 0) {
+      throw new BadRequestException('remindOffsetMinutes must be >= 0');
+    }
+    return Math.min(Math.round(raw), MAX_OFFSET_MINUTES);
+  }
+
+  // The notification fires `offset` minutes before the event. If that instant is
+  // already in the past (the reminder was created inside the lead window), fall
+  // back to firing exactly at the event time.
+  private computeNotifyAt(dueAt: Date, offsetMinutes: number): Date {
+    const candidate = new Date(dueAt.getTime() - offsetMinutes * 60_000);
+    return candidate.getTime() <= Date.now() ? dueAt : candidate;
   }
 
   private resolveSnoozeTarget(dto: SnoozeReminderDto): Date {

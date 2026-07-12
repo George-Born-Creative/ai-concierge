@@ -12,8 +12,10 @@ import type {
   GhlCalendarsListResponse,
   GhlContactSummary,
   GhlContactsListResponse,
+  GhlOpportunitiesListResponse,
   GhlStatusResponse,
   ListGhlCalendarEventsParams,
+  ListGhlOpportunitiesParams,
   UpdateGhlCalendarRequest,
 } from './types';
 
@@ -65,6 +67,22 @@ export async function deleteContact(contactId: string): Promise<{ ok: true }> {
   return apiRequest<{ ok: true }>(`/integrations/ghl/contacts/${contactId}`, {
     method: 'DELETE',
   });
+}
+
+export async function listOpportunities(
+  params?: ListGhlOpportunitiesParams,
+): Promise<GhlOpportunitiesListResponse> {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.query) q.set('query', params.query);
+  if (params?.pipelineId) q.set('pipelineId', params.pipelineId);
+  if (params?.status) q.set('status', params.status);
+  const suffix = q.toString();
+  return apiRequest<GhlOpportunitiesListResponse>(
+    suffix
+      ? `/integrations/ghl/opportunities?${suffix}`
+      : '/integrations/ghl/opportunities',
+  );
 }
 
 export async function listCalendars(): Promise<GhlCalendarsListResponse> {
