@@ -36,17 +36,38 @@ const APPT_PREFIX = "appt:";
 // Minutes before an appointment to fire the heads-up notification.
 const APPT_LEAD_MINUTES = 15;
 
-// The instant the notification should fire. Falls back to dueAt for older
-// payloads that predate notifyAt.
-function fireAt(reminder: Reminder): number {
-  const notify = Date.parse(reminder.notifyAt ?? reminder.dueAt);
-  return Number.isNaN(notify) ? Date.parse(reminder.dueAt) : notify;
+// A reminder is worth scheduling while its event time is still ahead and it's
+// in an active state. We schedule against the event time (dueAt) and derive the
+// individual notification stages from remindOffsetMinutes.
+function eventInFuture(reminder: Reminder): boolean {
+  if (!ACTIVE.has(reminder.status)) return false;
+  const due = Date.parse(reminder.dueAt);
+  return !Number.isNaN(due) && due > Date.now();
 }
 
-function isActiveFuture(reminder: Reminder): boolean {
-  if (!ACTIVE.has(reminder.status)) return false;
-  const when = fireAt(reminder);
-  return !Number.isNaN(when) && when > Date.now();
+// Extra lead-time nudges (minutes before the event). When the user asks to be
+// reminded N minutes before, we also nudge at each smaller milestone below N,
+// plus right at the event time — e.g. picking "1 hour" fires at 60, 30 and 15
+// min before AND at the event time.
+const STAGE_MILESTONES = [60, 30, 15];
+
+// Build the descending set of lead-times (in minutes) to fire for a reminder:
+// always the event itself (0), the exact chosen offset, and every milestone
+// smaller than it.
+function stageOffsets(offset: number): number[] {
+  const set = new Set<number>([0]);
+  if (offset > 0) set.add(offset);
+  for (const m of STAGE_MILESTONES) if (m < offset) set.add(m);
+  return [...set].sort((a, b) => b - a);
+}
+
+function leadLabel(mins: number): string {
+  if (mins <= 0) return "now";
+  if (mins % 60 === 0) {
+    const h = mins / 60;
+    return h === 1 ? "in 1 hour" : `in ${h} hours`;
+  }
+  return `in ${mins} minutes`;
 }
 
 // Ensure the foreground handler + Android channel exist and we hold notification
@@ -106,50 +127,82 @@ function triggerFor(
   };
 }
 
-// Schedule (or reschedule) a single reminder's local notification. The reminder
-// id is used as the notification identifier so it's deterministic to update or
-// cancel. No-ops for past / non-active reminders.
+// Schedule (or reschedule) a reminder's staged local notifications. Picking a
+// lead time fires a notification at the chosen offset, at each smaller
+// milestone (60/30/15 min), and at the event time itself. Each stage uses a
+// deterministic identifier (`<id>` for the event, `<id>#<mins>` for leads) so
+// edits/cancels are reliable. No-ops for past / non-active reminders.
 export async function scheduleReminderNotification(
   reminder: Reminder,
 ): Promise<void> {
-  if (!isActiveFuture(reminder)) {
-    await cancelReminderNotification(reminder.id);
-    return;
-  }
+  // Always clear existing stages first so edits (new time/offset) take effect.
+  await cancelReminderNotification(reminder.id);
+  if (!eventInFuture(reminder)) return;
+
   const ok = await ensureSetup();
   if (!ok) return;
   const Notifications = loadNotifications();
 
-  // Replace any existing schedule for this reminder so time edits take effect.
-  await Notifications.cancelScheduledNotificationAsync(reminder.id).catch(
-    () => undefined,
-  );
-  await Notifications.scheduleNotificationAsync({
-    identifier: reminder.id,
-    content: {
-      title: reminder.title,
-      body: reminder.notes ?? "Reminder is due",
-      sound: "default",
-      data: {
-        kind: "reminder",
-        reminderId: reminder.id,
-        linkType: reminder.linkType ?? null,
-        linkProvider: reminder.linkProvider ?? null,
-        linkExternalId: reminder.linkExternalId ?? null,
+  const dueMs = Date.parse(reminder.dueAt);
+  const offset = Number.isFinite(reminder.remindOffsetMinutes)
+    ? reminder.remindOffsetMinutes
+    : 0;
+  const now = Date.now();
+  const notes = reminder.notes?.trim();
+
+  for (const mins of stageOffsets(offset)) {
+    const fire = new Date(dueMs - mins * 60_000);
+    // Skip stages already in the past (e.g. created inside the lead window).
+    if (fire.getTime() <= now) continue;
+
+    const identifier = mins === 0 ? reminder.id : `${reminder.id}#${mins}`;
+    const body =
+      mins === 0
+        ? (notes ?? "It's time")
+        : `Reminder ${leadLabel(mins)}${notes ? ` · ${notes}` : ""}`;
+
+    await Notifications.scheduleNotificationAsync({
+      identifier,
+      content: {
+        title: reminder.title,
+        body,
+        sound: "default",
+        data: {
+          kind: "reminder",
+          reminderId: reminder.id,
+          stageMinutes: mins,
+          linkType: reminder.linkType ?? null,
+          linkProvider: reminder.linkProvider ?? null,
+          linkExternalId: reminder.linkExternalId ?? null,
+        },
       },
-    },
-    trigger: triggerFor(new Date(fireAt(reminder))),
-  }).catch(() => undefined);
+      trigger: triggerFor(fire),
+    }).catch(() => undefined);
+  }
 }
 
+// Cancel every stage previously scheduled for a reminder. We scan by the
+// reminderId stored in each notification's data (plus the id/`id#mins` naming)
+// so all staged notifications are removed, not just one.
 export async function cancelReminderNotification(
   reminderId: string,
 ): Promise<void> {
   if (Platform.OS === "web") return;
   const Notifications = loadNotifications();
-  await Notifications.cancelScheduledNotificationAsync(reminderId).catch(
-    () => undefined,
-  );
+  const scheduled =
+    await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
+  for (const item of scheduled) {
+    const data = item.content?.data as { reminderId?: unknown } | undefined;
+    if (
+      data?.reminderId === reminderId ||
+      item.identifier === reminderId ||
+      item.identifier.startsWith(`${reminderId}#`)
+    ) {
+      await Notifications.cancelScheduledNotificationAsync(
+        item.identifier,
+      ).catch(() => undefined);
+    }
+  }
 }
 
 // Reconcile the full set of on-device notifications against the given reminders.
@@ -166,7 +219,7 @@ export async function syncReminderNotifications(
   // (scheduled directly from the live GHL appointment list), so exclude them
   // here to avoid scheduling the same meeting twice.
   const desired = reminders.filter(
-    (r) => r.linkType !== "APPOINTMENT" && isActiveFuture(r),
+    (r) => r.linkType !== "APPOINTMENT" && eventInFuture(r),
   );
   const desiredIds = new Set(desired.map((r) => r.id));
 

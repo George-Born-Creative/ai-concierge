@@ -274,7 +274,7 @@ export function CreateReminderModal({
             <Text style={styles.notifyHint}>
               {offset === 0
                 ? `You'll be notified at the event · ${notifyLabel}`
-                : `You'll be notified ${notifyLabel}`}
+                : `First alert ${notifyLabel}, then again closer in — and at the event time.`}
             </Text>
 
             <View style={styles.actions}>
