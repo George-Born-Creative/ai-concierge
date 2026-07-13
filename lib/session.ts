@@ -1,3 +1,4 @@
+import { clearRemindersCache } from './api/reminders-cache';
 import type { User } from './api/types';
 import { deleteSecureItem, getSecureItem, setSecureItem } from './secure-storage';
 
@@ -64,6 +65,9 @@ export async function clearSession(): Promise<void> {
   state.token = null;
   state.user = null;
   hydrated = true;
+  // Drop cached reminders/appointments so the next signed-in user never sees
+  // the previous account's data.
+  clearRemindersCache();
   await Promise.all([deleteSecureItem(TOKEN_KEY), deleteSecureItem(USER_KEY)]);
   emit();
 }

@@ -15,6 +15,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AssistantHistoryProvider } from '@/lib/assistant-history';
 import { isBootstrapReady, subscribeBootstrap } from '@/lib/bootstrap-signal';
 import { useNotificationTapHandler } from '@/lib/push/notification-handler';
+import { initRealtime } from '@/lib/realtime/socket';
 import { ToastProvider } from '@/lib/toast';
 
 // Keep the Android system bars painted with the app background so the
@@ -44,6 +45,10 @@ export default function RootLayout() {
     const unsubscribe = subscribeBootstrap(() => setBootReady(true));
     return unsubscribe;
   }, []);
+
+  // Open the realtime socket while signed in (reconnects and follows sign-in /
+  // sign-out via the session store).
+  useEffect(() => initRealtime(), []);
 
   // As soon as the JS overlay paints, hide the native splash. This avoids the
   // double-flash you'd otherwise see (native logo → JS dots → app).

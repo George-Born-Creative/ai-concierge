@@ -11,6 +11,7 @@ import { OpenAIKeysModule } from './openai-keys/openai-keys.module';
 import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PushModule } from './push/push.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { UsersModule } from './users/users.module';
 import { AssistantModule } from './assistant/assistant.module';
@@ -22,6 +23,7 @@ import { VoiceModule } from './voice/voice.module';
     ScheduleModule.forRoot(),
     HealthModule,
     PrismaModule,
+    RealtimeModule,
     AuthModule,
     UsersModule,
     PlansModule,
