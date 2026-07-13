@@ -21,6 +21,15 @@ import { CreateReminderModal } from '@/components/reminders/create-reminder-moda
 import { ReminderRow } from '@/components/reminders/reminder-row';
 import { ghlApi, remindersApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
+import {
+  getCachedAppointments,
+  getCachedReminders,
+  invalidateRemindersExcept,
+  isAppointmentsFresh,
+  isRemindersFresh,
+  setCachedAppointments,
+  setCachedReminders,
+} from '@/lib/api/reminders-cache';
 import type {
   GhlAppointmentSummary,
   Reminder,
@@ -33,6 +42,7 @@ import {
   syncReminderNotifications,
 } from '@/lib/push/local-notifications';
 import { usePushState } from '@/lib/push/state';
+import { useRealtimeEvent } from '@/lib/realtime/socket';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -79,9 +89,15 @@ export function RemindersScreenContent() {
   const isGhl = getUser()?.provider === 'ghl';
 
   const [range, setRange] = useState<ApptTab>('upcoming');
-  const [items, setItems] = useState<Reminder[]>([]);
-  const [appointments, setAppointments] = useState<GhlAppointmentSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from the in-memory cache so revisiting the screen renders instantly
+  // instead of flashing a spinner; the network still revalidates below.
+  const [items, setItems] = useState<Reminder[]>(
+    () => getCachedReminders('upcoming') ?? [],
+  );
+  const [appointments, setAppointments] = useState<GhlAppointmentSummary[]>(
+    () => getCachedAppointments() ?? [],
+  );
+  const [loading, setLoading] = useState(() => !getCachedReminders('upcoming'));
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   // When set, the modal opens in edit mode for this reminder.
@@ -89,10 +105,40 @@ export function RemindersScreenContent() {
   // When set, the action menu (edit / snooze / done / delete) is shown for it.
   const [menuReminder, setMenuReminder] = useState<Reminder | null>(null);
 
+  // Apply an optimistic change to the reminder list and keep the cache in sync
+  // so a later revisit reflects the mutation immediately. Other tabs' caches
+  // are dropped since they now hold pre-mutation data.
+  const applyItems = useCallback(
+    (updater: (prev: Reminder[]) => Reminder[]) => {
+      setItems((prev) => {
+        const next = updater(prev);
+        setCachedReminders(range, next);
+        invalidateRemindersExcept(range);
+        return next;
+      });
+    },
+    [range],
+  );
+
   const load = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
-      if (mode === 'initial') setLoading(true);
-      else setRefreshing(true);
+      // Show cached rows immediately (stale-while-revalidate); only spin when
+      // there's nothing cached for this tab.
+      const cached = getCachedReminders(range);
+      if (cached) {
+        setItems(cached);
+        setLoading(false);
+      } else if (mode === 'initial') {
+        setLoading(true);
+      }
+      // A routine focus with a still-fresh cache can skip the network entirely
+      // (rapid tab switches, quick back-and-forth). Pull-to-refresh and
+      // realtime events pass 'refresh' and always hit the network.
+      if (mode === 'initial' && isRemindersFresh(range)) {
+        setLoading(false);
+        return;
+      }
+      if (mode === 'refresh') setRefreshing(true);
       try {
         // Map the appointment-status tab to reminder ranges: Upcoming shows
         // upcoming reminders, All merges upcoming + past, Cancelled is
@@ -110,11 +156,16 @@ export function RemindersScreenContent() {
           data = [...byId.values()];
         }
         setItems(data);
+        setCachedReminders(range, data);
       } catch (err) {
-        show(
-          err instanceof ApiError ? err.message : 'Could not load reminders.',
-          'error',
-        );
+        // Keep showing cached rows if we have them; only surface the error when
+        // there's nothing to fall back to.
+        if (!cached) {
+          show(
+            err instanceof ApiError ? err.message : 'Could not load reminders.',
+            'error',
+          );
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -126,28 +177,37 @@ export function RemindersScreenContent() {
   // Pull ALL of the user's GoHighLevel appointments (far past → far future) once
   // per focus; the visible tab filters them client-side. The window is
   // deliberately very wide so nothing is missed regardless of how old it is.
-  const loadAppointments = useCallback(async () => {
-    if (!isGhl) {
-      setAppointments([]);
-      return;
-    }
-    try {
-      const now = Date.now();
-      const DAY = 86_400_000;
-      const res = await ghlApi.listCalendarEvents({
-        startTime: new Date(now - 3650 * DAY).toISOString(),
-        endTime: new Date(now + 730 * DAY).toISOString(),
-      });
-      setAppointments(res.appointments);
-      // Schedule on-device notifications so appointments ring at their start
-      // time (and 15 min before) even in Expo Go / offline, without relying on
-      // the backend sync cron.
-      void syncAppointmentNotifications(res.appointments);
-    } catch {
-      // Non-fatal: reminders still render without the appointment rows.
-      setAppointments([]);
-    }
-  }, [isGhl]);
+  const loadAppointments = useCallback(
+    async (force = false) => {
+      if (!isGhl) {
+        setAppointments([]);
+        return;
+      }
+      // Serve cached appointments instantly; skip the (heavy, 12-year-window)
+      // fetch when the cache is still fresh unless a refresh is forced.
+      const cached = getCachedAppointments();
+      if (cached) setAppointments(cached);
+      if (!force && isAppointmentsFresh()) return;
+      try {
+        const now = Date.now();
+        const DAY = 86_400_000;
+        const res = await ghlApi.listCalendarEvents({
+          startTime: new Date(now - 3650 * DAY).toISOString(),
+          endTime: new Date(now + 730 * DAY).toISOString(),
+        });
+        setAppointments(res.appointments);
+        setCachedAppointments(res.appointments);
+        // Schedule on-device notifications so appointments ring at their start
+        // time (and 15 min before) even in Expo Go / offline, without relying on
+        // the backend sync cron.
+        void syncAppointmentNotifications(res.appointments);
+      } catch {
+        // Non-fatal: keep any cached rows; otherwise render without appointments.
+        if (!cached) setAppointments([]);
+      }
+    },
+    [isGhl],
+  );
 
   // Keep on-device local notifications in sync with the server. Runs on every
   // focus regardless of the visible tab, using the full "upcoming" set so the
@@ -171,8 +231,18 @@ export function RemindersScreenContent() {
 
   const refreshAll = useCallback(() => {
     void load('refresh');
-    void loadAppointments();
+    void loadAppointments(true);
   }, [load, loadAppointments]);
+
+  // Live updates: when the backend reports a reminder change (create/edit/
+  // snooze/dismiss/delete/dispatch or appointment sync), refetch and reschedule
+  // local notifications without waiting for the next screen focus.
+  const onReminderChanged = useCallback(() => {
+    void load('refresh');
+    void loadAppointments(true);
+    void syncLocal();
+  }, [load, loadAppointments, syncLocal]);
+  useRealtimeEvent('reminder.changed', onReminderChanged);
 
   // Merge reminders + live appointments for the active tab. Appointment-linked
   // reminders are hidden here because the live appointment row represents them,
@@ -216,7 +286,7 @@ export function RemindersScreenContent() {
   }, [items, appointments, range]);
 
   function onCreated(r: Reminder) {
-    setItems((prev) =>
+    applyItems((prev) =>
       [r, ...prev].sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
     );
     void scheduleReminderNotification(r);
@@ -225,7 +295,7 @@ export function RemindersScreenContent() {
   // Edit reschedules the local notification against the reminder's new
   // time/offset (scheduleReminderNotification cancels the old one first).
   function onUpdated(r: Reminder) {
-    setItems((prev) =>
+    applyItems((prev) =>
       prev
         .map((x) => (x.id === r.id ? r : x))
         .sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
@@ -251,7 +321,7 @@ export function RemindersScreenContent() {
   async function snooze(r: Reminder, preset: SnoozePreset) {
     try {
       const updated = await remindersApi.snoozeReminder(r.id, { preset });
-      setItems((prev) => prev.map((x) => (x.id === r.id ? updated : x)));
+      applyItems((prev) => prev.map((x) => (x.id === r.id ? updated : x)));
       void scheduleReminderNotification(updated);
       show('Snoozed.', 'success');
     } catch (err) {
@@ -265,7 +335,7 @@ export function RemindersScreenContent() {
   async function dismiss(r: Reminder) {
     try {
       await remindersApi.dismissReminder(r.id);
-      setItems((prev) => prev.filter((x) => x.id !== r.id));
+      applyItems((prev) => prev.filter((x) => x.id !== r.id));
       void cancelReminderNotification(r.id);
       show('Marked done.', 'success');
     } catch (err) {
@@ -279,7 +349,7 @@ export function RemindersScreenContent() {
   async function remove(r: Reminder) {
     try {
       await remindersApi.deleteReminder(r.id);
-      setItems((prev) => prev.filter((x) => x.id !== r.id));
+      applyItems((prev) => prev.filter((x) => x.id !== r.id));
       void cancelReminderNotification(r.id);
       show('Deleted.', 'success');
     } catch (err) {

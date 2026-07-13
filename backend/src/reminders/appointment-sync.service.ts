@@ -10,6 +10,7 @@ import {
 
 import { GhlService } from '../integrations/ghl/ghl.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 // How many minutes before an appointment's start time the reminder should fire.
 // Overridable via env; defaults to 15.
@@ -62,6 +63,7 @@ export class AppointmentReminderSyncService {
     private readonly prisma: PrismaService,
     private readonly ghl: GhlService,
     private readonly config: ConfigService,
+    private readonly realtime: RealtimeService,
   ) {
     const raw = Number(
       this.config.get<string>('APPOINTMENT_REMINDER_LEAD_MINUTES'),
@@ -88,6 +90,13 @@ export class AppointmentReminderSyncService {
           created += result.created;
           updated += result.updated;
           canceled += result.canceled;
+          // Nudge the user's open screens to refetch when their linked
+          // reminders actually changed.
+          if (result.created + result.updated + result.canceled > 0) {
+            this.realtime.emitToUser(userId, 'reminder.changed', {
+              action: 'appointment-sync',
+            });
+          }
         } catch (err) {
           // One user's GHL hiccup (revoked token, no location, rate limit)
           // shouldn't stop the rest.

@@ -8,6 +8,7 @@ import { AssistantMessageSource, Prisma, ReminderStatus } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { CreateReminderDto } from './dto/create-reminder.dto';
 import { SnoozePreset, SnoozeReminderDto } from './dto/snooze-reminder.dto';
 import { UpdateReminderDto } from './dto/update-reminder.dto';
@@ -31,7 +32,21 @@ export class RemindersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly push: PushService,
+    private readonly realtime: RealtimeService,
   ) {}
+
+  // Notify the user's connected devices that their reminders changed so open
+  // screens can live-update without waiting for a focus refetch.
+  private emitChanged(
+    userId: string,
+    action: string,
+    reminderId: string,
+  ): void {
+    this.realtime.emitToUser(userId, 'reminder.changed', {
+      action,
+      reminderId,
+    });
+  }
 
   async create(userId: string, dto: CreateReminderDto) {
     const dueAt = this.parseDueAt(dto.dueAt);
@@ -58,6 +73,7 @@ export class RemindersService {
       dueAt: reminder.dueAt.toISOString(),
       notifyAt: reminder.notifyAt.toISOString(),
     });
+    this.emitChanged(userId, 'created', reminder.id);
     return reminder;
   }
 
@@ -138,6 +154,7 @@ export class RemindersService {
       data,
     });
     await this.audit(userId, 'reminder.updated', { reminderId: id });
+    this.emitChanged(userId, 'updated', id);
     return updated;
   }
 
@@ -161,6 +178,7 @@ export class RemindersService {
       reminderId: id,
       until: newDueAt.toISOString(),
     });
+    this.emitChanged(userId, 'snoozed', id);
     return updated;
   }
 
@@ -171,6 +189,7 @@ export class RemindersService {
       data: { status: ReminderStatus.DISMISSED },
     });
     await this.audit(userId, 'reminder.dismissed', { reminderId: id });
+    this.emitChanged(userId, 'dismissed', id);
     return updated;
   }
 
@@ -178,6 +197,7 @@ export class RemindersService {
     await this.assertOwned(userId, id);
     await this.prisma.reminder.delete({ where: { id } });
     await this.audit(userId, 'reminder.deleted', { reminderId: id });
+    this.emitChanged(userId, 'deleted', id);
   }
 
   async dispatchDueReminders(): Promise<{ delivered: number; failed: number }> {
@@ -220,6 +240,7 @@ export class RemindersService {
           reminderId: r.id,
           ticketId: result.ticketId,
         });
+        this.emitChanged(r.userId, 'delivered', r.id);
         delivered++;
       } else {
         const nextAttempts = r.attempts + 1;
