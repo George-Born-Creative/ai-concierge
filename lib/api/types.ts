@@ -172,6 +172,37 @@ export type CreateGhlContactRequest = {
   phone?: string;
 };
 
+export type GhlOpportunitySummary = {
+  id: string;
+  name: string;
+  monetaryValue?: number;
+  status: string;
+  pipelineId: string;
+  pipelineStageId?: string;
+  pipelineStageName?: string;
+  contactId?: string;
+  contactName?: string;
+  assignedTo?: string;
+  source?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type GhlOpportunitiesListResponse = {
+  opportunities: GhlOpportunitySummary[];
+  meta?: {
+    total?: number;
+    nextPageUrl?: string | null;
+  };
+};
+
+export type ListGhlOpportunitiesParams = {
+  limit?: number;
+  query?: string;
+  pipelineId?: string;
+  status?: 'open' | 'won' | 'lost' | 'abandoned' | 'all';
+};
+
 export type GhlCalendarSummary = {
   id: string;
   name: string;
@@ -188,7 +219,11 @@ export type GhlAppointmentSummary = {
   startTime?: string;
   endTime?: string;
   contactId?: string;
+  contactName?: string;
   calendarId?: string;
+  calendarName?: string;
+  ownerId?: string;
+  ownerName?: string;
   status?: string;
 };
 
@@ -488,7 +523,13 @@ export type Reminder = {
   id: string;
   title: string;
   notes: string | null;
+  // The event/target time the user picked (or the appointment start).
   dueAt: string;
+  // Minutes before `dueAt` to notify (0 = at the event).
+  remindOffsetMinutes: number;
+  // The actual time the notification fires = clamp(dueAt - offset). Local
+  // notifications are scheduled against this.
+  notifyAt: string;
   status: ReminderStatus;
   snoozedUntil: string | null;
   linkType: ReminderLinkType | null;
@@ -503,6 +544,7 @@ export type CreateReminderRequest = {
   title: string;
   notes?: string;
   dueAt: string;
+  remindOffsetMinutes?: number;
   linkType?: ReminderLinkType;
   linkProvider?: CrmProvider;
   linkExternalId?: string;

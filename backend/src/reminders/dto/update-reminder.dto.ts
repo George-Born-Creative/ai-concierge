@@ -1,5 +1,14 @@
 import { CrmProvider, ReminderLinkType } from '@prisma/client';
-import { IsDateString, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class UpdateReminderDto {
   @IsOptional()
@@ -15,6 +24,12 @@ export class UpdateReminderDto {
   @IsOptional()
   @IsDateString()
   dueAt?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10080)
+  remindOffsetMinutes?: number;
 
   @IsOptional()
   @IsEnum(ReminderLinkType)

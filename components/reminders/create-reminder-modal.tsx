@@ -1,13 +1,14 @@
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -22,21 +23,45 @@ type Props = {
   visible: boolean;
   onClose(): void;
   onCreated(reminder: Reminder): void;
+  // When provided, the modal edits this reminder instead of creating a new one.
+  reminder?: Reminder | null;
+  onUpdated?(reminder: Reminder): void;
 };
 
-export function CreateReminderModal({ visible, onClose, onCreated }: Props) {
+// Lead-time presets the user can pick before the event fires the notification.
+const OFFSET_OPTIONS: { label: string; value: number }[] = [
+  { label: 'At time', value: 0 },
+  { label: '5 min', value: 5 },
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '1 hour', value: 60 },
+];
+
+const DEFAULT_OFFSET = 15;
+
+// Mirrors the backend: fire `offset` minutes before the event, unless that's
+// already past (created inside the lead window), in which case fire at the event.
+function computeNotifyAt(dueAt: Date, offsetMinutes: number): Date {
+  const candidate = new Date(dueAt.getTime() - offsetMinutes * 60_000);
+  return candidate.getTime() <= Date.now() ? dueAt : candidate;
+}
+
+export function CreateReminderModal({
+  visible,
+  onClose,
+  onCreated,
+  reminder,
+  onUpdated,
+}: Props) {
   const { show } = useToast();
-  // Recompute the default due time each time the modal becomes visible so
-  // a re-open after dismiss starts from "now + 1 hour" again.
-  const defaultDue = useMemo(
-    () => new Date(Date.now() + 60 * 60 * 1000),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visible],
-  );
+  const isEdit = !!reminder;
 
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
-  const [dueAt, setDueAt] = useState<Date>(defaultDue);
+  const [dueAt, setDueAt] = useState<Date>(
+    () => new Date(Date.now() + 60 * 60 * 1000),
+  );
+  const [offset, setOffset] = useState<number>(DEFAULT_OFFSET);
   const [submitting, setSubmitting] = useState(false);
 
   // Android shows the picker imperatively; iOS uses an inline spinner.
@@ -44,16 +69,27 @@ export function CreateReminderModal({ visible, onClose, onCreated }: Props) {
     null,
   );
 
-  function reset() {
-    setTitle('');
-    setNotes('');
-    setDueAt(defaultDue);
+  // Prime the form whenever the modal opens (fresh "now + 1h" for create, or
+  // the reminder's values for edit).
+  useEffect(() => {
+    if (!visible) return;
+    if (reminder) {
+      setTitle(reminder.title);
+      setNotes(reminder.notes ?? '');
+      setDueAt(new Date(reminder.dueAt));
+      setOffset(reminder.remindOffsetMinutes ?? DEFAULT_OFFSET);
+    } else {
+      setTitle('');
+      setNotes('');
+      setDueAt(new Date(Date.now() + 60 * 60 * 1000));
+      setOffset(DEFAULT_OFFSET);
+    }
     setSubmitting(false);
     setAndroidPicker(null);
-  }
+  }, [visible, reminder]);
 
   function close() {
-    reset();
+    setAndroidPicker(null);
     onClose();
   }
 
@@ -64,23 +100,37 @@ export function CreateReminderModal({ visible, onClose, onCreated }: Props) {
       return;
     }
     if (dueAt.getTime() < Date.now() + 30_000) {
-      show('Pick a time at least 30 seconds in the future.', 'error');
+      show('Pick a future date and time — past times are not allowed.', 'error');
       return;
     }
     setSubmitting(true);
     try {
-      const created = await remindersApi.createReminder({
-        title: trimmed,
-        notes: notes.trim() || undefined,
-        dueAt: dueAt.toISOString(),
-        source: 'text',
-      });
-      onCreated(created);
-      show('Reminder created.', 'success');
+      if (isEdit && reminder) {
+        const updated = await remindersApi.updateReminder(reminder.id, {
+          title: trimmed,
+          notes: notes.trim() || undefined,
+          dueAt: dueAt.toISOString(),
+          remindOffsetMinutes: offset,
+        });
+        onUpdated?.(updated);
+        show('Reminder updated.', 'success');
+      } else {
+        const created = await remindersApi.createReminder({
+          title: trimmed,
+          notes: notes.trim() || undefined,
+          dueAt: dueAt.toISOString(),
+          remindOffsetMinutes: offset,
+          source: 'text',
+        });
+        onCreated(created);
+        show('Reminder created.', 'success');
+      }
       close();
     } catch (err) {
       show(
-        err instanceof Error ? err.message : 'Could not create reminder.',
+        err instanceof Error
+          ? err.message
+          : `Could not ${isEdit ? 'update' : 'create'} reminder.`,
         'error',
       );
     } finally {
@@ -93,6 +143,14 @@ export function CreateReminderModal({ visible, onClose, onCreated }: Props) {
     if (event.type === 'dismissed' || !picked) return;
     setDueAt(picked);
   }
+
+  const notifyAt = computeNotifyAt(dueAt, offset);
+  const notifyLabel = notifyAt.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
   return (
     <Modal
@@ -107,107 +165,145 @@ export function CreateReminderModal({ visible, onClose, onCreated }: Props) {
       >
         <View style={styles.sheet}>
           <View style={styles.handle} />
-          <Text style={styles.heading}>New reminder</Text>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.heading}>
+              {isEdit ? 'Edit reminder' : 'New reminder'}
+            </Text>
 
-          <Text style={styles.label}>Title</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Call Sarah about renewal"
-            placeholderTextColor="#94A3B8"
-            value={title}
-            onChangeText={setTitle}
-            autoFocus
-          />
-
-          <Text style={styles.label}>Notes (optional)</Text>
-          <TextInput
-            style={[styles.input, styles.multiline]}
-            placeholder="Any extra context for the notification body"
-            placeholderTextColor="#94A3B8"
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            numberOfLines={3}
-          />
-
-          <Text style={styles.label}>Due at</Text>
-          {Platform.OS === 'ios' ? (
-            <DateTimePicker
-              value={dueAt}
-              mode="datetime"
-              display="spinner"
-              minimumDate={new Date(Date.now() + 30_000)}
-              onChange={onChangeNative}
-            />
-          ) : Platform.OS === 'android' ? (
-            <View style={styles.androidPickerRow}>
-              <Pressable
-                style={styles.androidPickerBtn}
-                onPress={() => setAndroidPicker('date')}
-              >
-                <Text style={styles.androidPickerBtnText}>
-                  {dueAt.toLocaleDateString()}
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.androidPickerBtn}
-                onPress={() => setAndroidPicker('time')}
-              >
-                <Text style={styles.androidPickerBtnText}>
-                  {dueAt.toLocaleTimeString([], {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              </Pressable>
-              {androidPicker ? (
-                <DateTimePicker
-                  value={dueAt}
-                  mode={androidPicker}
-                  minimumDate={
-                    androidPicker === 'date' ? new Date() : undefined
-                  }
-                  onChange={onChangeNative}
-                />
-              ) : null}
-            </View>
-          ) : (
+            <Text style={styles.label}>Title</Text>
             <TextInput
               style={styles.input}
-              value={dueAt.toISOString().slice(0, 16)}
-              onChangeText={(t) => {
-                const parsed = new Date(t);
-                if (!Number.isNaN(parsed.getTime())) setDueAt(parsed);
-              }}
-              placeholder="YYYY-MM-DDTHH:MM"
+              placeholder="e.g. Call Sarah about renewal"
               placeholderTextColor="#94A3B8"
+              value={title}
+              onChangeText={setTitle}
+              autoFocus={!isEdit}
             />
-          )}
 
-          <View style={styles.actions}>
-            <Pressable
-              style={[styles.btn, styles.btnGhost]}
-              onPress={close}
-              disabled={submitting}
-            >
-              <Text style={styles.btnGhostText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.btn,
-                styles.btnPrimary,
-                submitting && styles.btnDisabled,
-              ]}
-              onPress={submit}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text style={styles.btnPrimaryText}>Create</Text>
-              )}
-            </Pressable>
-          </View>
+            <Text style={styles.label}>Notes (optional)</Text>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="Any extra context for the notification body"
+              placeholderTextColor="#94A3B8"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              numberOfLines={3}
+            />
+
+            <Text style={styles.label}>Event time</Text>
+            {Platform.OS === 'ios' ? (
+              <DateTimePicker
+                value={dueAt}
+                mode="datetime"
+                display="spinner"
+                minimumDate={new Date(Date.now() + 30_000)}
+                onChange={onChangeNative}
+              />
+            ) : Platform.OS === 'android' ? (
+              <View style={styles.androidPickerRow}>
+                <Pressable
+                  style={styles.androidPickerBtn}
+                  onPress={() => setAndroidPicker('date')}
+                >
+                  <Text style={styles.androidPickerBtnText}>
+                    {dueAt.toLocaleDateString()}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.androidPickerBtn}
+                  onPress={() => setAndroidPicker('time')}
+                >
+                  <Text style={styles.androidPickerBtnText}>
+                    {dueAt.toLocaleTimeString([], {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </Pressable>
+                {androidPicker ? (
+                  <DateTimePicker
+                    value={dueAt}
+                    mode={androidPicker}
+                    minimumDate={
+                      androidPicker === 'date' ? new Date() : undefined
+                    }
+                    onChange={onChangeNative}
+                  />
+                ) : null}
+              </View>
+            ) : (
+              <TextInput
+                style={styles.input}
+                value={dueAt.toISOString().slice(0, 16)}
+                onChangeText={(t) => {
+                  const parsed = new Date(t);
+                  if (!Number.isNaN(parsed.getTime())) setDueAt(parsed);
+                }}
+                placeholder="YYYY-MM-DDTHH:MM"
+                placeholderTextColor="#94A3B8"
+              />
+            )}
+
+            <Text style={styles.label}>Remind me</Text>
+            <View style={styles.offsetRow}>
+              {OFFSET_OPTIONS.map((opt) => {
+                const active = opt.value === offset;
+                return (
+                  <Pressable
+                    key={opt.value}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => setOffset(opt.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        active && styles.chipTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.notifyHint}>
+              {offset === 0
+                ? `You'll be notified at the event · ${notifyLabel}`
+                : `You'll be notified ${notifyLabel}`}
+            </Text>
+
+            <View style={styles.actions}>
+              <Pressable
+                style={[styles.btn, styles.btnGhost]}
+                onPress={close}
+                disabled={submitting}
+              >
+                <Text style={styles.btnGhostText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.btn,
+                  styles.btnPrimary,
+                  submitting && styles.btnDisabled,
+                ]}
+                onPress={submit}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.btnPrimaryText}>
+                    {isEdit ? 'Save' : 'Create'}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -227,6 +323,7 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    maxHeight: '90%',
   },
   handle: {
     alignSelf: 'center',
@@ -266,6 +363,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   androidPickerBtnText: { fontSize: 16, color: '#0F172A', fontWeight: '500' },
+  offsetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5EAF5',
+    backgroundColor: '#F8FAFF',
+  },
+  chipActive: { backgroundColor: '#1F49E0', borderColor: '#1F49E0' },
+  chipText: { fontSize: 14, color: '#5B6B82', fontWeight: '500' },
+  chipTextActive: { color: 'white' },
+  notifyHint: { fontSize: 12, color: '#64748B', marginTop: 10 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 24 },
   btn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   btnGhost: { backgroundColor: '#F1F5F9' },

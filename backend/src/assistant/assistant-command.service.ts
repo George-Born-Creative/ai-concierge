@@ -3,6 +3,7 @@ import { CrmProvider } from '@prisma/client';
 
 import { CRM_LABELS, crmLabel, crmLabelList } from '../common/crm-labels';
 import type {
+  GhlAppointmentSummary,
   GhlOpportunitySummary,
   GhlPipelineSummary,
 } from '../integrations/ghl/ghl.service';
@@ -875,7 +876,7 @@ export class AssistantCommandService {
     const result = await this.ghl.listCalendarEvents(userId, {
       startTime: range?.startTime,
       endTime: range?.endTime,
-      days: range?.days ?? 14,
+      days: range?.days ?? 60,
     });
     if (result.appointments.length === 0) {
       return { response: 'Nothing on the calendar for that window.', status: 'success' };
@@ -884,7 +885,7 @@ export class AssistantCommandService {
     return {
       response:
         `Here's what's coming up on your GoHighLevel calendar:\n${result.appointments
-          .slice(0, 10)
+          .slice(0, 50)
           .map((a) => this.formatAppointment(a))
           .join('\n')}\n\n` +
         "Need to reschedule, cancel one, or book something new? Just say the word.",
@@ -1572,9 +1573,19 @@ export class AssistantCommandService {
     return calendar.isActive === false ? `· ${calendar.name} (inactive)` : `· ${calendar.name}`;
   }
 
-  private formatAppointment(appointment: { title: string; startTime?: string }) {
+  private formatAppointment(appointment: GhlAppointmentSummary) {
+    // One bullet line per appointment, matching the contact/opportunity style
+    // so the polish pass can render the set as a table. Skip any field the CRM
+    // didn't populate (e.g. owner when the /users scope isn't granted).
+    const bits: string[] = [];
     const when = this.formatWhen(appointment.startTime);
-    return when ? `· ${appointment.title} — ${when}` : `· ${appointment.title}`;
+    if (when) bits.push(when);
+    if (appointment.contactName) bits.push(`Contact: ${appointment.contactName}`);
+    if (appointment.calendarName) bits.push(`Calendar: ${appointment.calendarName}`);
+    if (appointment.ownerName) bits.push(`Owner: ${appointment.ownerName}`);
+    if (appointment.status) bits.push(`Status: ${appointment.status}`);
+    const detail = bits.join(' · ');
+    return detail ? `· ${appointment.title} — ${detail}` : `· ${appointment.title}`;
   }
 
   private formatWhen(iso?: string) {
