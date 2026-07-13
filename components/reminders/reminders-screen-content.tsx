@@ -24,7 +24,6 @@ import { ApiError } from '@/lib/api/client';
 import type {
   GhlAppointmentSummary,
   Reminder,
-  ReminderListRange,
   SnoozePreset,
 } from '@/lib/api/types';
 import {
@@ -36,11 +35,19 @@ import { usePushState } from '@/lib/push/state';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
-const RANGES: { key: ReminderListRange; label: string }[] = [
-  { key: 'today', label: 'Today' },
+// Appointment-status tabs (mirrors GoHighLevel's appointment filters). These
+// filter the GHL appointment rows by status; reminders show under Upcoming/All.
+type ApptTab = 'upcoming' | 'cancelled' | 'all';
+
+const TABS: { key: ApptTab; label: string }[] = [
   { key: 'upcoming', label: 'Upcoming' },
-  { key: 'past', label: 'Past' },
+  { key: 'cancelled', label: 'Cancelled' },
+  { key: 'all', label: 'All' },
 ];
+
+function isCancelledAppt(appt: GhlAppointmentSummary): boolean {
+  return /cancel/i.test(appt.status ?? '');
+}
 
 const SNOOZE_OPTIONS: { preset: SnoozePreset; label: string }[] = [
   { preset: '10m', label: 'Snooze 10 minutes' },
@@ -70,7 +77,7 @@ export function RemindersScreenContent() {
   // all tabs) so the user can see their schedule here, not just get notified.
   const isGhl = getUser()?.provider === 'ghl';
 
-  const [range, setRange] = useState<ReminderListRange>('upcoming');
+  const [range, setRange] = useState<ApptTab>('upcoming');
   const [items, setItems] = useState<Reminder[]>([]);
   const [appointments, setAppointments] = useState<GhlAppointmentSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +93,21 @@ export function RemindersScreenContent() {
       if (mode === 'initial') setLoading(true);
       else setRefreshing(true);
       try {
-        const data = await remindersApi.listReminders(range);
+        // Map the appointment-status tab to reminder ranges: Upcoming shows
+        // upcoming reminders, All merges upcoming + past, Cancelled is
+        // appointments-only (no reminders).
+        let data: Reminder[] = [];
+        if (range === 'upcoming') {
+          data = await remindersApi.listReminders('upcoming');
+        } else if (range === 'all') {
+          const [upcoming, past] = await Promise.all([
+            remindersApi.listReminders('upcoming'),
+            remindersApi.listReminders('past'),
+          ]);
+          const byId = new Map<string, Reminder>();
+          for (const r of [...upcoming, ...past]) byId.set(r.id, r);
+          data = [...byId.values()];
+        }
         setItems(data);
       } catch (err) {
         show(
@@ -101,8 +122,9 @@ export function RemindersScreenContent() {
     [range, show],
   );
 
-  // Pull the user's GoHighLevel appointments across a wide window (recent past
-  // → near future) once per focus; the visible tab filters them client-side.
+  // Pull ALL of the user's GoHighLevel appointments (far past → far future) once
+  // per focus; the visible tab filters them client-side. The window is
+  // deliberately very wide so nothing is missed regardless of how old it is.
   const loadAppointments = useCallback(async () => {
     if (!isGhl) {
       setAppointments([]);
@@ -110,9 +132,10 @@ export function RemindersScreenContent() {
     }
     try {
       const now = Date.now();
+      const DAY = 86_400_000;
       const res = await ghlApi.listCalendarEvents({
-        startTime: new Date(now - 30 * 86_400_000).toISOString(),
-        endTime: new Date(now + 60 * 86_400_000).toISOString(),
+        startTime: new Date(now - 3650 * DAY).toISOString(),
+        endTime: new Date(now + 730 * DAY).toISOString(),
       });
       setAppointments(res.appointments);
     } catch {
@@ -151,10 +174,10 @@ export function RemindersScreenContent() {
   // avoiding a duplicate entry for the same meeting.
   const listData = useMemo<ListItem[]>(() => {
     const now = Date.now();
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-    const endOfTodayMs = endOfToday.getTime();
 
+    // Reminders only appear on Upcoming/All (load() already returns [] for the
+    // Cancelled tab). Appointment-linked reminders are hidden because the live
+    // appointment row represents them.
     const reminderItems: ListItem[] = items
       .filter((r) => r.linkType !== 'APPOINTMENT')
       .map((r) => ({
@@ -168,9 +191,9 @@ export function RemindersScreenContent() {
       .filter((a) => {
         const start = a.startTime ? Date.parse(a.startTime) : NaN;
         if (Number.isNaN(start)) return false;
-        if (range === 'past') return start < now;
-        if (range === 'today') return start >= now && start <= endOfTodayMs;
-        return start >= now; // upcoming
+        if (range === 'cancelled') return isCancelledAppt(a);
+        if (range === 'upcoming') return !isCancelledAppt(a) && start >= now;
+        return true; // all
       })
       .map((a) => ({
         kind: 'appointment',
@@ -180,8 +203,9 @@ export function RemindersScreenContent() {
       }));
 
     const merged = [...reminderItems, ...apptItems];
+    // Upcoming reads soonest-first; Cancelled/All read most-recent-first.
     merged.sort((x, y) =>
-      range === 'past' ? y.sortAt - x.sortAt : x.sortAt - y.sortAt,
+      range === 'upcoming' ? x.sortAt - y.sortAt : y.sortAt - x.sortAt,
     );
     return merged;
   }, [items, appointments, range]);
@@ -296,7 +320,7 @@ export function RemindersScreenContent() {
       <PageHeader title="Reminders" showBack />
 
       <View style={styles.tabs}>
-        {RANGES.map((r) => (
+        {TABS.map((r) => (
           <Pressable
             key={r.key}
             style={[styles.tab, range === r.key && styles.tabActive]}
@@ -339,12 +363,18 @@ export function RemindersScreenContent() {
       ) : listData.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>
-            No reminders {range === 'past' ? 'in history' : 'yet'}
+            {range === 'cancelled'
+              ? 'No cancelled appointments'
+              : range === 'all'
+                ? 'Nothing here yet'
+                : 'No upcoming reminders'}
           </Text>
           <Text style={styles.emptyBody}>
-            {isGhl
-              ? 'Tap + to set one. Your GoHighLevel appointments show up here automatically.'
-              : 'Tap + to set one.'}
+            {range === 'cancelled'
+              ? 'Cancelled GoHighLevel appointments will appear here.'
+              : isGhl
+                ? 'Tap + to set one. Your GoHighLevel appointments show up here automatically.'
+                : 'Tap + to set one.'}
           </Text>
         </View>
       ) : (
@@ -441,13 +471,21 @@ export function RemindersScreenContent() {
 // Read-only row for a GoHighLevel appointment surfaced in the reminders list.
 function AppointmentRow({ appt }: { appt: GhlAppointmentSummary }) {
   const time = formatApptTime(appt.startTime);
+  const cancelled = isCancelledAppt(appt);
   return (
     <View style={styles.apptRow}>
-      <View style={styles.apptIcon}>
-        <MaterialIcons name="event" size={18} color="#1F49E0" />
+      <View style={[styles.apptIcon, cancelled && styles.apptIconCancelled]}>
+        <MaterialIcons
+          name={cancelled ? 'event-busy' : 'event'}
+          size={18}
+          color={cancelled ? '#B91C1C' : '#1F49E0'}
+        />
       </View>
       <View style={styles.apptCopy}>
-        <Text style={styles.apptTitle} numberOfLines={1}>
+        <Text
+          style={[styles.apptTitle, cancelled && styles.apptTitleCancelled]}
+          numberOfLines={1}
+        >
           {appt.title || 'Appointment'}
         </Text>
         <View style={styles.apptMetaRow}>
@@ -456,7 +494,14 @@ function AppointmentRow({ appt }: { appt: GhlAppointmentSummary }) {
             <Text style={styles.apptChipText}>GoHighLevel</Text>
           </View>
           {appt.status ? (
-            <Text style={styles.apptStatus}>{appt.status}</Text>
+            <Text
+              style={[
+                styles.apptStatus,
+                cancelled && styles.apptStatusCancelled,
+              ]}
+            >
+              {appt.status}
+            </Text>
           ) : null}
         </View>
         <ApptDetail icon="person" value={appt.contactName} />
@@ -574,8 +619,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  apptIconCancelled: { backgroundColor: '#FEE2E2' },
   apptCopy: { flex: 1, gap: 4 },
   apptTitle: { fontSize: 16, fontWeight: '600', color: '#0F172A' },
+  apptTitleCancelled: {
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+  },
   apptMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -591,6 +641,7 @@ const styles = StyleSheet.create({
   },
   apptChipText: { fontSize: 11, color: '#1F49E0', fontWeight: '600' },
   apptStatus: { fontSize: 12, color: '#5B6B82', textTransform: 'capitalize' },
+  apptStatusCancelled: { color: '#B91C1C', fontWeight: '600' },
   apptDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   apptDetailText: { fontSize: 12, color: '#5B6B82', flex: 1 },
   menuOverlay: {

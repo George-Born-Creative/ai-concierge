@@ -1347,13 +1347,14 @@ export class GhlService {
     if (input.calendarName?.trim()) {
       return [await this.resolveCalendarId(userId, locationId, input.calendarName)];
     }
+    // Query every calendar (active and inactive) so no appointments are dropped
+    // — an appointment can live on a calendar that was later deactivated.
     const { calendars } = await this.listCalendars(userId);
-    const active = calendars.filter((calendar) => calendar.isActive !== false);
-    const ids = (active.length > 0 ? active : calendars).map((calendar) => calendar.id);
+    const ids = calendars.map((calendar) => calendar.id).filter(Boolean);
     if (ids.length === 0) {
       throw new BadRequestException('No calendars found in GoHighLevel');
     }
-    return ids.slice(0, 5);
+    return ids;
   }
 
   private async resolveCalendarId(
