@@ -29,6 +29,7 @@ import type {
 import {
   cancelReminderNotification,
   scheduleReminderNotification,
+  syncAppointmentNotifications,
   syncReminderNotifications,
 } from '@/lib/push/local-notifications';
 import { usePushState } from '@/lib/push/state';
@@ -138,6 +139,10 @@ export function RemindersScreenContent() {
         endTime: new Date(now + 730 * DAY).toISOString(),
       });
       setAppointments(res.appointments);
+      // Schedule on-device notifications so appointments ring at their start
+      // time (and 15 min before) even in Expo Go / offline, without relying on
+      // the backend sync cron.
+      void syncAppointmentNotifications(res.appointments);
     } catch {
       // Non-fatal: reminders still render without the appointment rows.
       setAppointments([]);

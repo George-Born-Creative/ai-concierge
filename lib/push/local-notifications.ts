@@ -1,4 +1,4 @@
-import type { Reminder } from '../api/types';
+import type { GhlAppointmentSummary, Reminder } from '../api/types';
 
 // Web fallback for on-device local reminder notifications. The real
 // implementation lives in `local-notifications.native.ts` and is selected by
@@ -14,5 +14,11 @@ export async function cancelReminderNotification(_reminderId: string): Promise<v
 }
 
 export async function syncReminderNotifications(_reminders: Reminder[]): Promise<void> {
+  // No-op on web.
+}
+
+export async function syncAppointmentNotifications(
+  _appointments: GhlAppointmentSummary[],
+): Promise<void> {
   // No-op on web.
 }

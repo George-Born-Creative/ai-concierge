@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 
-import type { Reminder } from "../api/types";
+import type { GhlAppointmentSummary, Reminder } from "../api/types";
 
 // On-device scheduled notifications for reminders. This is the reliable alarm:
 // unlike remote push (which needs FCM/APNs credentials and a live server), a
@@ -26,6 +26,15 @@ function loadNotifications(): NotificationsModule {
 // Reminder statuses that should have a pending on-device notification. Mirrors
 // the backend's ACTIVE_STATUSES.
 const ACTIVE = new Set(["SCHEDULED", "SNOOZED"]);
+
+// GoHighLevel appointments are scheduled directly on-device (see
+// syncAppointmentNotifications) so they ring at the appointment time even in
+// Expo Go / offline, without depending on the backend sync cron. Their
+// notification identifiers are namespaced so the two sync passes don't clobber
+// each other's scheduled notifications.
+const APPT_PREFIX = "appt:";
+// Minutes before an appointment to fire the heads-up notification.
+const APPT_LEAD_MINUTES = 15;
 
 // The instant the notification should fire. Falls back to dueAt for older
 // payloads that predate notifyAt.
@@ -122,6 +131,7 @@ export async function scheduleReminderNotification(
       body: reminder.notes ?? "Reminder is due",
       sound: "default",
       data: {
+        kind: "reminder",
         reminderId: reminder.id,
         linkType: reminder.linkType ?? null,
         linkProvider: reminder.linkProvider ?? null,
@@ -152,15 +162,25 @@ export async function syncReminderNotifications(
   if (!ok) return;
   const Notifications = loadNotifications();
 
-  const desired = reminders.filter(isActiveFuture);
+  // Appointment-linked reminders are handled by syncAppointmentNotifications
+  // (scheduled directly from the live GHL appointment list), so exclude them
+  // here to avoid scheduling the same meeting twice.
+  const desired = reminders.filter(
+    (r) => r.linkType !== "APPOINTMENT" && isActiveFuture(r),
+  );
   const desiredIds = new Set(desired.map((r) => r.id));
 
   // Drop any previously-scheduled reminder notifications that are no longer
-  // wanted (dismissed, deleted, snoozed away, already fired).
+  // wanted (dismissed, deleted, snoozed away, already fired). Leave appointment
+  // notifications alone — those belong to syncAppointmentNotifications.
   const scheduled =
     await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
   for (const item of scheduled) {
-    const data = item.content?.data as { reminderId?: unknown } | undefined;
+    const data = item.content?.data as
+      | { kind?: unknown; reminderId?: unknown }
+      | undefined;
+    if (data?.kind === "appointment" || item.identifier.startsWith(APPT_PREFIX))
+      continue;
     const id =
       typeof data?.reminderId === "string" ? data.reminderId : item.identifier;
     if (id && !desiredIds.has(id)) {
@@ -173,5 +193,104 @@ export async function syncReminderNotifications(
   // (Re)schedule the wanted ones. Rescheduling is cheap and keeps times fresh.
   for (const reminder of desired) {
     await scheduleReminderNotification(reminder);
+  }
+}
+
+// Read the appointment's start as a wall-clock local Date, matching how the UI
+// displays it (we intentionally do NOT shift the CRM time into another zone).
+function apptStartDate(startTime?: string): Date | null {
+  if (!startTime) return null;
+  const m = startTime.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  const d = m
+    ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])
+    : new Date(startTime);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isCancelledAppt(appt: GhlAppointmentSummary): boolean {
+  return /cancel/i.test(appt.status ?? "");
+}
+
+function clockLabel(date: Date): string {
+  return date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+// Reconcile on-device notifications for GoHighLevel appointments. For every
+// non-cancelled future appointment we schedule an "at start" alert and (when
+// there's still a window) a heads-up {@link APPT_LEAD_MINUTES} minutes before.
+// These fire with sound even offline / in Expo Go, independent of the backend
+// appointment-sync cron. Notifications for appointments no longer in the list
+// (cancelled, deleted, already started) are cancelled.
+export async function syncAppointmentNotifications(
+  appointments: GhlAppointmentSummary[],
+): Promise<void> {
+  const ok = await ensureSetup();
+  if (!ok) return;
+  const Notifications = loadNotifications();
+  const now = Date.now();
+
+  type Desired = { id: string; date: Date; title: string; body: string };
+  const desired: Desired[] = [];
+
+  for (const appt of appointments) {
+    if (!appt.id || isCancelledAppt(appt)) continue;
+    const start = apptStartDate(appt.startTime);
+    if (!start) continue;
+    const startMs = start.getTime();
+    const title = appt.title?.trim() || "Appointment";
+
+    if (startMs > now) {
+      desired.push({
+        id: `${APPT_PREFIX}${appt.id}`,
+        date: start,
+        title,
+        body: `Starting now${appt.contactName ? ` · ${appt.contactName}` : ""}`,
+      });
+    }
+
+    const leadMs = startMs - APPT_LEAD_MINUTES * 60_000;
+    if (leadMs > now) {
+      desired.push({
+        id: `${APPT_PREFIX}${appt.id}#lead`,
+        date: new Date(leadMs),
+        title: `Upcoming: ${title}`,
+        body: `Starts at ${clockLabel(start)}`,
+      });
+    }
+  }
+
+  const desiredIds = new Set(desired.map((d) => d.id));
+
+  // Cancel our own stale appointment notifications only.
+  const scheduled =
+    await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
+  for (const item of scheduled) {
+    const data = item.content?.data as { kind?: unknown } | undefined;
+    const isAppt =
+      data?.kind === "appointment" || item.identifier.startsWith(APPT_PREFIX);
+    if (isAppt && !desiredIds.has(item.identifier)) {
+      await Notifications.cancelScheduledNotificationAsync(
+        item.identifier,
+      ).catch(() => undefined);
+    }
+  }
+
+  for (const d of desired) {
+    await Notifications.cancelScheduledNotificationAsync(d.id).catch(
+      () => undefined,
+    );
+    await Notifications.scheduleNotificationAsync({
+      identifier: d.id,
+      content: {
+        title: d.title,
+        body: d.body,
+        sound: "default",
+        data: { kind: "appointment", appointmentId: d.id },
+      },
+      trigger: triggerFor(d.date),
+    }).catch(() => undefined);
   }
 }
