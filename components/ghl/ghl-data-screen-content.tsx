@@ -16,12 +16,19 @@ import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { ghlApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
+import {
+  crmCacheKey,
+  getCrmCache,
+  isCrmFresh,
+  setCrmCache,
+} from '@/lib/api/crm-cache';
 import { CRM_LABELS, getCrmLabel } from '@/lib/crm/labels';
 import type {
   GhlCalendarSummary,
   GhlContactSummary,
   GhlOpportunitySummary,
 } from '@/lib/api/types';
+import { useRealtimeEvent } from '@/lib/realtime/socket';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -31,7 +38,24 @@ type LoadState<T> = {
   error: string | null;
 };
 
-const INITIAL = <T,>(): LoadState<T> => ({ data: [], loading: true, error: null });
+// Seed a section from the CRM cache: show cached rows instantly (no skeleton)
+// when present, otherwise start in the loading state until the first fetch.
+function seedState<T>(key: string): LoadState<T> {
+  const data = getCrmCache<T>(key);
+  return { data: data ?? [], loading: data === undefined, error: null };
+}
+
+// Persist a successful fetch to the cache, then apply it to component state.
+// Errors are shown but not cached, so a transient failure never poisons the
+// instant-render path.
+function commit<T>(
+  key: string,
+  st: LoadState<T>,
+  setter: (s: LoadState<T>) => void,
+): void {
+  if (st.error === null) setCrmCache(key, st.data);
+  setter(st);
+}
 
 // The three GoHighLevel objects this screen can browse. A single screen serves
 // both the combined overview (no `object` param) and a focused single-object
@@ -61,38 +85,70 @@ export function GhlDataScreenContent() {
   // A dedicated list page can afford to fetch more rows than the overview.
   const limit = active ? 50 : 10;
 
-  const [contacts, setContacts] = useState<LoadState<GhlContactSummary>>(INITIAL);
-  const [opportunities, setOpportunities] = useState<LoadState<GhlOpportunitySummary>>(INITIAL);
-  const [calendars, setCalendars] = useState<LoadState<GhlCalendarSummary>>(INITIAL);
+  const [contacts, setContacts] = useState<LoadState<GhlContactSummary>>(() =>
+    seedState(crmCacheKey('ghl', 'contacts')),
+  );
+  const [opportunities, setOpportunities] = useState<LoadState<GhlOpportunitySummary>>(
+    () => seedState(crmCacheKey('ghl', 'opportunities')),
+  );
+  const [calendars, setCalendars] = useState<LoadState<GhlCalendarSummary>>(() =>
+    seedState(crmCacheKey('ghl', 'calendar')),
+  );
   const [refreshing, setRefreshing] = useState(false);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
-      if (mode === 'initial') {
-        setContacts((s) => ({ ...s, loading: want('contacts'), error: null }));
-        setOpportunities((s) => ({ ...s, loading: want('opportunities'), error: null }));
-        setCalendars((s) => ({ ...s, loading: want('calendar'), error: null }));
+      const initial = mode === 'initial';
+      const kContacts = crmCacheKey('ghl', 'contacts');
+      const kOpps = crmCacheKey('ghl', 'opportunities');
+      const kCal = crmCacheKey('ghl', 'calendar');
+
+      // Fetch a wanted object unless this is an initial (focus) load and its
+      // cache is still fresh. Pull-to-refresh (mode 'refresh') always fetches.
+      const need = {
+        contacts: want('contacts') && !(initial && isCrmFresh(kContacts)),
+        opportunities: want('opportunities') && !(initial && isCrmFresh(kOpps)),
+        calendar: want('calendar') && !(initial && isCrmFresh(kCal)),
+      };
+
+      if (initial) {
+        // Show the skeleton only where there's nothing cached to display.
+        setContacts((s) => ({
+          ...s,
+          loading: want('contacts') && getCrmCache(kContacts) === undefined,
+          error: null,
+        }));
+        setOpportunities((s) => ({
+          ...s,
+          loading: want('opportunities') && getCrmCache(kOpps) === undefined,
+          error: null,
+        }));
+        setCalendars((s) => ({
+          ...s,
+          loading: want('calendar') && getCrmCache(kCal) === undefined,
+          error: null,
+        }));
       }
 
-      // Fetch only the objects we're going to render, in parallel — one slow
+      // Fetch only the objects that need a network hit, in parallel — one slow
       // surface shouldn't gate the others.
       const [c, o, cal] = await Promise.allSettled([
-        want('contacts')
+        need.contacts
           ? ghlApi.listContacts({ limit })
           : Promise.resolve({ contacts: [] }),
-        want('opportunities')
+        need.opportunities
           ? ghlApi.listOpportunities({ limit })
           : Promise.resolve({ opportunities: [] }),
-        want('calendar')
+        need.calendar
           ? ghlApi.listCalendars()
           : Promise.resolve({ calendars: [] }),
       ]);
 
-      if (want('contacts')) setContacts(stateFrom(c, (v) => v.contacts));
-      if (want('opportunities')) {
-        setOpportunities(stateFrom(o, (v) => v.opportunities));
+      if (need.contacts) commit(kContacts, stateFrom(c, (v) => v.contacts), setContacts);
+      if (need.opportunities) {
+        commit(kOpps, stateFrom(o, (v) => v.opportunities), setOpportunities);
       }
-      if (want('calendar')) setCalendars(stateFrom(cal, (v) => v.calendars));
+      if (need.calendar) commit(kCal, stateFrom(cal, (v) => v.calendars), setCalendars);
     },
     [want, limit],
   );
@@ -104,6 +160,47 @@ export function GhlDataScreenContent() {
       void loadAll('initial');
     }, [loadAll]),
   );
+
+  // Refetch a single object without a skeleton flash — keep the current rows
+  // visible and swap them in on success (live update).
+  const reloadObject = useCallback(
+    async (key: ObjectKey) => {
+      try {
+        if (key === 'contacts') {
+          const res = await ghlApi.listContacts({ limit });
+          const data = res.contacts ?? [];
+          setCrmCache(crmCacheKey('ghl', 'contacts'), data);
+          setContacts({ data, loading: false, error: null });
+        } else if (key === 'opportunities') {
+          const res = await ghlApi.listOpportunities({ limit });
+          const data = res.opportunities ?? [];
+          setCrmCache(crmCacheKey('ghl', 'opportunities'), data);
+          setOpportunities({ data, loading: false, error: null });
+        } else if (key === 'calendar') {
+          const res = await ghlApi.listCalendars();
+          const data = res.calendars ?? [];
+          setCrmCache(crmCacheKey('ghl', 'calendar'), data);
+          setCalendars({ data, loading: false, error: null });
+        }
+      } catch {
+        // Non-fatal: keep the current rows; reconciles on next focus/refresh.
+      }
+    },
+    [limit],
+  );
+
+  // Sprint 2: when a chat command mutates GHL data, refetch just the affected
+  // object if it's currently rendered on this screen.
+  const onCrmInvalidate = useCallback(
+    (payload: { provider?: string; object?: string }) => {
+      if (payload?.provider !== 'ghl') return;
+      const key = payload.object;
+      if (!isObjectKey(key) || !want(key)) return;
+      void reloadObject(key);
+    },
+    [want, reloadObject],
+  );
+  useRealtimeEvent('crm.invalidate', onCrmInvalidate);
 
   async function handleRefresh() {
     setRefreshing(true);
