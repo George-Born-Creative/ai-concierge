@@ -721,6 +721,12 @@ function formatOpenAIError(err: unknown, stage: 'transcription' | 'intent'): str
   if (/401|invalid.*api key|incorrect api key/i.test(raw)) {
     return 'Your OpenAI API key is invalid or revoked. Rotate it in Profile → OpenAI key.';
   }
+  // A key with a non-Latin1 character fails while building the Authorization
+  // header ("Cannot convert argument to a ByteString"). Surface it as a bad
+  // key rather than leaking the runtime error to the user.
+  if (/ByteString|greater than 255/i.test(raw)) {
+    return 'Your OpenAI API key contains invalid characters. Rotate it in Profile → OpenAI key.';
+  }
 
   const label = stage === 'transcription' ? 'Transcription' : 'Intent parsing';
   return `${label} failed: ${raw}`;
