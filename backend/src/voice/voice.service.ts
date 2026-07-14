@@ -1,3 +1,4 @@
+/// <reference types="multer" />
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CrmProvider } from '@prisma/client';
@@ -656,19 +657,40 @@ const WHISPER_HALLUCINATIONS: ReadonlySet<string> = new Set([
   'silence',
 ]);
 
-/**
- * True when the transcript is empty once punctuation is stripped, or matches a
- * known Whisper silence hallucination. Used to reject phantom transcripts so
- * the app reports "voice not detected" instead of running a stray command.
- */
-function isLikelyHallucination(transcript: string): boolean {
-  const normalized = transcript
+// Lowercase, strip punctuation, collapse whitespace — shared by the
+// hallucination checks so the prompt-echo comparison uses the same shape.
+function normalizeForMatch(text: string): string {
+  return text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+const NORMALIZED_WHISPER_PROMPT = normalizeForMatch(WHISPER_PROMPT);
+
+/**
+ * True when the transcript is empty once punctuation is stripped, matches a
+ * known Whisper silence hallucination, or is an echo of our priming prompt.
+ * Used to reject phantom transcripts so the app reports "voice not detected"
+ * instead of running a stray command.
+ */
+function isLikelyHallucination(transcript: string): boolean {
+  const normalized = normalizeForMatch(transcript);
   if (!normalized) return true;
-  return WHISPER_HALLUCINATIONS.has(normalized);
+  if (WHISPER_HALLUCINATIONS.has(normalized)) return true;
+  // On silence/noise the model routinely parrots our `prompt` back — either in
+  // full ("english speech only crm voice commands …") or a leading fragment.
+  // "crm voice commands" never appears in genuine user speech, so any echo of
+  // the prompt is treated as no speech.
+  if (
+    normalized === NORMALIZED_WHISPER_PROMPT ||
+    (normalized.length >= 4 && NORMALIZED_WHISPER_PROMPT.startsWith(normalized)) ||
+    normalized.includes('crm voice commands')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function clamp01(value: unknown): number {

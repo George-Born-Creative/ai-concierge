@@ -467,7 +467,9 @@ function CommandBubble({
       {entry.pending ? (
         <View>
           <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
-            <Text style={styles.bubbleLabel}>{entry.response || 'Working on it…'}</Text>
+            <Text style={styles.bubbleLabel}>
+              {entry.response || phaseStatusLabel(entry.phase)}
+            </Text>
             <SkeletonLines lines={3} lineHeight={11} gap={8} lastLineWidth="55%" />
           </View>
         </View>
@@ -557,6 +559,22 @@ function formatMessageTime(iso: string): string {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return '';
   return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+// Human-readable status shown in the pending assistant bubble, driven by the
+// SSE lifecycle phase. Falls back to the generic label before any phase or
+// when the phase is unknown.
+function phaseStatusLabel(phase: AssistantHistoryEntry['phase']): string {
+  switch (phase) {
+    case 'normalizing':
+      return 'Understanding your request…';
+    case 'working':
+      return 'Working on your CRM…';
+    case 'thinking':
+      return 'Writing a reply…';
+    default:
+      return 'Working on it…';
+  }
 }
 
 function voiceUserText(entry: AssistantHistoryEntry): string {
