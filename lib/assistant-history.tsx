@@ -8,12 +8,14 @@ import {
     useRef,
     useState,
 } from 'react';
+import { Alert } from 'react-native';
 
 import { assistantApi, voiceApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import type {
   AssistantConversationBucketKey,
   AssistantMessage,
+  AssistantPhase,
   RunAssistantCommandRequest,
   VoiceIntent,
 } from '@/lib/api/types';
@@ -41,6 +43,12 @@ export type AssistantHistoryEntry = {
   pending?: boolean;
   transcript?: string;
   intent?: VoiceIntent;
+  /**
+   * Live lifecycle phase for an in-flight (pending) command, driven by the
+   * SSE `phase` events. Surfaced as a status line in the pending bubble and
+   * irrelevant once the reply starts streaming / settles.
+   */
+  phase?: AssistantPhase;
 };
 
 export type AssistantChat = {
@@ -434,7 +442,24 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           // signal reached the server. Drop anything past cancellation.
           if (cancelledIdsRef.current.has(optimisticId)) break;
 
-          if (evt.type === 'token') {
+          if (evt.type === 'phase') {
+            // Surface the backend lifecycle phase as a live status line on
+            // the pending bubble (understanding → working → writing).
+            const phase = evt.phase;
+            setState((s) => ({
+              ...s,
+              chats: s.chats.map((chat) =>
+                chat.id !== chatId
+                  ? chat
+                  : {
+                      ...chat,
+                      messages: chat.messages.map((m) =>
+                        m.id === optimisticId ? { ...m, phase } : m,
+                      ),
+                    },
+              ),
+            }));
+          } else if (evt.type === 'token') {
             accumulated += evt.delta;
             const snapshot = accumulated;
             setState((s) => ({
@@ -457,7 +482,6 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             // streamed responses, so the TypewriterText sees a no-op.
             appliedEntry = applyServerMessage(chatId, evt.message, optimisticId);
           }
-          // 'phase' events are reserved for future status-line tweaks.
         }
       } finally {
         pendingControllersRef.current.delete(optimisticId);
@@ -593,26 +617,24 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           const transcript = transcribed.transcript?.trim() ?? '';
 
           if (!transcript) {
+            // No real speech — silence/noise, a stock hallucination, or the
+            // model echoing our priming prompt. Drop the optimistic bubble and
+            // tell the user via a popup instead of leaving a phantom command.
             setState((s) => ({
               ...s,
-              chats: s.chats.map((chat) => {
-                if (chat.id !== convId) return chat;
-                return {
-                  ...chat,
-                  messages: chat.messages.map((m) =>
-                    m.id === optimisticId
-                      ? {
-                          ...m,
-                          command: '(voice not detected)',
-                          response: 'Voice not detected. Please try again and speak clearly into the microphone.',
-                          pending: false,
-                          status: 'error' as const,
-                        }
-                      : m,
-                  ),
-                };
-              }),
+              chats: s.chats.map((chat) =>
+                chat.id !== convId
+                  ? chat
+                  : {
+                      ...chat,
+                      messages: chat.messages.filter((m) => m.id !== optimisticId),
+                    },
+              ),
             }));
+            Alert.alert(
+              "Didn't catch that",
+              "We didn't detect any speech. Please try again and speak clearly in English.",
+            );
             return;
           }
 

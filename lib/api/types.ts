@@ -492,15 +492,18 @@ export type RunAssistantCommandRequest = {
 /**
  * SSE event types streamed by `POST /assistant/conversations/:id/commands/stream`.
  *
- * - `phase`: lifecycle marker — surface to the user as a status hint
- *   (e.g. swap "Running your command…" for "Thinking…")
+ * - `phase`: lifecycle marker — surface to the user as a live status line
+ *   ("Understanding your request…" → "Working on your CRM…" → "Writing a
+ *   reply…"). Keep in sync with the backend `AssistantPhase`.
  * - `token`: a content delta that should be appended to the in-flight
  *   bubble's `response` so TypewriterText catches up live
  * - `done`: terminal event with the persisted server message — swap
  *   the optimistic id, finalise the bubble, stop animating
  */
+export type AssistantPhase = 'normalizing' | 'working' | 'thinking';
+
 export type AssistantStreamEvent =
-  | { type: 'phase'; phase: 'normalizing' | 'thinking' }
+  | { type: 'phase'; phase: AssistantPhase }
   | { type: 'token'; delta: string }
   | { type: 'done'; message: AssistantMessage };
 

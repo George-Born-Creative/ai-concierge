@@ -37,7 +37,8 @@ const HISTORY_LIMIT = 15;
  * {@link MessageEvent} emitted by `runCommandStream` is one of these.
  *
  * - `phase` events let the client surface lifecycle indicators
- *   (e.g. swap "Running your command…" for "Thinking…")
+ *   (e.g. "Understanding your request…" → "Working on your CRM…" →
+ *   "Writing a reply…")
  * - `token` events deliver a content delta to append to the in-flight
  *   message bubble — the existing TypewriterText catches up smoothly
  * - `done` carries the persisted server message DTO so the client can
@@ -56,8 +57,17 @@ export type AssistantMessageDto = {
   createdAt: string;
 };
 
+/**
+ * Lifecycle markers surfaced to the client as a live status line while the
+ * reply is still pending:
+ * - `normalizing`: interpreting the request / resolving the intent
+ * - `working`: running the deterministic CRM action (often the slow step)
+ * - `thinking`: streaming the LLM-generated reply
+ */
+export type AssistantPhase = 'normalizing' | 'working' | 'thinking';
+
 export type AssistantStreamEvent =
-  | { type: 'phase'; phase: 'normalizing' | 'thinking' }
+  | { type: 'phase'; phase: AssistantPhase }
   | { type: 'token'; delta: string }
   | { type: 'done'; message: AssistantMessageDto };
 
@@ -291,6 +301,7 @@ export class AssistantService {
     userId: string,
     conversationId: string,
     dto: RunAssistantCommandDto,
+    onPhase?: (phase: AssistantPhase) => void,
   ): Promise<PreparedCommand> {
     const conversation = await this.requireConversation(userId, conversationId);
     const text = dto.text.trim();
@@ -366,6 +377,9 @@ export class AssistantService {
     let ranActionableIntent = false;
     let mode: PreparedCommand['mode'];
     if (!tangent && hasActionableIntent) {
+      // The CRM action is typically the slowest part of prepare; surface it
+      // as a distinct status so the user sees progress before the reply.
+      onPhase?.('working');
       baseline = await this.commands.execute(userId, text, intent!, sessionContext);
       ranActionableIntent = true;
       mode = 'action';
@@ -432,7 +446,9 @@ export class AssistantService {
       void (async () => {
         try {
           emit({ type: 'phase', phase: 'normalizing' });
-          const prep = await this.prepareCommand(userId, conversationId, dto);
+          const prep = await this.prepareCommand(userId, conversationId, dto, (phase) =>
+            emit({ type: 'phase', phase }),
+          );
           if (cancelled) return;
 
           let accumulated = '';
