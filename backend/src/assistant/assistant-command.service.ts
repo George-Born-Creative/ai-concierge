@@ -9,6 +9,7 @@ import type {
 } from '../integrations/ghl/ghl.service';
 import { GhlService } from '../integrations/ghl/ghl.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { HubspotCommandService } from './hubspot-command.service';
 import {
   extractAppointmentCancelQuery,
@@ -57,10 +58,56 @@ import type {
 export class AssistantCommandService {
   private readonly logger = new Logger(AssistantCommandService.name);
 
+  // Maps a mutating intent to the browse-list object key the frontend uses
+  // (see components/ghl|hubspot/*-data-screen-content.tsx). Read intents
+  // (list_/find_/get_) are intentionally absent so they never trigger an
+  // invalidation. Appointments have no browse list here, so they're omitted.
+  private static readonly MUTATION_OBJECTS: Record<string, string> = {
+    create_contact: 'contacts',
+    update_contact: 'contacts',
+    delete_contact: 'contacts',
+    create_calendar: 'calendar',
+    update_calendar: 'calendar',
+    delete_calendar: 'calendar',
+    create_opportunity: 'opportunities',
+    update_opportunity: 'opportunities',
+    update_opportunity_status: 'opportunities',
+    delete_opportunity: 'opportunities',
+    create_company: 'companies',
+    update_company: 'companies',
+    delete_company: 'companies',
+    attach_contact_to_company: 'companies',
+    detach_contact_from_company: 'companies',
+    attach_deal_to_company: 'companies',
+    detach_deal_from_company: 'companies',
+    create_ticket: 'tickets',
+    update_ticket: 'tickets',
+    delete_ticket: 'tickets',
+    attach_ticket_to_contact: 'tickets',
+    detach_ticket_from_contact: 'tickets',
+    attach_ticket_to_company: 'tickets',
+    detach_ticket_from_company: 'tickets',
+    attach_ticket_to_deal: 'tickets',
+    detach_ticket_from_deal: 'tickets',
+    create_product: 'products',
+    update_product: 'products',
+    delete_product: 'products',
+    create_order: 'orders',
+    update_order: 'orders',
+    delete_order: 'orders',
+    attach_order_to_contact: 'orders',
+    detach_order_from_contact: 'orders',
+    attach_order_to_company: 'orders',
+    detach_order_from_company: 'orders',
+    attach_order_to_deal: 'orders',
+    detach_order_from_deal: 'orders',
+  };
+
   constructor(
     private readonly ghl: GhlService,
     private readonly hubspot: HubspotCommandService,
     private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async execute(
@@ -104,17 +151,25 @@ export class AssistantCommandService {
         return { response: resolved.notes, status: 'error', intent: resolved };
       }
 
+      let result: AssistantCommandResult | null = null;
       if (resolved && shouldRunIntent(resolved)) {
-        const fromIntent =
+        result =
           provider === CrmProvider.HUBSPOT
             ? await this.executeHubspotIntent(userId, resolved)
             : await this.executeFromIntent(userId, resolved);
-        if (fromIntent) return fromIntent;
+      }
+      if (!result) {
+        result =
+          provider === CrmProvider.HUBSPOT
+            ? await this.executeHubspotHeuristics(userId, normalized)
+            : await this.executeWithHeuristics(userId, normalized);
       }
 
-      return provider === CrmProvider.HUBSPOT
-        ? this.executeHubspotHeuristics(userId, normalized)
-        : this.executeWithHeuristics(userId, normalized);
+      // Sprint 2: after a successful CRM mutation, tell the user's open browse
+      // screens to refetch the affected object (self-mutation invalidation).
+      // Reads map to no object, so this is a no-op for them.
+      this.emitCrmInvalidate(userId, provider, resolved?.intent, result);
+      return result;
     } catch (error) {
       return {
         response:
@@ -154,6 +209,27 @@ export class AssistantCommandService {
       );
       return null;
     }
+  }
+
+  /**
+   * Emit `crm.invalidate` to the user's connected devices when a command
+   * successfully mutated CRM data, so any open browse list refetches just the
+   * affected object. No-op for reads (which don't map to a mutation object)
+   * and for failed commands.
+   */
+  private emitCrmInvalidate(
+    userId: string,
+    provider: CrmProvider,
+    intent: string | undefined,
+    result: AssistantCommandResult,
+  ): void {
+    if (result.status !== 'success' || !intent) return;
+    const object = AssistantCommandService.MUTATION_OBJECTS[intent];
+    if (!object) return;
+    this.realtime.emitToUser(userId, 'crm.invalidate', {
+      provider: provider === CrmProvider.HUBSPOT ? 'hubspot' : 'ghl',
+      object,
+    });
   }
 
   private async executeFromIntent(

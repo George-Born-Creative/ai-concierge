@@ -12,6 +12,7 @@ import { HubspotDealsService } from './deals/deals.service';
 import { HubspotApiClient } from './hubspot-api.client';
 import { HubspotController } from './hubspot.controller';
 import { HubspotService } from './hubspot.service';
+import { HubspotWebhookController } from './hubspot-webhook.controller';
 import { HubspotOrdersController } from './orders/orders.controller';
 import { HubspotOrdersService } from './orders/orders.service';
 import { HubspotProductsController } from './products/products.controller';
@@ -43,6 +44,7 @@ import { HubspotTicketsService } from './tickets/tickets.service';
   ],
   controllers: [
     HubspotController,
+    HubspotWebhookController,
     HubspotContactsController,
     HubspotDealsController,
     HubspotCompaniesController,

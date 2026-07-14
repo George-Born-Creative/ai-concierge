@@ -9,6 +9,7 @@ import {
   GhlRootOAuthCallbackController,
 } from './ghl-oauth-callback.controller';
 import { GhlService } from './ghl.service';
+import { GhlWebhookController } from './ghl-webhook.controller';
 
 // Reuses the global JWT_SECRET to sign short-lived OAuth `state` tokens.
 // Imports AuthModule so JwtStrategy is available for JwtAuthGuard on routes.
@@ -26,7 +27,12 @@ import { GhlService } from './ghl.service';
       },
     }),
   ],
-  controllers: [GhlController, GhlRootOAuthCallbackController, GhlOAuthCallbackController],
+  controllers: [
+    GhlController,
+    GhlRootOAuthCallbackController,
+    GhlOAuthCallbackController,
+    GhlWebhookController,
+  ],
   providers: [GhlService],
   exports: [GhlService],
 })

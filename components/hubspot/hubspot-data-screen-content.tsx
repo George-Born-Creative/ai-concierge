@@ -16,6 +16,12 @@ import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { hubspotApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
+import {
+  crmCacheKey,
+  getCrmCache,
+  isCrmFresh,
+  setCrmCache,
+} from '@/lib/api/crm-cache';
 import { CRM_LABELS, getCrmLabel } from '@/lib/crm/labels';
 import type {
   HubspotCompanySummary,
@@ -26,6 +32,7 @@ import type {
   HubspotProductSummary,
   HubspotTicketSummary,
 } from '@/lib/api/types';
+import { useRealtimeEvent } from '@/lib/realtime/socket';
 import { getUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -35,7 +42,24 @@ type LoadState<T> = {
   error: string | null;
 };
 
-const INITIAL = <T,>(): LoadState<T> => ({ data: [], loading: true, error: null });
+// Seed a section from the CRM cache: show cached rows instantly (no skeleton)
+// when present, otherwise start in the loading state until the first fetch.
+function seedState<T>(key: string): LoadState<T> {
+  const data = getCrmCache<T>(key);
+  return { data: data ?? [], loading: data === undefined, error: null };
+}
+
+// Persist a successful fetch to the cache, then apply it to component state.
+// Errors are shown but not cached, so a transient failure never poisons the
+// instant-render path.
+function commit<T>(
+  key: string,
+  st: LoadState<T>,
+  setter: (s: LoadState<T>) => void,
+): void {
+  if (st.error === null) setCrmCache(key, st.data);
+  setter(st);
+}
 
 // The four HubSpot objects this screen can browse. A single screen serves both
 // the combined overview (no `object` param) and a focused single-object list
@@ -77,42 +101,65 @@ export function HubspotDataScreenContent() {
   // A dedicated list page can afford to fetch more rows than the overview.
   const limit = active ? 50 : 10;
 
-  const [contacts, setContacts] = useState<LoadState<HubspotContactSummary>>(INITIAL);
-  const [deals, setDeals] = useState<LoadState<HubspotDealSummary>>(INITIAL);
-  const [companies, setCompanies] = useState<LoadState<HubspotCompanySummary>>(INITIAL);
-  const [tickets, setTickets] = useState<LoadState<HubspotTicketSummary>>(INITIAL);
-  const [products, setProducts] = useState<LoadState<HubspotProductSummary>>(INITIAL);
-  const [orders, setOrders] = useState<LoadState<HubspotOrderSummary>>(INITIAL);
+  const [contacts, setContacts] = useState<LoadState<HubspotContactSummary>>(() =>
+    seedState(crmCacheKey('hubspot', 'contacts')),
+  );
+  const [deals, setDeals] = useState<LoadState<HubspotDealSummary>>(() =>
+    seedState(crmCacheKey('hubspot', 'deals')),
+  );
+  const [companies, setCompanies] = useState<LoadState<HubspotCompanySummary>>(() =>
+    seedState(crmCacheKey('hubspot', 'companies')),
+  );
+  const [tickets, setTickets] = useState<LoadState<HubspotTicketSummary>>(() =>
+    seedState(crmCacheKey('hubspot', 'tickets')),
+  );
+  const [products, setProducts] = useState<LoadState<HubspotProductSummary>>(() =>
+    seedState(crmCacheKey('hubspot', 'products')),
+  );
+  const [orders, setOrders] = useState<LoadState<HubspotOrderSummary>>(() =>
+    seedState(crmCacheKey('hubspot', 'orders')),
+  );
   const [refreshing, setRefreshing] = useState(false);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
-      if (mode === 'initial') {
-        setContacts((s) => ({ ...s, loading: want('contacts'), error: null }));
-        setDeals((s) => ({ ...s, loading: want('deals'), error: null }));
-        setCompanies((s) => ({ ...s, loading: want('companies'), error: null }));
-        setTickets((s) => ({ ...s, loading: want('tickets'), error: null }));
-        setProducts((s) => ({ ...s, loading: want('products'), error: null }));
-        setOrders((s) => ({ ...s, loading: want('orders'), error: null }));
+      const initial = mode === 'initial';
+      const k = (object: ObjectKey) => crmCacheKey('hubspot', object);
+
+      // Fetch a wanted object unless this is an initial (focus) load and its
+      // cache is still fresh. Pull-to-refresh (mode 'refresh') always fetches.
+      const need = (object: ObjectKey) =>
+        want(object) && !(initial && isCrmFresh(k(object)));
+
+      if (initial) {
+        // Show the skeleton only where there's nothing cached to display.
+        const skeleton = (object: ObjectKey) =>
+          want(object) && getCrmCache(k(object)) === undefined;
+        setContacts((s) => ({ ...s, loading: skeleton('contacts'), error: null }));
+        setDeals((s) => ({ ...s, loading: skeleton('deals'), error: null }));
+        setCompanies((s) => ({ ...s, loading: skeleton('companies'), error: null }));
+        setTickets((s) => ({ ...s, loading: skeleton('tickets'), error: null }));
+        setProducts((s) => ({ ...s, loading: skeleton('products'), error: null }));
+        setOrders((s) => ({ ...s, loading: skeleton('orders'), error: null }));
       }
 
-      // Fetch only the objects we're going to render. Fire in parallel — one
+      // Fetch only the objects that need a network hit. Fire in parallel — one
       // slow surface shouldn't gate the others.
       const [c, d, co, t, p, o] = await Promise.allSettled([
-        want('contacts') ? hubspotApi.listContacts({ limit }) : Promise.resolve(SKIP),
-        want('deals') ? hubspotApi.listDeals({ limit }) : Promise.resolve(SKIP),
-        want('companies') ? hubspotApi.listCompanies({ limit }) : Promise.resolve(SKIP),
-        want('tickets') ? hubspotApi.listTickets({ limit }) : Promise.resolve(SKIP),
-        want('products') ? hubspotApi.listProducts({ limit }) : Promise.resolve(SKIP),
-        want('orders') ? hubspotApi.listOrders({ limit }) : Promise.resolve(SKIP),
+        need('contacts') ? hubspotApi.listContacts({ limit }) : Promise.resolve(SKIP),
+        need('deals') ? hubspotApi.listDeals({ limit }) : Promise.resolve(SKIP),
+        need('companies') ? hubspotApi.listCompanies({ limit }) : Promise.resolve(SKIP),
+        need('tickets') ? hubspotApi.listTickets({ limit }) : Promise.resolve(SKIP),
+        need('products') ? hubspotApi.listProducts({ limit }) : Promise.resolve(SKIP),
+        need('orders') ? hubspotApi.listOrders({ limit }) : Promise.resolve(SKIP),
       ]);
 
-      if (want('contacts')) setContacts(stateFor(c));
-      if (want('deals')) setDeals(stateFor(d));
-      if (want('companies')) setCompanies(stateFor(co));
-      if (want('tickets')) setTickets(stateFor(t));
-      if (want('products')) setProducts(stateFor(p));
-      if (want('orders')) setOrders(stateFor(o));
+      if (need('contacts')) commit(k('contacts'), stateFor(c), setContacts);
+      if (need('deals')) commit(k('deals'), stateFor(d), setDeals);
+      if (need('companies')) commit(k('companies'), stateFor(co), setCompanies);
+      if (need('tickets')) commit(k('tickets'), stateFor(t), setTickets);
+      if (need('products')) commit(k('products'), stateFor(p), setProducts);
+      if (need('orders')) commit(k('orders'), stateFor(o), setOrders);
     },
     [want, limit],
   );
@@ -124,6 +171,45 @@ export function HubspotDataScreenContent() {
       void loadAll('initial');
     }, [loadAll]),
   );
+
+  // Refetch a single object without a skeleton flash — keep the current rows
+  // visible and swap them in on success (live update).
+  const reloadObject = useCallback(
+    async (key: ObjectKey) => {
+      const ck = crmCacheKey('hubspot', key);
+      try {
+        if (key === 'contacts') {
+          commit(ck, stateFor(await settle(hubspotApi.listContacts({ limit }))), setContacts);
+        } else if (key === 'deals') {
+          commit(ck, stateFor(await settle(hubspotApi.listDeals({ limit }))), setDeals);
+        } else if (key === 'companies') {
+          commit(ck, stateFor(await settle(hubspotApi.listCompanies({ limit }))), setCompanies);
+        } else if (key === 'tickets') {
+          commit(ck, stateFor(await settle(hubspotApi.listTickets({ limit }))), setTickets);
+        } else if (key === 'products') {
+          commit(ck, stateFor(await settle(hubspotApi.listProducts({ limit }))), setProducts);
+        } else if (key === 'orders') {
+          commit(ck, stateFor(await settle(hubspotApi.listOrders({ limit }))), setOrders);
+        }
+      } catch {
+        // Non-fatal: keep the current rows; reconciles on next focus/refresh.
+      }
+    },
+    [limit],
+  );
+
+  // Sprint 2: when a chat command mutates HubSpot data, refetch just the
+  // affected object if it's currently rendered on this screen.
+  const onCrmInvalidate = useCallback(
+    (payload: { provider?: string; object?: string }) => {
+      if (payload?.provider !== 'hubspot') return;
+      const key = payload.object;
+      if (!isObjectKey(key) || !want(key)) return;
+      void reloadObject(key);
+    },
+    [want, reloadObject],
+  );
+  useRealtimeEvent('crm.invalidate', onCrmInvalidate);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -311,6 +397,13 @@ export function HubspotDataScreenContent() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Wrap a single promise into a settled result so it can reuse `stateFor`
+// (which turns a rejection into an error state instead of throwing).
+async function settle<T>(p: Promise<T>): Promise<PromiseSettledResult<T>> {
+  const [result] = await Promise.allSettled([p]);
+  return result;
+}
 
 function stateFor<T>(
   settled: PromiseSettledResult<{ results: T[]; after: string | null }>,
