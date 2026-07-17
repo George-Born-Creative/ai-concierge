@@ -13,6 +13,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "AI Concierge uses the microphone to record voice commands before sending them to chat.",
+        "NSCameraUsageDescription": "AI Concierge uses the camera for real-time voice/video sessions with the AI agent.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "ai.konvero.app"
@@ -37,6 +38,11 @@
       ],
       "permissions": [
         "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.USE_EXACT_ALARM",
