@@ -15,7 +15,7 @@
         "NSMicrophoneUsageDescription": "AI Concierge uses the microphone to record voice commands before sending them to chat.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.daveget.aiconcierge"
+      "bundleIdentifier": "ai.konvero.app"
     },
     "android": {
       "intentFilters": [
