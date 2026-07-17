@@ -5,6 +5,8 @@
 // there. Once EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID is set, the iOS reversed-client
 // URL scheme is added automatically for the next dev-client rebuild.
 
+const withAppCheckModularHeaders = require('./plugins/withAppCheckModularHeaders');
+
 const GOOGLE_PLUGIN = '@react-native-google-signin/google-signin';
 
 function withGoogleIosScheme(plugins) {
@@ -21,7 +23,7 @@ function withGoogleIosScheme(plugins) {
   );
 }
 
-module.exports = ({ config }) => ({
+module.exports = ({ config }) => withAppCheckModularHeaders({
   ...config,
   plugins: withGoogleIosScheme(config.plugins ?? []),
 });
