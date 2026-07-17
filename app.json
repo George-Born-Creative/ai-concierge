@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "ai-concierge",
-    "slug": "ai-concierge",
+    "slug": "konvero-ai-concierge",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "aiconcierge",
@@ -90,9 +90,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "388f78f9-6539-4fc8-831b-8c0b94b41cdd"
+        "projectId": "36716986-3765-40ed-9a5f-3a8795eb5800"
       }
     },
-    "owner": "dave1s-team"
+    "owner": "georgeact"
   }
 }
