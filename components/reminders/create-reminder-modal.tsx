@@ -17,6 +17,7 @@ import {
 
 import { remindersApi } from '@/lib/api';
 import type { Reminder } from '@/lib/api/types';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 type Props = {
@@ -54,6 +55,7 @@ export function CreateReminderModal({
   onUpdated,
 }: Props) {
   const { show } = useToast();
+  const { colors, resolvedTheme } = useAppTheme();
   const isEdit = !!reminder;
 
   const [title, setTitle] = useState('');
@@ -177,7 +179,8 @@ export function CreateReminderModal({
             <TextInput
               style={styles.input}
               placeholder="e.g. Call Sarah about renewal"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={colors.placeholder}
+              keyboardAppearance={resolvedTheme}
               value={title}
               onChangeText={setTitle}
               autoFocus={!isEdit}
@@ -187,7 +190,8 @@ export function CreateReminderModal({
             <TextInput
               style={[styles.input, styles.multiline]}
               placeholder="Any extra context for the notification body"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={colors.placeholder}
+              keyboardAppearance={resolvedTheme}
               value={notes}
               onChangeText={setNotes}
               multiline
@@ -201,6 +205,8 @@ export function CreateReminderModal({
                 mode="datetime"
                 display="spinner"
                 minimumDate={new Date(Date.now() + 30_000)}
+                themeVariant={resolvedTheme}
+                accentColor={colors.primary}
                 onChange={onChangeNative}
               />
             ) : Platform.OS === 'android' ? (
@@ -244,7 +250,8 @@ export function CreateReminderModal({
                   if (!Number.isNaN(parsed.getTime())) setDueAt(parsed);
                 }}
                 placeholder="YYYY-MM-DDTHH:MM"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={colors.placeholder}
+                keyboardAppearance={resolvedTheme}
               />
             )}
 
@@ -295,7 +302,7 @@ export function CreateReminderModal({
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator color="white" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
                   <Text style={styles.btnPrimaryText}>
                     {isEdit ? 'Save' : 'Create'}

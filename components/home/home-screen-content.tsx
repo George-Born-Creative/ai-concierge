@@ -5,6 +5,7 @@ import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 
 
 import { ScreenShell } from '@/components/screen';
 import { getUser } from '@/lib/session';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type QuickAction = {
   icon: keyof typeof MaterialIcons.glyphMap;
@@ -46,6 +47,7 @@ function firstName(name: string | undefined): string {
 
 export function HomeScreenContent() {
   const router = useRouter();
+  const { colors, resolvedTheme } = useAppTheme();
 
   const user = getUser();
   const isHubspot = user?.provider === 'hubspot';
@@ -182,8 +184,21 @@ export function HomeScreenContent() {
                 key={action.title}
                 onPress={() => runQuickAction(action)}
                 style={({ pressed }) => [styles.quickCard, pressed && styles.quickCardPressed]}>
-                <View style={[styles.quickIcon, { backgroundColor: action.bg }]}>
-                  <MaterialIcons name={action.icon} size={24} color={action.tint} />
+                <View
+                  style={[
+                    styles.quickIcon,
+                    {
+                      backgroundColor:
+                        resolvedTheme === 'dark'
+                          ? colors.surfaceSelected
+                          : action.bg,
+                    },
+                  ]}>
+                  <MaterialIcons
+                    name={action.icon}
+                    size={24}
+                    color={resolvedTheme === 'dark' ? colors.primary : action.tint}
+                  />
                 </View>
                 <Text style={styles.quickTitle}>{action.title}</Text>
               </Pressable>
@@ -196,7 +211,7 @@ export function HomeScreenContent() {
           onPress={() => router.push('/reminders' as Href)}
           style={({ pressed }) => [styles.reminderCard, pressed && { opacity: 0.9 }]}>
           <View style={styles.reminderIcon}>
-            <MaterialIcons name="notifications-active" size={24} color="#1A73E8" />
+            <MaterialIcons name="notifications-active" size={24} color={colors.primary} />
           </View>
           <View style={styles.reminderCopy}>
             <Text style={styles.reminderTitle}>Reminders</Text>
@@ -204,7 +219,7 @@ export function HomeScreenContent() {
               Manage scheduled reminders & push notifications
             </Text>
           </View>
-          <MaterialIcons name="chevron-right" size={22} color="#9AA0A6" />
+          <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
         </Pressable>
 
         {/* AI Assistant Card */}
@@ -212,7 +227,7 @@ export function HomeScreenContent() {
           style={[styles.aiCard, { opacity: intro, transform: [{ translateY: introTranslate }] }]}>
           <View style={styles.aiCardHeaderRow}>
             <View style={styles.aiBadge}>
-              <MaterialIcons name="smart-toy" size={16} color="#1A73E8" />
+              <MaterialIcons name="smart-toy" size={16} color={colors.primary} />
               <Text style={styles.aiBadgeText}>AI Assistant</Text>
             </View>
             <View style={styles.waveformMini} accessibilityElementsHidden>
@@ -236,7 +251,7 @@ export function HomeScreenContent() {
         {/* Help Card */}
         <View style={styles.helpCard}>
           <View style={styles.helpIcon}>
-            <MaterialIcons name="help-outline" size={24} color="#1A73E8" />
+            <MaterialIcons name="help-outline" size={24} color={colors.primary} />
           </View>
           <View style={styles.helpCopy}>
             <Text style={styles.helpTitle}>Need Help?</Text>

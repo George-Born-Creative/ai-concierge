@@ -3,14 +3,16 @@ import { Link } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 export default function ModalScreen() {
+  const { colors } = useAppTheme();
   return (
     <ScreenShell edges={['top', 'bottom']}>
       <View style={styles.container}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
-            <MaterialIcons name="mic" size={34} color="#FFFFFF" />
+            <MaterialIcons name="mic" size={34} color={colors.onPrimary} />
           </View>
           <Text style={styles.title}>Voice concierge</Text>
           <Text style={styles.subtitle}>

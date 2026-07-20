@@ -44,6 +44,7 @@ import {
 import { usePushState } from '@/lib/push/state';
 import { useRealtimeEvent } from '@/lib/realtime/socket';
 import { getUser } from '@/lib/session';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 // Appointment-status tabs (mirrors GoHighLevel's appointment filters). These
@@ -81,6 +82,7 @@ type MenuAction = {
 
 export function RemindersScreenContent() {
   const { show } = useToast();
+  const { colors } = useAppTheme();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const pushState = usePushState();
 
@@ -412,7 +414,7 @@ export function RemindersScreenContent() {
 
       {Platform.OS === 'web' ? (
         <View style={styles.webBanner}>
-          <MaterialIcons name="info-outline" size={16} color="#1F49E0" />
+          <MaterialIcons name="info-outline" size={16} color={colors.info} />
           <Text style={styles.webBannerText}>
             Push notifications are mobile-only. Reminders you create here will
             save but only fire on the iOS / Android app.
@@ -420,7 +422,7 @@ export function RemindersScreenContent() {
         </View>
       ) : pushDenied ? (
         <View style={styles.deniedBanner}>
-          <MaterialIcons name="notifications-off" size={16} color="#B91C1C" />
+          <MaterialIcons name="notifications-off" size={16} color={colors.danger} />
           <Text style={styles.deniedBannerText}>
             Reminders will not notify until you re-enable notifications in
             Settings.
@@ -433,7 +435,7 @@ export function RemindersScreenContent() {
 
       {loading ? (
         <View style={styles.loadingState}>
-          <ActivityIndicator color="#1F49E0" />
+          <ActivityIndicator color={colors.primary} />
         </View>
       ) : listData.length === 0 ? (
         <View style={styles.emptyState}>
@@ -480,7 +482,7 @@ export function RemindersScreenContent() {
         accessibilityLabel="Create reminder"
         accessibilityRole="button"
       >
-        <MaterialIcons name="add" size={28} color="white" />
+        <MaterialIcons name="add" size={28} color={colors.onPrimary} />
       </Pressable>
 
       <CreateReminderModal
@@ -518,7 +520,7 @@ export function RemindersScreenContent() {
                 <MaterialIcons
                   name={action.icon}
                   size={20}
-                  color={action.destructive ? '#B91C1C' : '#5B6B82'}
+                  color={action.destructive ? colors.danger : colors.icon}
                 />
                 <Text
                   style={[
@@ -545,6 +547,7 @@ export function RemindersScreenContent() {
 
 // Read-only row for a GoHighLevel appointment surfaced in the reminders list.
 function AppointmentRow({ appt }: { appt: GhlAppointmentSummary }) {
+  const { colors } = useAppTheme();
   const time = formatApptTime(appt.startTime);
   const cancelled = isCancelledAppt(appt);
   return (
@@ -553,7 +556,7 @@ function AppointmentRow({ appt }: { appt: GhlAppointmentSummary }) {
         <MaterialIcons
           name={cancelled ? 'event-busy' : 'event'}
           size={18}
-          color={cancelled ? '#B91C1C' : '#1F49E0'}
+          color={cancelled ? colors.danger : colors.primary}
         />
       </View>
       <View style={styles.apptCopy}>
@@ -594,10 +597,11 @@ function ApptDetail({
   icon: keyof typeof MaterialIcons.glyphMap;
   value?: string | null;
 }) {
+  const { colors } = useAppTheme();
   if (!value) return null;
   return (
     <View style={styles.apptDetailRow}>
-      <MaterialIcons name={icon} size={13} color="#5B6B82" />
+      <MaterialIcons name={icon} size={13} color={colors.icon} />
       <Text style={styles.apptDetailText} numberOfLines={1}>
         {value}
       </Text>

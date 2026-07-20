@@ -15,6 +15,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { requestPasswordReset, resetPassword } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { useToast } from '@/lib/toast';
@@ -26,6 +27,7 @@ const MIN_PASSWORD_LENGTH = 8;
 const RESEND_COOLDOWN_SECONDS = 30;
 
 export function ResetPasswordScreen() {
+  const { colors, resolvedTheme } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const params = useLocalSearchParams<{ email?: string }>();
@@ -116,7 +118,8 @@ export function ResetPasswordScreen() {
             value={code}
             onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH))}
             placeholder="______"
-            placeholderTextColor="#C4CAD3"
+            placeholderTextColor={colors.placeholder}
+            keyboardAppearance={resolvedTheme}
             style={styles.codeInput}
             keyboardType="number-pad"
             maxLength={CODE_LENGTH}
@@ -125,12 +128,13 @@ export function ResetPasswordScreen() {
           />
 
           <View style={styles.inputShell}>
-            <MaterialIcons name="lock-outline" size={21} color="#80868B" />
+            <MaterialIcons name="lock-outline" size={21} color={colors.icon} />
             <TextInput
               value={password}
               onChangeText={setPassword}
               placeholder="New password"
-              placeholderTextColor="#9AA0A6"
+              placeholderTextColor={colors.placeholder}
+              keyboardAppearance={resolvedTheme}
               style={styles.input}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
@@ -147,18 +151,19 @@ export function ResetPasswordScreen() {
               <MaterialIcons
                 name={showPassword ? 'visibility-off' : 'visibility'}
                 size={22}
-                color="#5F6368"
+                color={colors.icon}
               />
             </Pressable>
           </View>
 
           <View style={styles.inputShell}>
-            <MaterialIcons name="lock-outline" size={21} color="#80868B" />
+            <MaterialIcons name="lock-outline" size={21} color={colors.icon} />
             <TextInput
               value={confirm}
               onChangeText={setConfirm}
               placeholder="Confirm new password"
-              placeholderTextColor="#9AA0A6"
+              placeholderTextColor={colors.placeholder}
+              keyboardAppearance={resolvedTheme}
               style={styles.input}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
@@ -175,11 +180,11 @@ export function ResetPasswordScreen() {
             onPress={submit}
             disabled={submitting}>
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <>
                 <Text style={styles.primaryButtonText}>Reset password</Text>
-                <MaterialIcons name="arrow-forward" size={21} color="#FFFFFF" />
+                <MaterialIcons name="arrow-forward" size={21} color={colors.onPrimary} />
               </>
             )}
           </Pressable>

@@ -13,6 +13,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { ghlApi, hubspotApi } from '@/lib/api';
 import { CRM_LABELS } from '@/lib/crm/labels';
 import { useCrmOAuth, type CrmOAuthApi, type OAuthProvider } from '@/lib/oauth';
@@ -45,6 +46,7 @@ const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
 };
 
 export function ConnectIntegrationScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const { provider, oauthStatus, oauthReason } = useLocalSearchParams<{
@@ -98,7 +100,7 @@ export function ConnectIntegrationScreen() {
         alwaysBounceVertical={false}
         overScrollMode="never">
         <View style={styles.headerIcon}>
-          <MaterialIcons name="lan" size={34} color="#1A73E8" />
+          <MaterialIcons name="lan" size={34} color={colors.primary} />
         </View>
         <Text style={styles.title}>Connect {integration.name}</Text>
         <Text style={styles.subtitle}>
@@ -108,12 +110,12 @@ export function ConnectIntegrationScreen() {
 
         {loadingStatus ? (
           <View style={styles.statusRow}>
-            <ActivityIndicator size="small" color="#1A73E8" />
+            <ActivityIndicator size="small" color={colors.primary} />
             <Text style={styles.statusText}>Checking connection…</Text>
           </View>
         ) : connected ? (
           <View style={styles.connectedBanner}>
-            <MaterialIcons name="check-circle" size={22} color="#137333" />
+            <MaterialIcons name="check-circle" size={22} color={colors.success} />
             <View style={styles.connectedCopy}>
               <Text style={styles.connectedTitle}>Connected</Text>
               <Text style={styles.connectedSubtitle}>
@@ -125,7 +127,7 @@ export function ConnectIntegrationScreen() {
 
         <View style={styles.integrationCard}>
           <View style={styles.integrationIcon}>
-            <MaterialIcons name={integration.icon} size={26} color="#1A73E8" />
+            <MaterialIcons name={integration.icon} size={26} color={colors.primary} />
           </View>
           <View style={styles.integrationCopy}>
             <Text style={styles.integrationTitle}>{integration.name}</Text>
@@ -135,7 +137,7 @@ export function ConnectIntegrationScreen() {
 
         {connected ? (
           <Pressable style={styles.primaryButton} onPress={continueToOpenAIKey}>
-            <MaterialIcons name="arrow-forward" size={22} color="#FFFFFF" />
+            <MaterialIcons name="arrow-forward" size={22} color={colors.onPrimary} />
             <Text style={styles.primaryButtonText}>Continue to OpenAI key</Text>
           </Pressable>
         ) : (
@@ -144,10 +146,10 @@ export function ConnectIntegrationScreen() {
             onPress={startOAuthConnect}
             disabled={submitting}>
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <>
-                <MaterialIcons name="link" size={22} color="#FFFFFF" />
+                <MaterialIcons name="link" size={22} color={colors.onPrimary} />
                 <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
               </>
             )}

@@ -291,6 +291,89 @@ export class VoiceService {
     userId: string,
     file: Express.Multer.File | undefined,
   ): Promise<TranscribeResult> {
+    const prepared = await this.prepareWhisper(userId, file);
+    let rawText: string;
+    try {
+      const whisper = await prepared.openai.audio.transcriptions.create({
+        file: prepared.audioFile,
+        // gpt-4o-mini-transcribe is a drop-in faster replacement for whisper-1
+        // on the same endpoint; ~30-50% lower latency on short English clips.
+        model: 'gpt-4o-mini-transcribe',
+        language: VOICE_LANGUAGE,
+        prompt: WHISPER_PROMPT,
+      });
+      rawText = whisper.text ?? '';
+    } catch (err) {
+      throw await this.handleWhisperError(userId, prepared.keyStatus, err);
+    }
+    return this.finalizeTranscript(userId, rawText);
+  }
+
+  /**
+   * Streaming sibling of {@link transcribe}. Uses OpenAI's streaming STT so the
+   * client can render partial transcript deltas as the clip is processed;
+   * `onDelta` receives each incremental chunk. On any stream failure it retries
+   * once non-streaming, so a transport hiccup never blocks a voice command.
+   * The final text still runs through the same no-speech guards as transcribe.
+   */
+  async transcribeStream(
+    userId: string,
+    file: Express.Multer.File | undefined,
+    onDelta: (delta: string) => void,
+  ): Promise<TranscribeResult> {
+    const prepared = await this.prepareWhisper(userId, file);
+    let rawText = '';
+    try {
+      const stream = await prepared.openai.audio.transcriptions.create({
+        file: prepared.audioFile,
+        model: 'gpt-4o-mini-transcribe',
+        language: VOICE_LANGUAGE,
+        prompt: WHISPER_PROMPT,
+        stream: true,
+      });
+      for await (const event of stream) {
+        if (event.type === 'transcript.text.delta') {
+          if (event.delta) onDelta(event.delta);
+        } else if (event.type === 'transcript.text.done') {
+          rawText = event.text ?? '';
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Whisper stream failed for ${userId}; retrying non-streaming: ${(err as Error).message}`,
+      );
+      try {
+        const retryFile = await toFile(prepared.buffer, prepared.filename, {
+          type: prepared.mimetype,
+        });
+        const whisper = await prepared.openai.audio.transcriptions.create({
+          file: retryFile,
+          model: 'gpt-4o-mini-transcribe',
+          language: VOICE_LANGUAGE,
+          prompt: WHISPER_PROMPT,
+        });
+        rawText = whisper.text ?? '';
+      } catch (err2) {
+        throw await this.handleWhisperError(userId, prepared.keyStatus, err2);
+      }
+    }
+    return this.finalizeTranscript(userId, rawText);
+  }
+
+  // Validates the upload and builds the OpenAI client + uploadable. Shared by
+  // the buffered and streaming transcription paths so both enforce the same
+  // limits and use the user's own key.
+  private async prepareWhisper(
+    userId: string,
+    file: Express.Multer.File | undefined,
+  ): Promise<{
+    openai: OpenAI;
+    audioFile: Awaited<ReturnType<typeof toFile>>;
+    keyStatus: { last4: string | null };
+    filename: string;
+    mimetype: string;
+    buffer: Buffer;
+  }> {
     if (!file) {
       throw new BadRequestException('Audio file is required (multipart field "file")');
     }
@@ -306,27 +389,32 @@ export class VoiceService {
     const openai = new OpenAI({ apiKey });
 
     const filename = file.originalname || 'voice.m4a';
-    const audioFile = await toFile(file.buffer, filename, { type: file.mimetype });
+    const mimetype = file.mimetype;
+    const audioFile = await toFile(file.buffer, filename, { type: mimetype });
+    return { openai, audioFile, keyStatus, filename, mimetype, buffer: file.buffer };
+  }
 
-    let transcript: string;
-    try {
-      const whisper = await openai.audio.transcriptions.create({
-        file: audioFile,
-        // gpt-4o-mini-transcribe is a drop-in faster replacement for whisper-1
-        // on the same endpoint; ~30-50% lower latency on short English clips.
-        model: 'gpt-4o-mini-transcribe',
-        language: VOICE_LANGUAGE,
-        prompt: WHISPER_PROMPT,
-      });
-      transcript = reconstructSpokenEmailsInText(whisper.text?.trim() ?? '');
-    } catch (err) {
-      const message = formatOpenAIError(err, 'transcription');
-      this.logger.warn(
-        `Whisper failure for ${userId} (key ···${keyStatus.last4 ?? '????'}): ${message}`,
-      );
-      await this.audit(userId, 'voice.transcribe', 'failure', { stage: 'whisper', message });
-      throw new BadRequestException(message);
-    }
+  private async handleWhisperError(
+    userId: string,
+    keyStatus: { last4: string | null },
+    err: unknown,
+  ): Promise<BadRequestException> {
+    const message = formatOpenAIError(err, 'transcription');
+    this.logger.warn(
+      `Whisper failure for ${userId} (key ···${keyStatus.last4 ?? '????'}): ${message}`,
+    );
+    await this.audit(userId, 'voice.transcribe', 'failure', { stage: 'whisper', message });
+    return new BadRequestException(message);
+  }
+
+  // Applies spoken-email reconstruction + no-speech guards to a raw transcript
+  // and audits the outcome. Empty / hallucinated / prompt-echo results collapse
+  // to an empty transcript so the caller surfaces "voice not detected".
+  private async finalizeTranscript(
+    userId: string,
+    rawText: string,
+  ): Promise<TranscribeResult> {
+    const transcript = reconstructSpokenEmailsInText(rawText.trim());
 
     if (!transcript) {
       await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_empty' });

@@ -14,6 +14,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { requestPasswordReset } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { useToast } from '@/lib/toast';
@@ -22,6 +23,7 @@ import { useToast } from '@/lib/toast';
 const EMAIL_RE = /.+@.+\..+/;
 
 export function ForgotPasswordScreen() {
+  const { colors, resolvedTheme } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const [email, setEmail] = useState('');
@@ -73,12 +75,13 @@ export function ForgotPasswordScreen() {
           </Text>
 
           <View style={styles.inputShell}>
-            <MaterialIcons name="alternate-email" size={21} color="#80868B" />
+            <MaterialIcons name="alternate-email" size={21} color={colors.icon} />
             <TextInput
               value={email}
               onChangeText={setEmail}
               placeholder="Email address"
-              placeholderTextColor="#9AA0A6"
+              placeholderTextColor={colors.placeholder}
+              keyboardAppearance={resolvedTheme}
               style={styles.input}
               autoCapitalize="none"
               autoCorrect={false}
@@ -94,11 +97,11 @@ export function ForgotPasswordScreen() {
             onPress={submit}
             disabled={submitting}>
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <>
                 <Text style={styles.primaryButtonText}>Send reset code</Text>
-                <MaterialIcons name="arrow-forward" size={21} color="#FFFFFF" />
+                <MaterialIcons name="arrow-forward" size={21} color={colors.onPrimary} />
               </>
             )}
           </Pressable>

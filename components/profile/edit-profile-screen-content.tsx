@@ -15,12 +15,14 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { ApiError } from '@/lib/api/client';
 import { updateMe } from '@/lib/api/auth';
 import { getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 export function EditProfileScreenContent() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const initial = getUser();
@@ -110,7 +112,7 @@ export function EditProfileScreenContent() {
           {/* ── Account info ──────────────────────────────────────────────── */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <MaterialIcons name="person" size={26} color="#1A73E8" />
+              <MaterialIcons name="person" size={26} color={colors.primary} />
               <Text style={styles.cardTitle}>Account info</Text>
             </View>
 
@@ -137,7 +139,7 @@ export function EditProfileScreenContent() {
           {/* ── Password ─────────────────────────────────────────────────── */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <MaterialIcons name="lock" size={26} color="#1A73E8" />
+              <MaterialIcons name="lock" size={26} color={colors.primary} />
               <Text style={styles.cardTitle}>Change password</Text>
             </View>
 
@@ -180,7 +182,7 @@ export function EditProfileScreenContent() {
             onPress={() => void handleSave()}
             disabled={!hasAnyChange || submitting}>
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <Text style={styles.primaryButtonText}>Save changes</Text>
             )}
@@ -226,6 +228,7 @@ function Field({
   keyboardType = 'default',
   textContentType,
 }: FieldProps) {
+  const { colors, resolvedTheme } = useAppTheme();
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -233,7 +236,8 @@ function Field({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9AA0A6"
+        placeholderTextColor={colors.placeholder}
+        keyboardAppearance={resolvedTheme}
         secureTextEntry={secureTextEntry}
         autoCapitalize={autoCapitalize}
         keyboardType={keyboardType}

@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ScreenShell } from '@/components/screen';
 import { buildConnectRouteParams, type OAuthProvider } from '@/lib/oauth';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 /**
  * Deep-link landing route (registered in app.json Android intent filter).
@@ -13,6 +14,7 @@ import { buildConnectRouteParams, type OAuthProvider } from '@/lib/oauth';
  */
 export default function OAuthReturnRoute() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const { provider, status, reason } = useLocalSearchParams<{
     provider?: string;
     status?: string;
@@ -32,7 +34,7 @@ export default function OAuthReturnRoute() {
   return (
     <ScreenShell>
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1A73E8" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     </ScreenShell>
   );

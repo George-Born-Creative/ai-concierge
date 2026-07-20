@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { LogoDotsIcon } from '@/components/brand/logo-dots-icon';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { remindersApi } from '@/lib/api';
 import { googleSignIn } from '@/lib/api/auth';
 import { GoogleSignInError, signInWithGoogle } from '@/lib/auth/google';
@@ -33,6 +34,7 @@ function attachDevicePreferences() {
 // app's light palette for consistency with the rest of onboarding. Offers two
 // paths: the email/password form (/signup-email) and native Google sign-in.
 export function AuthLanding() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -78,7 +80,7 @@ export function AuthLanding() {
             style={styles.primaryButton}
             disabled={googleBusy}
             onPress={() => router.push('/signup-email' as Href)}>
-            <MaterialIcons name="mail-outline" size={20} color="#FFFFFF" />
+            <MaterialIcons name="mail-outline" size={20} color={colors.onPrimary} />
             <Text style={styles.primaryButtonText}>Continue with Email</Text>
           </Pressable>
 
@@ -93,7 +95,7 @@ export function AuthLanding() {
             disabled={googleBusy}
             onPress={handleGoogle}>
             {googleBusy ? (
-              <ActivityIndicator size="small" color="#1A73E8" />
+              <ActivityIndicator size="small" color={colors.primary} />
             ) : (
               <AntDesign name="google" size={20} color="#EA4335" />
             )}

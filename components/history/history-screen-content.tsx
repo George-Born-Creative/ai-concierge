@@ -5,9 +5,11 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
 import { AssistantChat, useAssistantHistory } from '@/lib/assistant-history';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 export function HistoryScreenContent() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const { chats, clearAllChats, createChat, deleteChat, openChat } = useAssistantHistory();
 
   const sortedChats = [...chats].sort(
@@ -56,7 +58,7 @@ export function HistoryScreenContent() {
           Each block is one conversation. Open a chat to see all messages, or start a new one.
         </Text>
         <Pressable style={styles.newChatButton} onPress={startNewChat}>
-          <MaterialIcons name="add-comment" size={22} color="#FFFFFF" />
+          <MaterialIcons name="add-comment" size={22} color={colors.onPrimary} />
           <Text style={styles.newChatButtonText}>New chat</Text>
         </Pressable>
 
@@ -71,7 +73,7 @@ export function HistoryScreenContent() {
 
         {chats.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MaterialIcons name="forum" size={34} color="#1A73E8" />
+            <MaterialIcons name="forum" size={34} color={colors.primary} />
             <Text style={styles.emptyTitle}>No chats yet</Text>
             <Text style={styles.emptyText}>
               Start a new chat to talk with the assistant. All messages in that session stay inside
@@ -90,7 +92,7 @@ export function HistoryScreenContent() {
                 accessibilityRole="button"
                 accessibilityLabel={`Open chat from ${formatTimestamp(chat.updatedAt)}`}>
                 <View style={styles.chatBlockIcon}>
-                  <MaterialIcons name="chat-bubble-outline" size={26} color="#1A73E8" />
+                  <MaterialIcons name="chat-bubble-outline" size={26} color={colors.primary} />
                 </View>
                 <View style={styles.chatBlockBody}>
                   <View style={styles.chatBlockTop}>
@@ -108,13 +110,13 @@ export function HistoryScreenContent() {
                   </Text>
                   <Text style={styles.timestamp}>Updated {formatTimestamp(chat.updatedAt)}</Text>
                 </View>
-                <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+                <MaterialIcons name="chevron-right" size={24} color={colors.iconMuted} />
               </Pressable>
               <Pressable
                 style={styles.deleteChatButton}
                 onPress={() => confirmDeleteChat(chat)}
                 accessibilityLabel="Delete conversation">
-                <MaterialIcons name="delete-outline" size={22} color="#D93025" />
+                <MaterialIcons name="delete-outline" size={22} color={colors.danger} />
               </Pressable>
             </View>
           ))

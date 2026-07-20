@@ -13,6 +13,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -78,6 +79,7 @@ type DisplayCard = {
 };
 
 export function PlanSelectionScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const stripeSheet = useStripePaymentSheet();
@@ -287,6 +289,35 @@ export function PlanSelectionScreen() {
       customerEphemeralKeySecret: sheet.ephemeralKey,
       paymentIntentClientSecret: sheet.paymentIntent,
       returnURL: 'aiconcierge://stripe-redirect',
+      appearance: {
+        colors: {
+          primary: colors.primary,
+          background: colors.background,
+          componentBackground: colors.inputBackground,
+          componentBorder: colors.inputBorder,
+          componentDivider: colors.divider,
+          primaryText: colors.textPrimary,
+          secondaryText: colors.textSecondary,
+          componentText: colors.textPrimary,
+          placeholderText: colors.placeholder,
+          icon: colors.icon,
+          error: colors.danger,
+        },
+        shapes: {
+          borderRadius: 12,
+          borderWidth: 1,
+        },
+        primaryButton: {
+          colors: {
+            background: colors.primary,
+            text: colors.onPrimary,
+            border: colors.primary,
+          },
+          shapes: {
+            borderRadius: 12,
+          },
+        },
+      },
     });
     if (init.error) {
       throw new Error(init.error.message);
@@ -403,7 +434,7 @@ export function PlanSelectionScreen() {
         alwaysBounceVertical={false}
         overScrollMode="never">
         <View style={styles.headerIcon}>
-          <MaterialIcons name="workspace-premium" size={34} color="#1A73E8" />
+          <MaterialIcons name="workspace-premium" size={34} color={colors.primary} />
         </View>
         <Text style={styles.title}>Choose your CRM plan</Text>
         <Text style={styles.subtitle}>
@@ -423,7 +454,7 @@ export function PlanSelectionScreen() {
                 <View style={styles.planHeader}>
                   <View style={styles.planTitleRow}>
                     <View style={styles.planIcon}>
-                      <MaterialIcons name={card.icon} size={22} color="#1A73E8" />
+                      <MaterialIcons name={card.icon} size={22} color={colors.primary} />
                     </View>
                     <View style={styles.planTitleCopy}>
                       <Text style={styles.planName}>{card.name}</Text>
@@ -440,7 +471,7 @@ export function PlanSelectionScreen() {
                       </>
                     ) : (
                       <View style={styles.priceSkeleton}>
-                        <ActivityIndicator size="small" color="#1A73E8" />
+                        <ActivityIndicator size="small" color={colors.primary} />
                       </View>
                     )}
                   </View>
@@ -450,7 +481,7 @@ export function PlanSelectionScreen() {
                   <View style={styles.featuresList}>
                     {live.features.map((feature) => (
                       <View key={feature} style={styles.featureRow}>
-                        <MaterialIcons name="check-circle" size={20} color="#34A853" />
+                        <MaterialIcons name="check-circle" size={20} color={colors.success} />
                         <Text style={styles.featureText}>{feature}</Text>
                       </View>
                     ))}
@@ -479,10 +510,10 @@ export function PlanSelectionScreen() {
           onPress={openCheckout}
           disabled={isSubscribing || isRestoring || !canSubscribe}>
           {isSubscribing || !canSubscribe ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <>
-              <MaterialIcons name="lock" size={20} color="#FFFFFF" />
+              <MaterialIcons name="lock" size={20} color={colors.onPrimary} />
               <Text style={styles.primaryButtonText}>
                 {IS_IOS ? 'Subscribe' : 'Subscribe with Stripe'}
               </Text>
@@ -501,7 +532,7 @@ export function PlanSelectionScreen() {
             onPress={restoreApple}
             disabled={isSubscribing || isRestoring || !canSubscribe}>
             {isRestoring ? (
-              <ActivityIndicator color="#1A73E8" size="small" />
+              <ActivityIndicator color={colors.primary} size="small" />
             ) : (
               <Text style={styles.restoreButtonText}>Restore Purchases</Text>
             )}

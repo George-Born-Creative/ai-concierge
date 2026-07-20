@@ -43,6 +43,24 @@ export function initRealtime(): () => void {
 }
 
 /**
+ * Imperative sibling of {@link useRealtimeEvent} for non-component callers
+ * (e.g. async flows in context providers). Ensures the socket is connected
+ * when a session exists, attaches the listener, and returns an unsubscribe
+ * function the caller MUST invoke to avoid leaks / cross-talk.
+ */
+export function subscribeRealtimeEvent<T = unknown>(
+  event: string,
+  handler: (payload: T) => void,
+): () => void {
+  const s = ensureSocket();
+  if (getToken() && !s.connected) s.connect();
+  s.on(event, handler as (payload: unknown) => void);
+  return () => {
+    s.off(event, handler as (payload: unknown) => void);
+  };
+}
+
+/**
  * Subscribe to a realtime event for the lifetime of the calling component.
  * Ensures the socket is connected when a session exists. Pass a stable handler
  * (e.g. via useCallback) to avoid needless re-subscription.
