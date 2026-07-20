@@ -26,11 +26,13 @@ import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { APP_BG, BORDER, HEADER_ACTION } from '@/constants/theme';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 export default function ChatScreen() {
   const router = useRouter();
   const { show } = useToast();
+  const { colors, resolvedTheme } = useAppTheme();
   const params = useLocalSearchParams<{
     command?: string;
     source?: AssistantHistoryEntry['source'];
@@ -150,7 +152,7 @@ export default function ChatScreen() {
         keyboardVerticalOffset={0}>
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={24} color="#202124" />
+            <MaterialIcons name="arrow-back" size={24} color={colors.textPrimary} />
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>AI Concierge</Text>
@@ -241,7 +243,8 @@ export default function ChatScreen() {
             value={input}
             onChangeText={setInput}
             placeholder="Say or type a command"
-            placeholderTextColor="#80868B"
+            placeholderTextColor={colors.placeholder}
+            keyboardAppearance={resolvedTheme}
             style={styles.input}
             returnKeyType="send"
             onSubmitEditing={() => submitCommand(input)}
@@ -255,14 +258,14 @@ export default function ChatScreen() {
                 setIsRunning(false);
               }}
               accessibilityLabel="Stop processing">
-              <MaterialIcons name="stop" size={22} color="#FFFFFF" />
+              <MaterialIcons name="stop" size={22} color={colors.onPrimary} />
             </Pressable>
           ) : (
             <Pressable
               style={[styles.sendButton, !input.trim() && styles.disabledButton]}
               onPress={() => submitCommand(input)}
               disabled={!input.trim()}>
-              <MaterialIcons name="send" size={22} color="#FFFFFF" />
+              <MaterialIcons name="send" size={22} color={colors.onPrimary} />
             </Pressable>
           )}
         </View>
@@ -304,6 +307,7 @@ function CommandBubble({
   onCopy?: (text: string) => void;
   onEdit?: (newText: string) => Promise<void> | void;
 }) {
+  const { colors, resolvedTheme } = useAppTheme();
   const userText = voiceUserText(entry);
   const timeLabel = formatMessageTime(entry.createdAt);
   const canCopyResponse = !entry.pending && Boolean(entry.response?.trim());
@@ -397,7 +401,8 @@ function CommandBubble({
                 autoFocus
                 editable={!savingEdit}
                 style={styles.userEditInput}
-                placeholderTextColor="rgba(255,255,255,0.55)"
+                placeholderTextColor={colors.textMuted}
+                keyboardAppearance={resolvedTheme}
               />
               <View style={styles.editActionRow}>
                 <Pressable
@@ -423,7 +428,7 @@ function CommandBubble({
                       draft.trim() === userText.trim()) && { opacity: 0.5 },
                     pressed && { opacity: 0.7 },
                   ]}>
-                  <MaterialIcons name="send" size={13} color="#1A73E8" />
+                  <MaterialIcons name="send" size={13} color={colors.primary} />
                   <Text style={styles.editChipSaveText}>
                     {savingEdit ? 'Saving…' : 'Save & resend'}
                   </Text>
@@ -516,7 +521,7 @@ function ActionChip({
   // human-readable label (e.g. "Edit and resend", "Copy text").
   accessibilityLabel: string;
 }) {
-  const accent = '#1A73E8';
+  const { colors } = useAppTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -527,23 +532,29 @@ function ActionChip({
         pressed && { opacity: 0.7 },
       ]}
       accessibilityLabel={accessibilityLabel}>
-      <MaterialIcons name={icon} size={16} color={accent} />
+      <MaterialIcons name={icon} size={16} color={colors.primary} />
     </Pressable>
   );
 }
 
 function ChatSkeleton() {
+  const { colors } = useAppTheme();
   return (
     <View style={{ gap: 18 }}>
       {[0, 1, 2].map((i) => (
         <View key={i} style={styles.commandGroup}>
           <View style={styles.skeletonUserBubble}>
-            <Skeleton width="70%" height={12} radius={6} style={{ backgroundColor: '#94B6F2' }} />
+            <Skeleton
+              width="70%"
+              height={12}
+              radius={6}
+              style={{ backgroundColor: colors.infoBorder }}
+            />
             <Skeleton
               width="45%"
               height={12}
               radius={6}
-              style={{ backgroundColor: '#94B6F2', marginTop: 8 }}
+              style={{ backgroundColor: colors.infoBorder, marginTop: 8 }}
             />
           </View>
           <View style={styles.skeletonAssistantBubble}>

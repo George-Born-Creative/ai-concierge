@@ -8,6 +8,8 @@ import {
   View,
 } from 'react-native';
 
+import { useAppTheme } from '@/lib/theme/theme-provider';
+
 // Which payment rail the user is mid-checkout on, so the sheet can show a
 // spinner on the row they tapped while leaving the other one tappable (in
 // case the first one errors and they want to fall back).
@@ -48,6 +50,7 @@ export function PaymentMethodSheet({
   onClose,
 }: PaymentMethodSheetProps) {
   const anyBusy = busy !== null;
+  const { colors } = useAppTheme();
 
   return (
     <Modal
@@ -78,7 +81,7 @@ export function PaymentMethodSheet({
             onPress={onSelectApple}
             disabled={!appleAvailable || anyBusy}>
             <View style={styles.optionIcon}>
-              <MaterialIcons name="apple" size={26} color="#202124" />
+              <MaterialIcons name="apple" size={26} color={colors.textPrimary} />
             </View>
             <View style={styles.optionBody}>
               <Text style={styles.optionTitle}>Pay with Apple</Text>
@@ -90,7 +93,7 @@ export function PaymentMethodSheet({
             </View>
             <View style={styles.optionRight}>
               {busy === 'apple' ? (
-                <ActivityIndicator color="#1A73E8" />
+                <ActivityIndicator color={colors.primary} />
               ) : applePriceDisplay ? (
                 <>
                   <Text style={styles.optionPrice}>{applePriceDisplay}</Text>
@@ -110,7 +113,7 @@ export function PaymentMethodSheet({
             onPress={onSelectStripe}
             disabled={!stripeAvailable || anyBusy}>
             <View style={styles.optionIcon}>
-              <MaterialIcons name="credit-card" size={24} color="#1A73E8" />
+              <MaterialIcons name="credit-card" size={24} color={colors.primary} />
             </View>
             <View style={styles.optionBody}>
               <View style={styles.optionTitleRow}>
@@ -129,7 +132,7 @@ export function PaymentMethodSheet({
             </View>
             <View style={styles.optionRight}>
               {busy === 'stripe' ? (
-                <ActivityIndicator color="#1A73E8" />
+                <ActivityIndicator color={colors.primary} />
               ) : stripePriceDisplay ? (
                 <>
                   {savingsPercent != null &&

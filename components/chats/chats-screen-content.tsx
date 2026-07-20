@@ -20,6 +20,7 @@ import {
   type AssistantChat,
   type AssistantChatGroup,
 } from '@/lib/assistant-history';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type Section = {
   key: AssistantChatGroup['key'];
@@ -29,6 +30,7 @@ type Section = {
 
 export function ChatsScreenContent() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const {
     chats,
     chatGroups,
@@ -115,7 +117,7 @@ export function ChatsScreenContent() {
             <RefreshControl
               refreshing={loading}
               onRefresh={() => void refreshChats()}
-              tintColor="#1A73E8"
+            tintColor={colors.primary}
             />
           }
           contentContainerStyle={styles.listContent}
@@ -153,6 +155,7 @@ function ChatRow({
   onOpen: () => void;
   onDelete: () => void;
 }) {
+  const { colors } = useAppTheme();
   const time = formatTime(chat.updatedAt);
   const status = chat.lastStatus ?? 'success';
   const source = chat.lastSource ?? 'text';
@@ -174,7 +177,7 @@ function ChatRow({
         <MaterialIcons
           name={source === 'voice' ? 'mic' : 'chat-bubble-outline'}
           size={18}
-          color="#1A73E8"
+          color={colors.primary}
         />
       </View>
       <View style={styles.rowCopy}>
@@ -196,28 +199,30 @@ function ChatRow({
           <StatusBadge status={status} />
         </View>
       </View>
-      <MaterialIcons name="chevron-right" size={22} color="#BDC1C6" />
+      <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
     </Pressable>
   );
 }
 
 function StatusBadge({ status }: { status: 'success' | 'error' | 'pending' }) {
+  const { colors } = useAppTheme();
   if (status === 'pending') {
     return (
-      <View style={[styles.statusDot, { backgroundColor: '#1A73E8' }]} />
+      <View style={[styles.statusDot, { backgroundColor: colors.primary }]} />
     );
   }
   if (status === 'error') {
-    return <View style={[styles.statusDot, { backgroundColor: '#EA4335' }]} />;
+    return <View style={[styles.statusDot, { backgroundColor: colors.danger }]} />;
   }
-  return <View style={[styles.statusDot, { backgroundColor: '#34A853' }]} />;
+  return <View style={[styles.statusDot, { backgroundColor: colors.success }]} />;
 }
 
 function EmptyState({ onStart }: { onStart: () => void }) {
+  const { colors } = useAppTheme();
   return (
     <View style={styles.empty}>
       <View style={styles.emptyIcon}>
-        <MaterialIcons name="chat-bubble-outline" size={28} color="#1A73E8" />
+        <MaterialIcons name="chat-bubble-outline" size={28} color={colors.primary} />
       </View>
       <Text style={styles.emptyTitle}>No chats yet</Text>
       <Text style={styles.emptyText}>

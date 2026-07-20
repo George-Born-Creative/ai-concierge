@@ -15,6 +15,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { remindersApi } from '@/lib/api';
 import { getMe, signIn, signUp } from '@/lib/api/auth';
 import { getApiBaseUrl } from '@/lib/api/base-url';
@@ -49,6 +50,7 @@ type AuthScreenProps = {
 };
 
 export function AuthScreen({ mode }: AuthScreenProps) {
+  const { colors, resolvedTheme } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const isSignup = mode === 'signup';
@@ -145,7 +147,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     return (
       <ScreenShell>
         <View style={styles.sessionCheck}>
-          <ActivityIndicator size="large" color="#1A73E8" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </ScreenShell>
     );
@@ -173,7 +175,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               </View>
 
               <View style={styles.badge}>
-                <MaterialIcons name="auto-awesome" size={16} color="#1A73E8" />
+                <MaterialIcons name="auto-awesome" size={16} color={colors.primary} />
                 <Text style={styles.badgeText}>AI-Concierge</Text>
               </View>
             </View>
@@ -191,12 +193,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
             {isSignup ? (
               <View style={styles.inputShell}>
-                <MaterialIcons name="person-outline" size={22} color="#80868B" />
+                <MaterialIcons name="person-outline" size={22} color={colors.icon} />
                 <TextInput
                   value={name}
                   onChangeText={setName}
                   placeholder="Full name"
-                  placeholderTextColor="#9AA0A6"
+                  placeholderTextColor={colors.placeholder}
+                  keyboardAppearance={resolvedTheme}
                   style={styles.input}
                   autoCapitalize="words"
                   returnKeyType="next"
@@ -205,12 +208,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
             ) : null}
 
             <View style={styles.inputShell}>
-              <MaterialIcons name="alternate-email" size={21} color="#80868B" />
+              <MaterialIcons name="alternate-email" size={21} color={colors.icon} />
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Email address"
-                placeholderTextColor="#9AA0A6"
+                placeholderTextColor={colors.placeholder}
+                keyboardAppearance={resolvedTheme}
                 style={styles.input}
                 autoCapitalize="none"
                 keyboardType="email-address"
@@ -218,12 +222,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               />
             </View>
             <View style={styles.inputShell}>
-              <MaterialIcons name="lock-outline" size={21} color="#80868B" />
+              <MaterialIcons name="lock-outline" size={21} color={colors.icon} />
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Password"
-                placeholderTextColor="#9AA0A6"
+                placeholderTextColor={colors.placeholder}
+                keyboardAppearance={resolvedTheme}
                 style={styles.input}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
@@ -241,7 +246,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
                 <MaterialIcons
                   name={showPassword ? 'visibility-off' : 'visibility'}
                   size={22}
-                  color="#5F6368"
+                  color={colors.icon}
                 />
               </Pressable>
             </View>
@@ -269,7 +274,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
                     : 'Sign in'}
               </Text>
               {!submitting ? (
-                <MaterialIcons name="arrow-forward" size={21} color="#FFFFFF" />
+                <MaterialIcons name="arrow-forward" size={21} color={colors.onPrimary} />
               ) : null}
             </Pressable>
 

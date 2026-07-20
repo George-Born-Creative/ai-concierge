@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 
 import { VoiceRecordingVisual } from "@/components/voice/voice-recording-visual";
+import { useAppTheme } from "@/lib/theme/theme-provider";
 
 type VoiceActivity = "idle" | "recording" | "sending";
 
@@ -35,6 +36,7 @@ export function AIConciergeVoiceRecorder({
   onActivityChange,
   variant = "tab",
 }: AIConciergeVoiceRecorderProps) {
+  const { colors } = useAppTheme();
   const isComposer = variant === "composer";
   const recordingRef = useRef<Audio.Recording | null>(null);
   const hasStoppedRef = useRef(false);
@@ -360,12 +362,12 @@ export function AIConciergeVoiceRecorder({
           ]}
         >
           {isComposer && isSending ? (
-            <MaterialIcons name="hourglass-top" size={22} color="#FFFFFF" />
+            <MaterialIcons name="hourglass-top" size={22} color={colors.onPrimary} />
           ) : (
             <MaterialIcons
               name="mic"
               size={isComposer ? 25 : 40}
-              color="#FFFFFF"
+              color={colors.onPrimary}
             />
           )}
         </View>

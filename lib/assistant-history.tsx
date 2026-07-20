@@ -19,6 +19,7 @@ import type {
   RunAssistantCommandRequest,
   VoiceIntent,
 } from '@/lib/api/types';
+import { subscribeRealtimeEvent } from '@/lib/realtime/socket';
 import { getToken, subscribeSession } from '@/lib/session';
 
 export type AssistantCommandStatus = 'success' | 'error';
@@ -608,8 +609,36 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           }),
         }));
 
+        // Stream the transcript in as Whisper produces it: the backend relays
+        // partial deltas over the socket keyed by requestId, and we paint them
+        // onto the user bubble live. Purely cosmetic — the HTTP response below
+        // is still the source of truth (and the no-speech guard runs on it).
+        const requestId = `voice-${optimisticId}`;
+        let partialTranscript = '';
+        const unsubscribeDeltas = subscribeRealtimeEvent<{ requestId: string; delta: string }>(
+          'voice.transcribe.delta',
+          (payload) => {
+            if (payload.requestId !== requestId) return;
+            partialTranscript += payload.delta;
+            const live = partialTranscript.trim();
+            if (!live || cancelledIdsRef.current.has(optimisticId)) return;
+            setState((s) => ({
+              ...s,
+              chats: s.chats.map((chat) => {
+                if (chat.id !== convId) return chat;
+                return {
+                  ...chat,
+                  messages: chat.messages.map((m) =>
+                    m.id === optimisticId ? { ...m, transcript: live } : m,
+                  ),
+                };
+              }),
+            }));
+          },
+        );
+
         try {
-          const transcribed = await voiceApi.transcribe(voiceUri);
+          const transcribed = await voiceApi.transcribe(voiceUri, requestId);
           if (cancelledIdsRef.current.has(optimisticId)) {
             cancelledIdsRef.current.delete(optimisticId);
             return;
@@ -703,6 +732,8 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
               };
             }),
           }));
+        } finally {
+          unsubscribeDeltas();
         }
       })();
 

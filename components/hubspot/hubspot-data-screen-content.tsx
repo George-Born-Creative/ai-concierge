@@ -34,6 +34,7 @@ import type {
 } from '@/lib/api/types';
 import { useRealtimeEvent } from '@/lib/realtime/socket';
 import { getUser } from '@/lib/session';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 type LoadState<T> = {
@@ -90,6 +91,7 @@ function isObjectKey(value: unknown): value is ObjectKey {
 const SKIP: HubspotPaginated<never> = { results: [], after: null };
 
 export function HubspotDataScreenContent() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
 
@@ -235,7 +237,7 @@ export function HubspotDataScreenContent() {
       <ScreenShell edges={['bottom']}>
         <PageHeader title={`${CRM_LABELS.hubspot} data`} showBack onBack={() => router.back()} />
         <View style={styles.notFor}>
-          <MaterialIcons name="info-outline" size={40} color="#80868B" />
+          <MaterialIcons name="info-outline" size={40} color={colors.icon} />
           <Text style={styles.notForTitle}>{CRM_LABELS.hubspot} only</Text>
           <Text style={styles.notForText}>
             This view shows {CRM_LABELS.hubspot} contacts, deals, and companies. Your account is on{' '}
@@ -260,7 +262,7 @@ export function HubspotDataScreenContent() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => void handleRefresh()}
-            tintColor="#1A73E8"
+          tintColor={colors.primary}
           />
         }>
         {want('contacts') && (
@@ -432,11 +434,12 @@ type SectionProps<T> = {
 };
 
 function Section<T>({ icon, title, state, emptyText, renderRow }: SectionProps<T>) {
+  const { colors } = useAppTheme();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionIcon}>
-          <MaterialIcons name={icon} size={18} color="#1A73E8" />
+          <MaterialIcons name={icon} size={18} color={colors.primary} />
         </View>
         <Text style={styles.sectionTitle}>{title}</Text>
         {!state.loading && state.error === null ? (
@@ -451,7 +454,7 @@ function Section<T>({ icon, title, state, emptyText, renderRow }: SectionProps<T
           <SectionSkeleton />
         ) : state.error ? (
           <View style={styles.errorCard}>
-            <MaterialIcons name="error-outline" size={18} color="#B00020" />
+            <MaterialIcons name="error-outline" size={18} color={colors.danger} />
             <Text style={styles.errorText}>{state.error}</Text>
           </View>
         ) : state.data.length === 0 ? (
@@ -489,6 +492,7 @@ type RowCardProps = {
 };
 
 function RowCard({ title, subtitle, meta, onPress }: RowCardProps) {
+  const { colors } = useAppTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -508,7 +512,7 @@ function RowCard({ title, subtitle, meta, onPress }: RowCardProps) {
           </Text>
         ) : null}
       </View>
-      <MaterialIcons name="content-copy" size={16} color="#80868B" />
+      <MaterialIcons name="content-copy" size={16} color={colors.icon} />
     </Pressable>
   );
 }

@@ -13,12 +13,14 @@ import {
 
 import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { ThemeColors } from '@/constants/theme';
 import { ghlApi, hubspotApi, openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
 import { getCrmLabel, getCrmLabelList } from '@/lib/crm/labels';
 import { clearPushTokenCache } from '@/lib/push/register-push-token';
 import { clearSession, getUser, refreshUser } from '@/lib/session';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 // ─── Static catalog ───────────────────────────────────────────────────────────
@@ -82,6 +84,7 @@ type CrmStatus = {
 export function ProfileScreenContent() {
   const router = useRouter();
   const { show } = useToast();
+  const { colors } = useAppTheme();
 
   const [user, setUser] = useState<User | null>(() => getUser());
   const [crmStatus, setCrmStatus] = useState<CrmStatus | null>(null);
@@ -182,7 +185,10 @@ export function ProfileScreenContent() {
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'AI-Concierge';
   const planLabel = user?.plan ? formatPlanLabel(user.plan.name, user.plan.status) : null;
   const crmLabel = getCrmLabel(crmStatus?.provider ?? null);
-  const planBadgeStyle = TONE_PILL_STYLES[user?.plan ? planTone(user.plan.status) : 'muted'];
+  const planBadgeStyle = getTonePillStyle(
+    user?.plan ? planTone(user.plan.status) : 'muted',
+    colors,
+  );
 
   return (
     <ScreenShell edges={[]}>
@@ -308,7 +314,7 @@ export function ProfileScreenContent() {
           {assistantCapabilities.map((cap) => (
             <View key={cap.title} style={styles.capabilityRow}>
               <View style={styles.capabilityIcon}>
-                <MaterialIcons name={cap.icon} size={22} color="#1A73E8" />
+                <MaterialIcons name={cap.icon} size={22} color={colors.primary} />
               </View>
               <View style={styles.capabilityCopy}>
                 <Text style={styles.capabilityTitle}>{cap.title}</Text>
@@ -329,7 +335,7 @@ export function ProfileScreenContent() {
           {upcomingFeatures.map((feature) => (
             <View key={feature.title} style={styles.upcomingRow}>
               <View style={styles.upcomingIcon}>
-                <MaterialIcons name={feature.icon} size={22} color="#7C4DFF" />
+                <MaterialIcons name={feature.icon} size={22} color={colors.info} />
               </View>
               <View style={styles.capabilityCopy}>
                 <Text style={styles.capabilityTitle}>{feature.title}</Text>
@@ -346,7 +352,7 @@ export function ProfileScreenContent() {
             onPress={() => router.push('/settings')}
             disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
-              <MaterialIcons name="settings" size={22} color="#1A73E8" />
+              <MaterialIcons name="settings" size={22} color={colors.primary} />
             </View>
             <View style={styles.actionCopy}>
               <Text style={styles.actionTitle}>Settings</Text>
@@ -354,7 +360,7 @@ export function ProfileScreenContent() {
                 Manage your CRM connection, OpenAI key, and provider
               </Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+            <MaterialIcons name="chevron-right" size={24} color={colors.iconMuted} />
           </Pressable>
 
           <Pressable
@@ -367,9 +373,9 @@ export function ProfileScreenContent() {
             disabled={isLoggingOut}>
             <View style={[styles.actionIcon, styles.logoutIcon]}>
               {isLoggingOut ? (
-                <ActivityIndicator size="small" color="#EA4335" />
+                <ActivityIndicator size="small" color={colors.danger} />
               ) : (
-                <MaterialIcons name="logout" size={22} color="#EA4335" />
+                <MaterialIcons name="logout" size={22} color={colors.danger} />
               )}
             </View>
             <View style={styles.actionCopy}>
@@ -381,7 +387,7 @@ export function ProfileScreenContent() {
               </Text>
             </View>
             {!isLoggingOut ? (
-              <MaterialIcons name="chevron-right" size={24} color="#F6AEA9" />
+              <MaterialIcons name="chevron-right" size={24} color={colors.dangerBorder} />
             ) : null}
           </Pressable>
         </View>
@@ -403,7 +409,8 @@ function StatusPill({
   label: string;
   tone: Tone;
 }) {
-  const pillStyle = TONE_PILL_STYLES[tone];
+  const { colors } = useAppTheme();
+  const pillStyle = getTonePillStyle(tone, colors);
   return (
     <View style={[styles.statusPill, { backgroundColor: pillStyle.bg, borderColor: pillStyle.border }]}>
       <MaterialIcons name={icon} size={14} color={pillStyle.fg} />
@@ -427,11 +434,12 @@ function ConnectionRow({
   statusLabel: string;
   tone: Tone;
 }) {
-  const pillStyle = TONE_PILL_STYLES[tone];
+  const { colors } = useAppTheme();
+  const pillStyle = getTonePillStyle(tone, colors);
   return (
     <View style={styles.connectionRow}>
       <View style={styles.connectionIcon}>
-        <MaterialIcons name={icon} size={22} color="#1A73E8" />
+        <MaterialIcons name={icon} size={22} color={colors.primary} />
       </View>
       <View style={styles.capabilityCopy}>
         <Text style={styles.capabilityTitle}>{title}</Text>
@@ -503,12 +511,34 @@ function formatPlanLabel(name: string, status: string): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const TONE_PILL_STYLES: Record<Tone, { bg: string; border: string; fg: string }> = {
-  success: { bg: '#E6F4EA', border: '#B7E1C0', fg: '#1E8E3E' },
-  muted: { bg: '#F1F3F4', border: '#E0E3E7', fg: '#5F6368' },
-  brand: { bg: '#E8F0FE', border: '#C6DAFC', fg: '#1A73E8' },
-  warning: { bg: '#FEF7E0', border: '#FCE8B2', fg: '#B06000' },
-};
+function getTonePillStyle(tone: Tone, colors: ThemeColors) {
+  if (tone === 'success') {
+    return {
+      bg: colors.successSurface,
+      border: colors.successBorder,
+      fg: colors.success,
+    };
+  }
+  if (tone === 'warning') {
+    return {
+      bg: colors.warningSurface,
+      border: colors.warningBorder,
+      fg: colors.warning,
+    };
+  }
+  if (tone === 'brand') {
+    return {
+      bg: colors.infoSurface,
+      border: colors.infoBorder,
+      fg: colors.info,
+    };
+  }
+  return {
+    bg: colors.surfaceMuted,
+    border: colors.border,
+    fg: colors.textSecondary,
+  };
+}
 
 const styles = StyleSheet.create({
   content: {

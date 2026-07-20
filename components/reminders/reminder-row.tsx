@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { Reminder } from '@/lib/api/types';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type Props = {
   reminder: Reminder;
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export function ReminderRow({ reminder, focused, onPress, onMore }: Props) {
+  const { colors } = useAppTheme();
   const due = useMemo(() => new Date(reminder.dueAt), [reminder.dueAt]);
   const { relative, absolute } = useMemo(() => formatDueTime(due), [due]);
   const isOverdue =
@@ -40,7 +42,7 @@ export function ReminderRow({ reminder, focused, onPress, onMore }: Props) {
               <MaterialIcons
                 name="notifications-active"
                 size={11}
-                color="#5B6B82"
+                color={colors.icon}
               />
               <Text style={styles.offsetChipText}>
                 {formatOffset(reminder.remindOffsetMinutes)}
@@ -49,7 +51,7 @@ export function ReminderRow({ reminder, focused, onPress, onMore }: Props) {
           ) : null}
           {reminder.linkLabel ? (
             <View style={styles.linkChip}>
-              <MaterialIcons name="link" size={12} color="#1F49E0" />
+              <MaterialIcons name="link" size={12} color={colors.primary} />
               <Text style={styles.linkChipText} numberOfLines={1}>
                 {reminder.linkLabel}
               </Text>
@@ -64,7 +66,7 @@ export function ReminderRow({ reminder, focused, onPress, onMore }: Props) {
         accessibilityRole="button"
         accessibilityLabel="More actions"
       >
-        <MaterialIcons name="more-vert" size={22} color="#5B6B82" />
+        <MaterialIcons name="more-vert" size={22} color={colors.icon} />
       </Pressable>
     </Pressable>
   );

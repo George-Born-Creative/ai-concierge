@@ -8,7 +8,12 @@ import type { TranscribeResponse, VoiceIntent } from './types';
 // We bypass apiRequest here because that helper sends JSON — Whisper needs
 // multipart/form-data with the raw file. React Native's FormData accepts the
 // shorthand { uri, name, type } shape for file fields.
-export async function transcribe(fileUri: string): Promise<TranscribeResponse> {
+export async function transcribe(
+  fileUri: string,
+  // When provided, the backend streams partial transcript deltas over the
+  // socket keyed by this id (Sprint 5). Omit it for the legacy blocking path.
+  requestId?: string,
+): Promise<TranscribeResponse> {
   const baseUrl = getApiBaseUrl();
   if (!baseUrl) {
     throw new ApiError(0, 'API URL is not set.');
@@ -26,6 +31,9 @@ export async function transcribe(fileUri: string): Promise<TranscribeResponse> {
     name: extractFilename(fileUri),
     type: guessMimeType(fileUri),
   } as unknown as Blob);
+  if (requestId) {
+    form.append('requestId', requestId);
+  }
 
   let response: Response;
   try {

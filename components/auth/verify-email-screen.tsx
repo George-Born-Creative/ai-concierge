@@ -14,6 +14,7 @@ import {
 
 import { LogoDotsIcon } from '@/components/brand/logo-dots-icon';
 import { ScreenShell } from '@/components/screen';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { resendCode, verifyEmail } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { routeForUser } from '@/lib/onboarding-route';
@@ -26,6 +27,7 @@ const CODE_LENGTH = 6;
 const RESEND_COOLDOWN_SECONDS = 30;
 
 export function VerifyEmailScreen() {
+  const { colors, resolvedTheme } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const [code, setCode] = useState('');
@@ -108,7 +110,8 @@ export function VerifyEmailScreen() {
             value={code}
             onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH))}
             placeholder="______"
-            placeholderTextColor="#C4CAD3"
+            placeholderTextColor={colors.placeholder}
+            keyboardAppearance={resolvedTheme}
             style={styles.codeInput}
             keyboardType="number-pad"
             maxLength={CODE_LENGTH}
@@ -122,11 +125,11 @@ export function VerifyEmailScreen() {
             onPress={submitCode}
             disabled={submitting}>
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <>
                 <Text style={styles.primaryButtonText}>Verify</Text>
-                <MaterialIcons name="arrow-forward" size={21} color="#FFFFFF" />
+                <MaterialIcons name="arrow-forward" size={21} color={colors.onPrimary} />
               </>
             )}
           </Pressable>

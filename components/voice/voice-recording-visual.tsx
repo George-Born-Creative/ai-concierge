@@ -4,15 +4,13 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import { StyleSheet, Text, View } from "react-native";
 
 import recorderAnimation from "@/assets/animations/recorder-animation.gif";
+import { useAppTheme } from "@/lib/theme/theme-provider";
 
 // expo-linear-gradient is a native module. If the currently installed build
 // doesn't include it yet, fall back to a solid white circle instead of
 // crashing (the gradient shows up after the next native rebuild).
 const linearGradientAvailable =
   requireOptionalNativeModule("ExpoLinearGradient") != null;
-
-// Soft white gradient (top-left white -> light blue-white).
-const WHITE_GRADIENT = ["#FFFFFF", "#EAF0FF"] as const;
 
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
@@ -29,6 +27,9 @@ export function VoiceRecordingVisual({
   seconds,
   size = 190,
 }: VoiceRecordingVisualProps) {
+  const { colors } = useAppTheme();
+  const circleGradient = [colors.surface, colors.primaryMuted] as const;
+
   return (
     <View style={styles.wrap} accessibilityElementsHidden>
       <View
@@ -39,7 +40,7 @@ export function VoiceRecordingVisual({
       >
         {linearGradientAvailable ? (
           <LinearGradient
-            colors={WHITE_GRADIENT}
+            colors={circleGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
