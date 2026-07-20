@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
+import { useAppTheme } from '@/lib/theme/theme-provider';
+
 // Visible JS splash. Uses the same four-dot logo as the home/auth screens so
 // the brand is consistent end-to-end. Stays mounted (covering the whole tree)
 // until the root layout receives the bootstrap-ready signal.
 export function AppSplashScreen() {
+  const { colors } = useAppTheme();
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -31,14 +34,16 @@ export function AppSplashScreen() {
   const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
 
   return (
-    <View style={styles.screen} pointerEvents="none">
+    <View
+      style={[styles.screen, { backgroundColor: colors.background }]}
+      pointerEvents="none">
       <Animated.View style={[styles.logoMark, { transform: [{ scale }] }]}>
         <View style={[styles.logoDot, styles.blueDot]} />
         <View style={[styles.logoDot, styles.redDot]} />
         <View style={[styles.logoDot, styles.yellowDot]} />
         <View style={[styles.logoDot, styles.greenDot]} />
       </Animated.View>
-      <Text style={styles.name}>AI-Concierge</Text>
+      <Text style={[styles.name, { color: colors.textPrimary }]}>AI-Concierge</Text>
     </View>
   );
 }
@@ -47,7 +52,6 @@ export function AppSplashScreen() {
 const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
-    backgroundColor: '#F8FAFF',
     flex: 1,
     justifyContent: 'center',
   },
@@ -89,7 +93,6 @@ const styles = StyleSheet.create({
     width: 24,
   },
   name: {
-    color: '#202124',
     fontSize: 28,
     fontWeight: '600',
     letterSpacing: -0.8,
