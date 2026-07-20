@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 
-import { APP_BG } from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type ScreenShellProps = {
   children: ReactNode;
@@ -25,12 +25,19 @@ type ScreenShellProps = {
 export function ScreenShell({
   children,
   edges = ['top'],
-  backgroundColor = APP_BG,
+  backgroundColor,
   style,
 }: ScreenShellProps) {
+  const { colors } = useAppTheme();
+  const resolvedBackground = backgroundColor ?? colors.background;
+
   return (
-    <SafeAreaView edges={edges} style={[styles.fill, { backgroundColor }, style]}>
-      <View style={[styles.fill, { backgroundColor }]}>{children}</View>
+    <SafeAreaView
+      edges={edges}
+      style={[styles.fill, { backgroundColor: resolvedBackground }, style]}>
+      <View style={[styles.fill, { backgroundColor: resolvedBackground }]}>
+        {children}
+      </View>
     </SafeAreaView>
   );
 }

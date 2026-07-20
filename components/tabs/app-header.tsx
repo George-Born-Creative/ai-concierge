@@ -3,14 +3,24 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { APP_BG, BORDER, HEADER_ACTION, HEADER_ROW } from '@/constants/theme';
+import { HEADER_ACTION, HEADER_ROW } from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 export function AppHeader() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   return (
-    <View style={[styles.headerWrapper, { paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.headerWrapper,
+        {
+          backgroundColor: colors.headerBackground,
+          borderBottomColor: colors.border,
+          paddingTop: insets.top,
+        },
+      ]}>
       <View style={styles.header}>
         <View style={styles.brand}>
           <View style={styles.logoMark}>
@@ -20,8 +30,8 @@ export function AppHeader() {
             <View style={[styles.logoDot, styles.greenDot]} />
           </View>
           <View>
-            <Text style={styles.appName}>AI-Concierge</Text>
-            <Text style={styles.appTagline}>Voice assistant</Text>
+            <Text style={[styles.appName, { color: colors.textPrimary }]}>AI-Concierge</Text>
+            <Text style={[styles.appTagline, { color: colors.textSecondary }]}>Voice assistant</Text>
           </View>
         </View>
 
@@ -30,7 +40,7 @@ export function AppHeader() {
           hitSlop={10}
           style={styles.actionButton}
           onPress={() => router.push('/history')}>
-          <MaterialIcons name="history" size={24} color="#1A73E8" />
+          <MaterialIcons name="history" size={24} color={colors.primary} />
         </Pressable>
       </View>
     </View>
@@ -39,8 +49,6 @@ export function AppHeader() {
 
 const styles = StyleSheet.create({
   headerWrapper: {
-    backgroundColor: APP_BG,
-    borderBottomColor: BORDER,
     borderBottomWidth: 1,
   },
   header: {
@@ -99,13 +107,11 @@ const styles = StyleSheet.create({
     width: 12,
   },
   appName: {
-    color: '#202124',
     fontSize: 20,
     fontWeight: '600',
     letterSpacing: -0.3,
   },
   appTagline: {
-    color: '#5F6368',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,

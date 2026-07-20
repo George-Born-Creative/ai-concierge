@@ -25,6 +25,7 @@ import type {
 import { CRM_LABELS, getCrmLabelList } from '@/lib/crm/labels';
 import { getOAuthReturnUrl, useCrmOAuth } from '@/lib/oauth';
 import { getUser } from '@/lib/session';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 // Provider-aware copy + the api module + which `getStatus()` shape we expect.
@@ -55,6 +56,7 @@ type CrmStatus = GhlStatusResponse | HubspotStatusResponse;
 export function SettingsScreenContent() {
   const router = useRouter();
   const { show } = useToast();
+  const { colors, preference, setPreference } = useAppTheme();
 
   const currentUser = getUser();
   // Default to GHL when the session has no provider yet (signed in but no
@@ -207,12 +209,45 @@ export function SettingsScreenContent() {
         alwaysBounceVertical={false}
         overScrollMode="never">
         {/* ── Account group ─────────────────────────────────────────────────── */}
+        <SectionLabel>Appearance</SectionLabel>
+        <Group>
+          <Row
+            icon="brightness-auto"
+            iconBg={colors.primaryMuted}
+            iconColor={colors.primary}
+            title="System default"
+            subtitle="Match this device's appearance"
+            selected={preference === 'system'}
+            onPress={() => void setPreference('system')}
+          />
+          <Divider />
+          <Row
+            icon="light-mode"
+            iconBg={colors.warningSurface}
+            iconColor={colors.warning}
+            title="Light"
+            subtitle="Always use the light appearance"
+            selected={preference === 'light'}
+            onPress={() => void setPreference('light')}
+          />
+          <Divider />
+          <Row
+            icon="dark-mode"
+            iconBg={colors.infoSurface}
+            iconColor={colors.info}
+            title="Dark"
+            subtitle="Always use the dark appearance"
+            selected={preference === 'dark'}
+            onPress={() => void setPreference('dark')}
+          />
+        </Group>
+
         <SectionLabel>Account</SectionLabel>
         <Group>
           <Row
             icon="person"
-            iconBg="#E8F0FE"
-            iconColor="#1A73E8"
+            iconBg={colors.primaryMuted}
+            iconColor={colors.primary}
             title="Edit profile"
             subtitle={currentUser?.name ?? currentUser?.email ?? 'Update your name, email, or password'}
             onPress={() => router.push('/edit-profile')}
@@ -220,8 +255,8 @@ export function SettingsScreenContent() {
           <Divider />
           <Row
             icon="vpn-key"
-            iconBg="#E8F0FE"
-            iconColor="#1A73E8"
+            iconBg={colors.primaryMuted}
+            iconColor={colors.primary}
             title="OpenAI API key"
             subtitle={
               loadingOpenai
@@ -258,8 +293,8 @@ export function SettingsScreenContent() {
         <Group>
           <Row
             icon="hub"
-            iconBg="#E8F0FE"
-            iconColor="#1A73E8"
+            iconBg={colors.primaryMuted}
+            iconColor={colors.primary}
             title={meta.label}
             subtitle={integrationSubtitle}
             right={
@@ -279,8 +314,8 @@ export function SettingsScreenContent() {
           <Divider />
           <Row
             icon="swap-horiz"
-            iconBg="#E8F0FE"
-            iconColor="#1A73E8"
+            iconBg={colors.primaryMuted}
+            iconColor={colors.primary}
             title="CRM provider"
             subtitle={`Switch between ${getCrmLabelList(' and ')}`}
             right={
@@ -307,7 +342,7 @@ export function SettingsScreenContent() {
             onPress={() => void handleReconnect()}
             disabled={submitting || loadingStatus}>
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <Text style={styles.primaryButtonText}>
                 {connected ? `Reconnect ${meta.label}` : `Connect ${meta.label}`}
@@ -334,8 +369,8 @@ export function SettingsScreenContent() {
         <Group>
           <Row
             icon="info"
-            iconBg="#F1F3F4"
-            iconColor="#5F6368"
+            iconBg={colors.surfaceMuted}
+            iconColor={colors.icon}
             title="AI Concierge"
             subtitle="Voice & text CRM assistant"
             right={<Text style={styles.rowValue}>v1.0</Text>}
@@ -372,6 +407,7 @@ type RowProps = {
   onPress?: () => void;
   disabled?: boolean;
   showChevron?: boolean;
+  selected?: boolean;
 };
 
 function Row({
@@ -384,11 +420,18 @@ function Row({
   onPress,
   disabled,
   showChevron = true,
+  selected,
 }: RowProps) {
+  const { colors } = useAppTheme();
   return (
     <Pressable
+      accessibilityRole={selected === undefined ? 'button' : 'radio'}
+      accessibilityState={
+        selected === undefined ? { disabled } : { checked: selected, disabled }
+      }
       style={({ pressed }) => [
         styles.row,
+        selected ? { backgroundColor: colors.surfaceSelected } : null,
         pressed && !disabled ? styles.rowPressed : null,
         disabled ? styles.rowDisabled : null,
       ]}
@@ -408,8 +451,14 @@ function Row({
         ) : null}
       </View>
       {right ? <View style={styles.rowRight}>{right}</View> : null}
-      {showChevron ? (
-        <MaterialIcons name="chevron-right" size={22} color="#BDC1C6" />
+      {selected !== undefined ? (
+        <MaterialIcons
+          name={selected ? 'check-circle' : 'radio-button-unchecked'}
+          size={22}
+          color={selected ? colors.primary : colors.iconMuted}
+        />
+      ) : showChevron ? (
+        <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
       ) : null}
     </Pressable>
   );
@@ -418,7 +467,25 @@ function Row({
 type PillTone = 'success' | 'muted' | 'warning';
 
 function StatusPill({ label, tone }: { label: string; tone: PillTone }) {
-  const s = PILL[tone];
+  const { colors } = useAppTheme();
+  const s =
+    tone === 'success'
+      ? {
+          bg: colors.successSurface,
+          border: colors.successBorder,
+          fg: colors.success,
+        }
+      : tone === 'warning'
+        ? {
+            bg: colors.warningSurface,
+            border: colors.warningBorder,
+            fg: colors.warning,
+          }
+        : {
+            bg: colors.surfaceMuted,
+            border: colors.border,
+            fg: colors.textSecondary,
+          };
   return (
     <View style={[styles.pill, { backgroundColor: s.bg, borderColor: s.border }]}>
       <View style={[styles.pillDot, { backgroundColor: s.fg }]} />
@@ -438,10 +505,21 @@ function InfoBanner({
   icon: keyof typeof MaterialIcons.glyphMap;
   text: string;
 }) {
+  const { colors } = useAppTheme();
   const palette =
     tone === 'warning'
-      ? { bg: '#FEF7E0', border: '#FCE8B2', fg: '#5F4400', icon: '#B06000' }
-      : { bg: '#E8F0FE', border: '#C6DAFC', fg: '#174EA6', icon: '#1A73E8' };
+      ? {
+          bg: colors.warningSurface,
+          border: colors.warningBorder,
+          fg: colors.warningText,
+          icon: colors.warning,
+        }
+      : {
+          bg: colors.infoSurface,
+          border: colors.infoBorder,
+          fg: colors.infoText,
+          icon: colors.info,
+        };
   return (
     <View
       style={[
@@ -455,12 +533,6 @@ function InfoBanner({
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-
-const PILL: Record<PillTone, { bg: string; border: string; fg: string }> = {
-  success: { bg: '#E6F4EA', border: '#B7E1C0', fg: '#1E8E3E' },
-  muted: { bg: '#F1F3F4', border: '#E0E3E7', fg: '#5F6368' },
-  warning: { bg: '#FEF7E0', border: '#FCE8B2', fg: '#B06000' },
-};
 
 const styles = StyleSheet.create({
   content: {

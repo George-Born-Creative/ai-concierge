@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { APP_BG, BORDER, HEADER_ACTION, HEADER_ROW } from '@/constants/theme';
+import { HEADER_ACTION, HEADER_ROW } from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 // Reusable sticky page header. Lives outside the screen's ScrollView so it
 // stays anchored to the top while content scrolls underneath. Used by the
@@ -29,6 +30,7 @@ type PageHeaderProps = {
 export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   function handleBack() {
     if (onBack) {
@@ -43,7 +45,15 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
   }
 
   return (
-    <View style={[styles.headerWrapper, { paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.headerWrapper,
+        {
+          backgroundColor: colors.headerBackground,
+          borderBottomColor: colors.border,
+          paddingTop: insets.top,
+        },
+      ]}>
       <View style={styles.header}>
         <View style={styles.leftGroup}>
           {showBack ? (
@@ -52,12 +62,18 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
               hitSlop={10}
               onPress={handleBack}
               style={styles.actionButton}>
-              <MaterialIcons name="arrow-back" size={24} color="#202124" />
+              <MaterialIcons
+                name="arrow-back"
+                size={24}
+                color={colors.textPrimary}
+              />
             </Pressable>
           ) : null}
 
           {title ? (
-            <Text style={styles.title} numberOfLines={1}>
+            <Text
+              style={[styles.title, { color: colors.textPrimary }]}
+              numberOfLines={1}>
               {title}
             </Text>
           ) : (
@@ -68,7 +84,7 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
                 <View style={[styles.logoDot, styles.yellowDot]} />
                 <View style={[styles.logoDot, styles.greenDot]} />
               </View>
-              <Text style={styles.brandName}>AI-Concierge</Text>
+              <Text style={[styles.brandName, { color: colors.textPrimary }]}>AI-Concierge</Text>
             </View>
           )}
         </View>
@@ -81,8 +97,6 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
 
 const styles = StyleSheet.create({
   headerWrapper: {
-    backgroundColor: APP_BG,
-    borderBottomColor: BORDER,
     borderBottomWidth: 1,
   },
   header: {
@@ -105,7 +119,6 @@ const styles = StyleSheet.create({
     width: HEADER_ACTION,
   },
   title: {
-    color: '#202124',
     flexShrink: 1,
     fontSize: 18,
     fontWeight: '600',
@@ -117,7 +130,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   brandName: {
-    color: '#202124',
     fontSize: 17,
     fontWeight: '600',
     letterSpacing: -0.2,
