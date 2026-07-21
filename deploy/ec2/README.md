@@ -90,6 +90,9 @@ Fill in the real values, especially:
 - Stripe keys and price ids
 - `GHL_CLIENT_ID`, `GHL_CLIENT_SECRET`, `GHL_REDIRECT_URI`
 - `HUBSPOT_CLIENT_ID`, `HUBSPOT_CLIENT_SECRET`, `HUBSPOT_REDIRECT_URI`
+- `MAIL_USER`, `MAIL_PASS`, and `MAIL_FROM`
+- `SUPPORT_INBOX_EMAIL` (a monitored inbox with a named owner)
+- `SUPPORT_REQUEST_RETENTION_DAYS` after privacy-policy approval
 
 Generate secrets on the server:
 
@@ -211,6 +214,12 @@ sudo journalctl -u ai-concierge-api -f
 curl -s http://127.0.0.1:4000/health
 curl -s https://api.example.com/health
 ```
+
+Support delivery is durable and retries in the background. Configure log
+monitoring for `support_delivery_exhausted` and
+`support_confirmation_exhausted`; either event needs manual follow-up using
+the case reference in the log. Never add support descriptions to application
+logs.
 
 ## Notes
 

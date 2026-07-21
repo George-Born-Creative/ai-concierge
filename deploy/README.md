@@ -19,7 +19,8 @@ For a **dedicated AWS EC2 backend host** on Ubuntu 24.04 LTS, use
    cd backend
    npm ci
    npm run build
-   # set production .env (DATABASE_URL, JWT_SECRET, GHL_REDIRECT_URI=https://borncreative.net/, etc.)
+   # set production .env (DATABASE_URL, JWT_SECRET, GHL_REDIRECT_URI,
+   # SUPPORT_INBOX_EMAIL, SUPPORT_REQUEST_RETENTION_DAYS, mail credentials, etc.)
    pm2 start dist/main.js --name ai-concierge-api
    ```
 

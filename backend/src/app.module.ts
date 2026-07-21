@@ -16,6 +16,7 @@ import { RemindersModule } from './reminders/reminders.module';
 import { UsersModule } from './users/users.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { VoiceModule } from './voice/voice.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { VoiceModule } from './voice/voice.module';
     AssistantModule,
     PushModule,
     RemindersModule,
+    SupportModule,
   ],
 })
 export class AppModule {}
