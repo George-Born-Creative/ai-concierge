@@ -45,6 +45,26 @@ enum ReminderLinkType {
   APPOINTMENT
 }
 
+enum SupportRequestCategory {
+  ACCOUNT
+  BILLING
+  CRM_GHL
+  CRM_HUBSPOT
+  OPENAI_ASSISTANT
+  VOICE
+  REMINDERS_NOTIFICATIONS
+  CONNECTIVITY
+  PRIVACY_SECURITY
+  FEEDBACK
+  OTHER
+}
+
+enum SupportDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
@@ -74,6 +94,7 @@ model User {
   reminders               Reminder[]
   emailVerifications      EmailVerification[]
   passwordResets          PasswordReset[]
+  supportRequests         SupportRequest[]
 }
 
 // Short-lived 6-digit codes emailed during signup. Only the argon2 hash of the
@@ -290,4 +311,34 @@ model Reminder {
 
   @@index([userId, dueAt])
   @@index([status, notifyAt])
+}
+
+// Durable support intake. This records receipt and email-delivery state; it is
+// intentionally not a full help-desk workflow or case-resolution system.
+model SupportRequest {
+  id                        String                @id @default(cuid())
+  caseReference             String                @unique
+  clientRequestId           String
+  userId                    String
+  category                  SupportRequestCategory
+  subject                   String
+  description               String
+  deliveryStatus            SupportDeliveryStatus @default(PENDING)
+  deliveryAttempts          Int                   @default(0)
+  lastDeliveryError         String?
+  nextDeliveryAttemptAt     DateTime?
+  deliveredAt               DateTime?
+  confirmationAttempts      Int                   @default(0)
+  lastConfirmationError     String?
+  nextConfirmationAttemptAt DateTime?
+  confirmationSentAt        DateTime?
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientRequestId])
+  @@index([userId, createdAt])
+  @@index([deliveryStatus, nextDeliveryAttemptAt])
+  @@index([confirmationSentAt, nextConfirmationAttemptAt])
 }

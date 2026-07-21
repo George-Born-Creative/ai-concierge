@@ -2,6 +2,7 @@ import { clearCrmCache } from './api/crm-cache';
 import { clearRemindersCache } from './api/reminders-cache';
 import type { User } from './api/types';
 import { deleteSecureItem, getSecureItem, setSecureItem } from './secure-storage';
+import { clearSupportDraft } from './support/draft';
 
 // Session store backed by SecureStore on native and localStorage on web.
 // Module-level state lets every API call grab the active JWT without having
@@ -63,6 +64,7 @@ export async function refreshUser(user: User): Promise<void> {
 }
 
 export async function clearSession(): Promise<void> {
+  const userId = state.user?.id;
   state.token = null;
   state.user = null;
   hydrated = true;
@@ -70,7 +72,11 @@ export async function clearSession(): Promise<void> {
   // user never sees the previous account's data.
   clearRemindersCache();
   clearCrmCache();
-  await Promise.all([deleteSecureItem(TOKEN_KEY), deleteSecureItem(USER_KEY)]);
+  await Promise.all([
+    deleteSecureItem(TOKEN_KEY),
+    deleteSecureItem(USER_KEY),
+    userId ? clearSupportDraft(userId) : Promise.resolve(),
+  ]);
   emit();
 }
 

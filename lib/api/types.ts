@@ -567,3 +567,34 @@ export type SnoozeReminderRequest =
 
 export type SetPushTokenResponse = { ok: true; hasPushToken: boolean };
 export type SetTimezoneResponse = { ok: true; timezone: string };
+
+// â”€â”€â”€ Help & support â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export type SupportRequestCategory =
+  | 'ACCOUNT'
+  | 'BILLING'
+  | 'CRM_GHL'
+  | 'CRM_HUBSPOT'
+  | 'OPENAI_ASSISTANT'
+  | 'VOICE'
+  | 'REMINDERS_NOTIFICATIONS'
+  | 'CONNECTIVITY'
+  | 'PRIVACY_SECURITY'
+  | 'FEEDBACK'
+  | 'OTHER';
+
+export type SupportDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
+
+export type CreateSupportRequest = {
+  clientRequestId: string;
+  category: SupportRequestCategory;
+  subject: string;
+  description: string;
+};
+
+export type CreateSupportRequestResponse = {
+  caseReference: string;
+  email: string;
+  deliveryStatus: SupportDeliveryStatus;
+  createdAt: string;
+};

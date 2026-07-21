@@ -25,6 +25,7 @@ import type {
 import { CRM_LABELS, getCrmLabelList } from '@/lib/crm/labels';
 import { getOAuthReturnUrl, useCrmOAuth } from '@/lib/oauth';
 import { getUser } from '@/lib/session';
+import { getRuntimeVersion } from '@/lib/support/version';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
@@ -365,6 +366,18 @@ export function SettingsScreenContent() {
         </Text>
 
         {/* ── About ─────────────────────────────────────────────────────────── */}
+        <SectionLabel>Support</SectionLabel>
+        <Group>
+          <Row
+            icon="help-outline"
+            iconBg={colors.infoSurface}
+            iconColor={colors.info}
+            title="Help & Support"
+            subtitle="Articles, troubleshooting, and contact"
+            onPress={() => router.push('/support' as never)}
+          />
+        </Group>
+
         <SectionLabel>About</SectionLabel>
         <Group>
           <Row
@@ -373,7 +386,7 @@ export function SettingsScreenContent() {
             iconColor={colors.icon}
             title="AI Concierge"
             subtitle="Voice & text CRM assistant"
-            right={<Text style={styles.rowValue}>v1.0</Text>}
+            right={<Text style={styles.rowValue}>{getRuntimeVersion()}</Text>}
             showChevron={false}
             disabled
           />
