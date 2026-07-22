@@ -205,6 +205,10 @@ function RootLayoutContent() {
                 options={{ headerShown: false }}
               />
               <Stack.Screen
+                name="(stack)/support-diagnostics"
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
                 name="modal"
                 options={{ presentation: 'modal', title: 'Voice Concierge' }}
               />

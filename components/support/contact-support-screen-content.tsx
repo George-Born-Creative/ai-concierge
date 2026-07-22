@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -33,6 +34,7 @@ import {
   type SupportDraft,
   type SupportRequestMode,
 } from '@/lib/support/draft';
+import { collectClientSupportDiagnostics } from '@/lib/support/diagnostics';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 const SUPPORT_CATEGORIES: readonly {
@@ -61,10 +63,12 @@ export function ContactSupportScreenContent({
   mode,
   initialCategory,
   initialSubject,
+  initialIncludeDiagnostics,
 }: {
   mode: SupportRequestMode;
   initialCategory?: string;
   initialSubject?: string;
+  initialIncludeDiagnostics?: boolean;
 }) {
   const router = useRouter();
   const { colors } = useAppTheme();
@@ -97,6 +101,7 @@ export function ContactSupportScreenContent({
       setDraft({
         ...stored,
         category: mode === 'feedback' ? 'FEEDBACK' : stored.category ?? routeCategory,
+        includeDiagnostics: initialIncludeDiagnostics || stored.includeDiagnostics,
         subject: stored.subject || initialSubject || '',
       });
       setHydrated(true);
@@ -105,7 +110,7 @@ export function ContactSupportScreenContent({
     return () => {
       active = false;
     };
-  }, [initialCategory, initialSubject, mode, userId]);
+  }, [initialCategory, initialIncludeDiagnostics, initialSubject, mode, userId]);
 
   useEffect(() => {
     if (!hydrated || !userId || !draft || result) return;
@@ -142,11 +147,16 @@ export function ContactSupportScreenContent({
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const clientDiagnostics = draft.includeDiagnostics
+        ? await collectClientSupportDiagnostics()
+        : undefined;
       const response = await supportApi.createRequest({
         clientRequestId: draft.clientRequestId,
         category: mode === 'feedback' ? 'FEEDBACK' : draft.category!,
         subject: draft.subject.trim(),
         description: draft.description.trim(),
+        includeDiagnostics: draft.includeDiagnostics,
+        ...(clientDiagnostics ? { clientDiagnostics } : {}),
       });
       await clearSupportDraft(userId, mode);
       setResult(response);
@@ -270,6 +280,41 @@ export function ContactSupportScreenContent({
                 placeholder={mode === 'feedback' ? 'Tell us what would make the app work better for you...' : 'What did you try, what did you expect, and what happened instead?'}
                 value={draft.description}
               />
+
+              <View
+                style={[
+                  styles.diagnosticsOption,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
+                <View style={styles.diagnosticsHeading}>
+                  <View style={[styles.diagnosticsIcon, { backgroundColor: colors.primaryMuted }]}>
+                    <MaterialIcons name="health-and-safety" size={20} color={colors.primary} />
+                  </View>
+                  <View style={styles.diagnosticsTitleWrap}>
+                    <Text style={[styles.diagnosticsTitle, { color: colors.textPrimary }]}>Include technical diagnostics</Text>
+                    <Text style={[styles.diagnosticsStatus, { color: draft.includeDiagnostics ? colors.success : colors.textMuted }]}>
+                      {draft.includeDiagnostics ? 'Enabled for this request' : 'Not included'}
+                    </Text>
+                  </View>
+                  <Switch
+                    accessibilityHint="Controls whether a safe technical snapshot is included with this request"
+                    accessibilityLabel="Include technical diagnostics"
+                    accessibilityRole="switch"
+                    onValueChange={(includeDiagnostics) => updateDraft({ includeDiagnostics })}
+                    thumbColor={draft.includeDiagnostics ? colors.onPrimary : colors.surface}
+                    trackColor={{ false: colors.borderStrong, true: colors.primary }}
+                    value={draft.includeDiagnostics}
+                  />
+                </View>
+                <Text style={[styles.diagnosticsDescription, { color: colors.textSecondary }]}>Adds app, connection, and account setup checks. It never includes passwords, tokens, API keys, CRM records, messages, or recordings.</Text>
+                <Pressable
+                  accessibilityRole="link"
+                  onPress={() => router.push('/support-diagnostics' as Href)}
+                  style={({ pressed }) => [styles.reviewLink, pressed && { backgroundColor: colors.surfacePressed }]}>
+                  <Text style={[styles.reviewLinkText, { color: colors.primary }]}>Review diagnostics</Text>
+                  <MaterialIcons name="arrow-forward" size={17} color={colors.primary} />
+                </Pressable>
+              </View>
 
               <Text style={[styles.draftNote, { color: colors.textMuted }]}>Your draft is saved on this device until it is sent or you sign out.</Text>
 
@@ -461,6 +506,15 @@ const styles = StyleSheet.create({
   selectText: { flex: 1, fontSize: 15 },
   input: { borderRadius: 12, borderWidth: 1, fontSize: 15, lineHeight: 21, minHeight: 50, paddingHorizontal: 14, paddingVertical: 12 },
   descriptionInput: { minHeight: 150 },
+  diagnosticsOption: { borderRadius: 14, borderWidth: 1, gap: 9, padding: 13 },
+  diagnosticsHeading: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  diagnosticsIcon: { alignItems: 'center', borderRadius: 9, height: 36, justifyContent: 'center', width: 36 },
+  diagnosticsTitleWrap: { flex: 1, gap: 1 },
+  diagnosticsTitle: { fontSize: 14, fontWeight: '700', lineHeight: 19 },
+  diagnosticsStatus: { fontSize: 11, fontWeight: '600', lineHeight: 15 },
+  diagnosticsDescription: { fontSize: 12, lineHeight: 18 },
+  reviewLink: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: 8, flexDirection: 'row', gap: 4, minHeight: 38, paddingHorizontal: 7 },
+  reviewLinkText: { fontSize: 13, fontWeight: '700' },
   fieldError: { fontSize: 12, lineHeight: 17 },
   draftNote: { fontSize: 12, lineHeight: 18, marginTop: -3 },
   errorBox: { alignItems: 'flex-start', borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 8, padding: 12 },

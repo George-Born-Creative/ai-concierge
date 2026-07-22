@@ -585,11 +585,58 @@ export type SupportRequestCategory =
 
 export type SupportDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
 
+export type SupportDiagnosticStatus = 'ok' | 'warning' | 'error' | 'info';
+
+export type SupportDiagnosticItem = {
+  key: string;
+  label: string;
+  status: SupportDiagnosticStatus;
+  value: string;
+  detail?: string;
+};
+
+export type SupportDiagnosticGroup = {
+  key: string;
+  label: string;
+  items: SupportDiagnosticItem[];
+};
+
+export type SupportDiagnosticsResponse = {
+  generatedAt: string;
+  groups: SupportDiagnosticGroup[];
+};
+
+export type ClientSupportDiagnostics = {
+  capturedAt: string;
+  appVersion: string;
+  buildVersion: string | null;
+  platform: 'ios' | 'android' | 'web' | 'windows' | 'macos';
+  osVersion: string;
+  executionEnvironment: string;
+  timezone: string;
+  locale: string;
+  networkType: string;
+  networkReachable: boolean | null;
+  pushStatus:
+    | 'granted'
+    | 'denied'
+    | 'not_a_device'
+    | 'no_project_id'
+    | 'error'
+    | 'web'
+    | 'expo_go'
+    | 'unknown';
+  apiHost: string;
+  apiReachable: boolean;
+};
+
 export type CreateSupportRequest = {
   clientRequestId: string;
   category: SupportRequestCategory;
   subject: string;
   description: string;
+  includeDiagnostics?: boolean;
+  clientDiagnostics?: ClientSupportDiagnostics;
 };
 
 export type CreateSupportRequestResponse = {
