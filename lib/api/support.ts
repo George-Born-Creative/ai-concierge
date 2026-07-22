@@ -2,7 +2,12 @@ import { apiRequest } from './client';
 import type {
   CreateSupportRequest,
   CreateSupportRequestResponse,
+  SupportDiagnosticsResponse,
 } from './types';
+
+export async function getDiagnostics(): Promise<SupportDiagnosticsResponse> {
+  return apiRequest<SupportDiagnosticsResponse>('/support/diagnostics');
+}
 
 export async function createRequest(
   data: CreateSupportRequest,

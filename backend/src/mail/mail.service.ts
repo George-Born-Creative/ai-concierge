@@ -8,6 +8,7 @@ export type SupportMailRequest = {
   category: string;
   subject: string;
   description: string;
+  diagnostics: unknown | null;
   createdAt: Date;
 };
 
@@ -155,7 +156,7 @@ export class MailService {
       `CRM provider: ${user.provider ?? 'not selected'}`,
       `Subscription: ${user.subscriptionStatus ?? 'none'}`,
     ].join('\n');
-    const text = [
+    const textParts = [
       `Case: ${request.caseReference}`,
       `Category: ${request.category}`,
       `Created: ${request.createdAt.toISOString()}`,
@@ -163,7 +164,12 @@ export class MailService {
       `Subject: ${request.subject}`,
       '',
       request.description,
-    ].join('\n');
+    ];
+    const diagnostics = this.formatDiagnostics(request.diagnostics);
+    if (diagnostics) {
+      textParts.push('', 'Attached technical diagnostics:', diagnostics);
+    }
+    const text = textParts.join('\n');
 
     await this.transporter.sendMail({
       from: this.from,
@@ -264,6 +270,7 @@ export class MailService {
         </table>
         <h2 style="font-size: 16px; margin: 24px 0 8px;">Description</h2>
         <div style="font-size: 14px; line-height: 1.55; white-space: pre-wrap; border: 1px solid #E8EAED; border-radius: 8px; padding: 14px;">${this.escapeHtml(request.description)}</div>
+        ${this.supportDiagnosticsHtml(request.diagnostics)}
       </div>
     `;
   }
@@ -288,6 +295,27 @@ export class MailService {
 
   private safeHeader(value: string): string {
     return value.replace(/[\r\n]+/g, ' ').trim();
+  }
+
+  private supportDiagnosticsHtml(diagnostics: unknown | null): string {
+    const formatted = this.formatDiagnostics(diagnostics);
+    if (!formatted) return '';
+    return `
+      <h2 style="font-size: 16px; margin: 24px 0 8px;">Attached technical diagnostics</h2>
+      <p style="font-size: 13px; color: #5F6368; line-height: 1.5;">This versioned snapshot was attached with the user's consent.</p>
+      <pre style="font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; background: #F8F9FA; border: 1px solid #E8EAED; border-radius: 8px; padding: 14px;">${this.escapeHtml(formatted)}</pre>`;
+  }
+
+  private formatDiagnostics(diagnostics: unknown | null): string | null {
+    if (!diagnostics) return null;
+    try {
+      // The intake service already applies the strict allowlist. The cap is a
+      // final mail-safety bound and prevents malformed legacy DB rows from
+      // creating unexpectedly large messages.
+      return JSON.stringify(diagnostics, null, 2).slice(0, 20_000);
+    } catch {
+      return null;
+    }
   }
 
   private escapeHtml(value: string): string {

@@ -14,6 +14,11 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupportRequestDto } from './dto/create-support-request.dto';
 import { SupportDeliveryService } from './support-delivery.service';
+import {
+  sanitizeClientDiagnostics,
+  type StoredSupportDiagnostics,
+} from './support-diagnostics.policy';
+import { SupportDiagnosticsService } from './support-diagnostics.service';
 
 const HOURLY_REQUEST_LIMIT = 5;
 const DAILY_REQUEST_LIMIT = 20;
@@ -25,6 +30,7 @@ export class SupportService {
     private readonly prisma: PrismaService,
     private readonly delivery: SupportDeliveryService,
     private readonly config: ConfigService,
+    private readonly diagnostics: SupportDiagnosticsService,
   ) {}
 
   async createRequest(userId: string, dto: CreateSupportRequestDto) {
@@ -47,7 +53,10 @@ export class SupportService {
     if (!user) throw new NotFoundException('User not found');
 
     await this.enforceRateLimit(userId);
-    const stored = await this.insertRequest(userId, dto);
+    const diagnostics = dto.includeDiagnostics
+      ? await this.createDiagnosticsSnapshot(userId, dto.clientDiagnostics)
+      : null;
+    const stored = await this.insertRequest(userId, dto, diagnostics);
 
     // Intake is durable before any SMTP call. Delivery failures are recorded
     // and retried by SupportDeliveryCron; the user still receives a case ID.
@@ -90,6 +99,7 @@ export class SupportService {
   private async insertRequest(
     userId: string,
     dto: CreateSupportRequestDto,
+    diagnostics: StoredSupportDiagnostics | null,
   ) {
     for (let attempt = 0; attempt < CASE_REFERENCE_ATTEMPTS; attempt += 1) {
       try {
@@ -101,6 +111,12 @@ export class SupportService {
             category: dto.category,
             subject: dto.subject,
             description: dto.description,
+            ...(diagnostics
+              ? {
+                  diagnostics:
+                    diagnostics as unknown as Prisma.InputJsonValue,
+                }
+              : {}),
           },
         });
       } catch (error) {
@@ -122,6 +138,19 @@ export class SupportService {
     throw new ConflictException(
       'Could not allocate a support case reference. Please retry.',
     );
+  }
+
+  private async createDiagnosticsSnapshot(
+    userId: string,
+    clientDiagnostics: unknown,
+  ): Promise<StoredSupportDiagnostics> {
+    const server = await this.diagnostics.getDiagnostics(userId);
+    return {
+      version: 1,
+      capturedAt: new Date().toISOString(),
+      client: sanitizeClientDiagnostics(clientDiagnostics),
+      server,
+    };
   }
 
   private createCaseReference(): string {
