@@ -46,6 +46,11 @@ const assistantCapabilities = [
     title: 'Voice + text commands',
     description: 'Hold the mic or type — the assistant transcribes and acts on intent.',
   },
+  {
+    icon: 'chat' as const,
+    title: 'Conversations & Messages',
+    description: 'Read and manage your GHL conversations directly.',
+  },
 ];
 
 const upcomingFeatures = [

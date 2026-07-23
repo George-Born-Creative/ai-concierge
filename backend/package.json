@@ -18,7 +18,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "seed": "ts-node --project prisma/tsconfig.json prisma/seed.ts"
+    "seed": "ts-node --project prisma/tsconfig.json prisma/seed.ts",
+    "test:support-diagnostics": "npm run build && node --test test/support-diagnostics.test.js"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^3.1.0",

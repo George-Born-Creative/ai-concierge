@@ -34,6 +34,12 @@ const DEFAULT_SCOPES = [
   'calendars/resources.write',
   'opportunities.readonly',
   'opportunities.write',
+  'conversations.readonly',
+  'conversations.write',
+  'conversations/message.readonly',
+  'conversations/message.write',
+  'conversations/reports.readonly',
+  'conversations/livechat.write',
 ].join(' ');
 const STATE_PURPOSE = 'ghl-oauth-state';
 const STATE_TTL = '10m';
@@ -68,6 +74,8 @@ export type GhlStatus = {
   calendarScopesGranted?: boolean;
   /** False when the stored token was connected before opportunity scopes were granted. */
   opportunityScopesGranted?: boolean;
+  /** False when the stored token was connected before conversation scopes were granted. */
+  conversationScopesGranted?: boolean;
 };
 
 export type GhlContactSummary = {
@@ -407,6 +415,7 @@ export class GhlService {
       scopes,
       calendarScopesGranted: this.hasCalendarScopes(scopes),
       opportunityScopesGranted: this.hasOpportunityScopes(scopes),
+      conversationScopesGranted: this.hasConversationScopes(scopes),
     };
   }
 
@@ -1193,7 +1202,7 @@ export class GhlService {
 
   // ── HTTP helpers ────────────────────────────────────────────────────────────
 
-  private async ghlRequest<T>(
+  async ghlRequest<T>(
     userId: string,
     method: string,
     path: string,
@@ -1720,6 +1729,16 @@ export class GhlService {
     );
   }
 
+  private hasConversationScopes(scopes: string[] | undefined): boolean {
+    if (!scopes?.length) return false;
+    return this.normalizeScopes(scopes).some(
+      (scope) =>
+        scope === 'conversations.readonly' ||
+        scope === 'conversations.write' ||
+        scope.startsWith('conversations/message.'),
+    );
+  }
+
   private calendarReconnectMessage(): string {
     return (
       'Your GoHighLevel connection does not include calendar access. ' +
@@ -1733,6 +1752,14 @@ export class GhlService {
       'Your GoHighLevel connection does not include opportunities access. ' +
       'Go to Profile → Settings → Reconnect GoHighLevel so the app can request opportunity scopes. ' +
       'Ensure backend GHL_SCOPES includes opportunities.readonly and opportunities.write, then restart the server.'
+    );
+  }
+
+  private conversationsReconnectMessage(): string {
+    return (
+      'Your GoHighLevel connection does not include conversation access. ' +
+      'Go to Profile → Settings → Reconnect GoHighLevel so the app can request conversation scopes. ' +
+      'Ensure backend GHL_SCOPES includes conversations.readonly and conversations.write, then restart the server.'
     );
   }
 
@@ -1775,6 +1802,9 @@ export class GhlService {
    */
   private scopeMismatchMessage(path?: string): string {
     if (!path) return this.genericReconnectMessage();
+    if (/^\/conversations(\b|\/|\?)/.test(path)) {
+      return this.conversationsReconnectMessage();
+    }
     if (/^\/opportunities(\b|\/|\?)/.test(path) || /pipelines/i.test(path)) {
       return this.opportunityReconnectMessage();
     }

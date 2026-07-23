@@ -261,6 +261,7 @@ export class SupportDeliveryService {
       category: request.category,
       subject: request.subject,
       description: request.description,
+      diagnostics: request.diagnostics,
       createdAt: request.createdAt,
     };
   }
