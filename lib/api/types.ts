@@ -275,6 +275,61 @@ export type GhlCalendarFreeSlotsParams = {
 
 export type GhlCalendarFreeSlotsResponse = Record<string, unknown>;
 
+export type GhlConversationSummary = {
+  id: string;
+  contactId: string;
+  contactName: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  channel?: string;
+  lastMessageBody?: string;
+  lastMessageDirection?: 'inbound' | 'outbound';
+  lastMessageAt?: string;
+  unreadCount: number;
+  starred?: boolean;
+};
+
+export type GhlMessageSummary = {
+  id: string;
+  conversationId: string;
+  contactId?: string;
+  direction: 'inbound' | 'outbound';
+  type: string;
+  body?: string;
+  subject?: string;
+  status?: string;
+  attachments: string[];
+  createdAt?: string;
+};
+
+export type GhlConversationsListResponse = {
+  conversations: GhlConversationSummary[];
+  meta?: {
+    total?: number;
+  };
+};
+
+export type GhlConversationMessagesListResponse = {
+  messages: GhlMessageSummary[];
+  meta?: {
+    total?: number;
+    nextPageUrl?: string | null;
+    startAfterId?: string | null;
+  };
+};
+
+export type ListGhlConversationsParams = {
+  limit?: number;
+  query?: string;
+  startAfterId?: string;
+  unreadOnly?: boolean;
+};
+
+export type ListGhlConversationMessagesParams = {
+  limit?: number;
+  lastMessageId?: string;
+};
+
 // ─── HubSpot OAuth ───────────────────────────────────────────────────────────
 
 export type HubspotAuthUrlResponse = {

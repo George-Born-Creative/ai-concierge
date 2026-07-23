@@ -8,6 +8,7 @@ import type {
   GhlPipelineSummary,
 } from '../integrations/ghl/ghl.service';
 import { GhlService } from '../integrations/ghl/ghl.service';
+import { GhlConversationsService } from '../integrations/ghl/conversations/ghl-conversations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { HubspotCommandService } from './hubspot-command.service';
@@ -24,6 +25,8 @@ import {
   extractCompanyQuery,
   extractCompanyUpdateDetails,
   extractContactUpdateDetails,
+  extractConversationQuery,
+  extractConversationRead,
   extractCreateDetails,
   extractFreeSlotsDetails,
   extractOpportunityCreateDetails,
@@ -105,6 +108,7 @@ export class AssistantCommandService {
 
   constructor(
     private readonly ghl: GhlService,
+    private readonly ghlConversations: GhlConversationsService,
     private readonly hubspot: HubspotCommandService,
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
@@ -336,8 +340,85 @@ export class AssistantCommandService {
             'Orders are a HubSpot feature — your account is on GoHighLevel, which uses opportunities instead. Try "show my opportunities".',
           status: 'error',
         };
+      case 'list_conversations':
+        return this.listConversations(userId, extractConversationQuery(intent.entities));
+      case 'find_conversation':
+        return this.findConversation(userId, extractConversationQuery(intent.entities));
+      case 'read_conversation':
+        return this.readConversation(userId, extractConversationRead(intent.entities));
       default:
         return null;
+    }
+  }
+
+  private async listConversations(
+    userId: string,
+    details: { limit: number; unreadOnly: boolean },
+  ): Promise<AssistantCommandResult> {
+    try {
+      const result = await this.ghlConversations.searchConversations(userId, details);
+      if (!result.conversations || result.conversations.length === 0) {
+        return { response: 'You have no recent conversations.', status: 'success' };
+      }
+      const chatNames = result.conversations.map((c) => c.contactName).filter(Boolean);
+      return {
+        response: `I found ${result.conversations.length} conversation(s). The most recent are with ${chatNames.slice(0, 3).join(', ')}.`,
+        status: 'success',
+      };
+    } catch (error) {
+      return { response: 'Failed to list your conversations.', status: 'error' };
+    }
+  }
+
+  private async findConversation(
+    userId: string,
+    details: { query?: string; unreadOnly: boolean },
+  ): Promise<AssistantCommandResult> {
+    if (!details.query) {
+      return { response: 'Who are you looking for?', status: 'error' };
+    }
+    try {
+      const result = await this.ghlConversations.searchConversations(userId, details);
+      if (!result.conversations || result.conversations.length === 0) {
+        return { response: `I couldn't find any conversations for "${details.query}".`, status: 'success' };
+      }
+      const match = result.conversations[0];
+      return {
+        response: `Found a conversation with ${match.contactName}. The last message was sent ${new Date(match.lastMessageAt || '').toLocaleDateString()}.`,
+        status: 'success',
+      };
+    } catch (error) {
+      return { response: `Failed to search for ${details.query}.`, status: 'error' };
+    }
+  }
+
+  private async readConversation(
+    userId: string,
+    details: { id?: string; contactName?: string },
+  ): Promise<AssistantCommandResult> {
+    try {
+      let conversationId = details.id;
+      if (!conversationId && details.contactName) {
+         const search = await this.ghlConversations.searchConversations(userId, { query: details.contactName, unreadOnly: false });
+         if (search.conversations && search.conversations.length > 0) {
+           conversationId = search.conversations[0].id;
+         }
+      }
+      if (!conversationId) {
+         return { response: 'I could not figure out which conversation you want to read.', status: 'error' };
+      }
+
+      const result = await this.ghlConversations.getMessages(userId, conversationId, { limit: 5 });
+      if (!result.messages || result.messages.length === 0) {
+        return { response: 'That conversation has no messages.', status: 'success' };
+      }
+      const lastMsg = result.messages[0];
+      return {
+        response: `The last message says: "${lastMsg.body}"`,
+        status: 'success',
+      };
+    } catch (error) {
+      return { response: 'Failed to read the conversation.', status: 'error' };
     }
   }
 

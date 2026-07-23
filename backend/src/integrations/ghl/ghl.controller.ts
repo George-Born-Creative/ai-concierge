@@ -34,10 +34,16 @@ import {
   handleGhlOAuthFinish,
 } from './ghl-oauth-callback.handler';
 import { GhlService } from './ghl.service';
+import { GhlConversationsService } from './conversations/ghl-conversations.service';
+import { ListConversationsQueryDto } from './conversations/dto/list-conversations.query.dto';
+import { ListConversationMessagesQueryDto } from './conversations/dto/list-conversation-messages.query.dto';
 
 @Controller('integrations/ghl')
 export class GhlController {
-  constructor(private readonly ghl: GhlService) {}
+  constructor(
+    private readonly ghl: GhlService,
+    private readonly ghlConversations: GhlConversationsService,
+  ) {}
 
   /**
    * Returns the GHL authorize URL for the mobile in-app browser.
@@ -276,5 +282,33 @@ export class GhlController {
     @Param('id') opportunityId: string,
   ) {
     return this.ghl.deleteOpportunity(user.id, opportunityId);
+  }
+
+  @Get('conversations')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  listConversations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListConversationsQueryDto,
+  ) {
+    return this.ghlConversations.searchConversations(user.id, query);
+  }
+
+  @Get('conversations/:id')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  getConversation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') conversationId: string,
+  ) {
+    return this.ghlConversations.getConversation(user.id, conversationId);
+  }
+
+  @Get('conversations/:id/messages')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  getConversationMessages(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') conversationId: string,
+    @Query() query: ListConversationMessagesQueryDto,
+  ) {
+    return this.ghlConversations.getMessages(user.id, conversationId, query);
   }
 }

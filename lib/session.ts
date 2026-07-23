@@ -1,5 +1,6 @@
 import { clearCrmCache } from './api/crm-cache';
 import { clearRemindersCache } from './api/reminders-cache';
+import { clearConversationCache } from './api/ghl-conversation-cache';
 import type { User } from './api/types';
 import { deleteSecureItem, getSecureItem, setSecureItem } from './secure-storage';
 import { clearSupportDraft } from './support/draft';
@@ -72,6 +73,7 @@ export async function clearSession(): Promise<void> {
   // user never sees the previous account's data.
   clearRemindersCache();
   clearCrmCache();
+  clearConversationCache();
   await Promise.all([
     deleteSecureItem(TOKEN_KEY),
     deleteSecureItem(USER_KEY),

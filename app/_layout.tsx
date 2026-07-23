@@ -189,6 +189,14 @@ function RootLayoutContent() {
                 options={{ headerShown: false }}
               />
               <Stack.Screen
+                name="ghl-conversations"
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="ghl-conversation/[id]"
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
                 name="(stack)/reminders"
                 options={{ headerShown: false }}
               />

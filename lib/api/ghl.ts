@@ -17,6 +17,11 @@ import type {
   ListGhlCalendarEventsParams,
   ListGhlOpportunitiesParams,
   UpdateGhlCalendarRequest,
+  GhlConversationSummary,
+  GhlConversationsListResponse,
+  GhlConversationMessagesListResponse,
+  ListGhlConversationsParams,
+  ListGhlConversationMessagesParams,
 } from './types';
 
 // Returns the GHL OAuth URL the app should open in an in-app browser session.
@@ -161,4 +166,37 @@ export async function cancelAppointment(eventId: string): Promise<{ ok: true }> 
   return apiRequest<{ ok: true }>(`/integrations/ghl/calendar-events/${eventId}`, {
     method: 'DELETE',
   });
+}
+
+export async function listConversations(
+  params?: ListGhlConversationsParams,
+): Promise<GhlConversationsListResponse> {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.query) q.set('query', params.query);
+  if (params?.startAfterId) q.set('startAfterId', params.startAfterId);
+  if (params?.unreadOnly) q.set('unreadOnly', 'true');
+  const suffix = q.toString();
+  return apiRequest<GhlConversationsListResponse>(
+    suffix ? `/integrations/ghl/conversations?${suffix}` : '/integrations/ghl/conversations',
+  );
+}
+
+export async function getConversation(conversationId: string): Promise<GhlConversationSummary> {
+  return apiRequest<GhlConversationSummary>(`/integrations/ghl/conversations/${conversationId}`);
+}
+
+export async function listConversationMessages(
+  conversationId: string,
+  params?: ListGhlConversationMessagesParams,
+): Promise<GhlConversationMessagesListResponse> {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.lastMessageId) q.set('lastMessageId', params.lastMessageId);
+  const suffix = q.toString();
+  return apiRequest<GhlConversationMessagesListResponse>(
+    suffix
+      ? `/integrations/ghl/conversations/${conversationId}/messages?${suffix}`
+      : `/integrations/ghl/conversations/${conversationId}/messages`,
+  );
 }
