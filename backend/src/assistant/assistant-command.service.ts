@@ -361,8 +361,13 @@ export class AssistantCommandService {
         return { response: 'You have no recent conversations.', status: 'success' };
       }
       const chatNames = result.conversations.map((c) => c.contactName).filter(Boolean);
+      
+      // We provide a purely factual baseline. The ConversationService's 
+      // polishActionResponse pass will use the LLM to rewrite this into a 
+      // conversational, natural response dynamically.
+      const bulletList = chatNames.map(name => `· ${name}`).join('\n');
       return {
-        response: `I found ${result.conversations.length} conversation(s). The most recent are with ${chatNames.slice(0, 3).join(', ')}.`,
+        response: `Found ${result.conversations.length} conversation(s):\n${bulletList}`,
         status: 'success',
       };
     } catch (error) {
