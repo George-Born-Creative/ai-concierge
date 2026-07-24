@@ -41,6 +41,9 @@ export function SupportArticleScreenContent({ slug }: { slug: string }) {
       case 'reminders':
         router.push('/reminders' as Href);
         return;
+      case 'diagnostics':
+        router.push('/support-diagnostics' as Href);
+        return;
       case 'contact-support':
         openContact(action.category);
         return;

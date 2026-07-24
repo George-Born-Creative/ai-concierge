@@ -8,7 +8,12 @@ export type SupportDraft = {
   category: SupportRequestCategory | null;
   subject: string;
   description: string;
+  includeDiagnostics: boolean;
   updatedAt: string;
+};
+
+type StoredSupportDraft = Omit<SupportDraft, 'includeDiagnostics'> & {
+  includeDiagnostics?: unknown;
 };
 
 const DRAFT_PREFIX = 'support.request.draft.v1';
@@ -52,11 +57,12 @@ function freshDraft(mode: SupportRequestMode): SupportDraft {
     category: mode === 'feedback' ? 'FEEDBACK' : null,
     subject: '',
     description: '',
+    includeDiagnostics: false,
     updatedAt: new Date().toISOString(),
   };
 }
 
-function isDraft(value: unknown): value is SupportDraft {
+function isDraft(value: unknown): value is StoredSupportDraft {
   if (!value || typeof value !== 'object') return false;
   const draft = value as Partial<SupportDraft>;
   return (
@@ -80,7 +86,15 @@ export async function loadSupportDraft(
   if (raw) {
     try {
       const parsed: unknown = JSON.parse(raw);
-      if (isDraft(parsed)) return parsed;
+      if (isDraft(parsed)) {
+        return {
+          ...parsed,
+          includeDiagnostics:
+            typeof parsed.includeDiagnostics === 'boolean'
+              ? parsed.includeDiagnostics
+              : false,
+        };
+      }
     } catch {
       // Replace malformed local state with a clean draft.
     }

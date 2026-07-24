@@ -10,6 +10,7 @@ import {
 } from './ghl-oauth-callback.controller';
 import { GhlService } from './ghl.service';
 import { GhlWebhookController } from './ghl-webhook.controller';
+import { GhlConversationsService } from './conversations/ghl-conversations.service';
 
 // Reuses the global JWT_SECRET to sign short-lived OAuth `state` tokens.
 // Imports AuthModule so JwtStrategy is available for JwtAuthGuard on routes.
@@ -33,7 +34,7 @@ import { GhlWebhookController } from './ghl-webhook.controller';
     GhlOAuthCallbackController,
     GhlWebhookController,
   ],
-  providers: [GhlService],
-  exports: [GhlService],
+  providers: [GhlService, GhlConversationsService],
+  exports: [GhlService, GhlConversationsService],
 })
 export class GhlModule {}

@@ -8,6 +8,7 @@ import { ApiError } from '@/lib/api/client';
 import { markBootstrapReady } from '@/lib/bootstrap-signal';
 import { routeForUser } from '@/lib/onboarding-route';
 import { registerPushToken } from '@/lib/push/register-push-token';
+import { getCacheItem } from '@/lib/cache';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 import { APP_BG } from '@/constants/theme';
 
@@ -41,7 +42,12 @@ export default function RootIndex() {
         const token = getToken();
 
         if (!token) {
-          go('/signup');
+          const hasSeenIntro = await getCacheItem('has_seen_intro');
+          if (hasSeenIntro === 'true') {
+            go('/signup');
+          } else {
+            go('/intro' as any);
+          }
           return;
         }
 

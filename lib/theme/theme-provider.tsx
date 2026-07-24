@@ -37,7 +37,7 @@ function isThemePreference(value: string | null): value is ThemePreference {
 export function AppThemeProvider({ children }: { children: ReactNode }) {
   const systemScheme = useColorScheme();
   const [preference, setPreferenceState] =
-    useState<ThemePreference>('system');
+    useState<ThemePreference>('light');
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
