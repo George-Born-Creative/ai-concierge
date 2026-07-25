@@ -20,19 +20,19 @@ const SLIDES = [
     id: '1',
     title: 'Your AI voice assistant.',
     subtitle: 'Always ready to help you.',
-    image: require('@/assets/images/intro/welcome.png'),
+    image: require('@/assets/images/intro/welcome.jpg'),
   },
   {
     id: '2',
     title: 'Just Speak',
     subtitle: 'Manage your CRM with your voice.',
-    image: require('@/assets/images/intro/voice_control.png'),
+    image: require('@/assets/images/intro/voice_control.jpg'),
   },
   {
     id: '3',
     title: 'Connect & Go',
     subtitle: 'Secure. Smart. Productive.',
-    image: require('@/assets/images/intro/connected.png'),
+    image: require('@/assets/images/intro/connected.jpg'),
   },
 ];
 
