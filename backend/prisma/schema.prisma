@@ -323,6 +323,7 @@ model SupportRequest {
   category                  SupportRequestCategory
   subject                   String
   description               String
+  diagnostics               Json?
   deliveryStatus            SupportDeliveryStatus @default(PENDING)
   deliveryAttempts          Int                   @default(0)
   lastDeliveryError         String?

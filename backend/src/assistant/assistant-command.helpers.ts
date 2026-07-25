@@ -544,6 +544,13 @@ export function mergeSessionIntoEntities(
   ) {
     merged.orderName = ctx.lastOrderName;
   }
+  // Conversations
+  if (
+    !entityString(merged, 'conversationId', 'conversation_id') &&
+    ctx.lastConversationId
+  ) {
+    merged.conversationId = ctx.lastConversationId;
+  }
   return merged;
 }
 
@@ -608,6 +615,9 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'detach_order_from_company',
     'attach_order_to_deal',
     'detach_order_from_deal',
+    'list_conversations',
+    'find_conversation',
+    'read_conversation',
   ]);
   return supported.has(intent.intent);
 }
@@ -1094,5 +1104,24 @@ export function extractOrderDealAssociation(
         entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
         '',
     },
+  };
+}
+
+export function extractConversationQuery(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    query: entityString(entities, 'query', 'contactName', 'contact_name'),
+    unreadOnly: entities['unreadOnly'] === true || entities['unread_only'] === true || false,
+    limit: typeof entities['limit'] === 'number' ? entities['limit'] : 20,
+  };
+}
+
+export function extractConversationRead(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    id: entityString(entities, 'conversationId', 'conversation_id'),
+    contactName: entityString(entities, 'contactName', 'contact_name', 'query'),
   };
 }

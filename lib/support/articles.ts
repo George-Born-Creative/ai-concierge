@@ -15,6 +15,7 @@ export type SupportArticleAction =
   | { type: 'settings'; label: string }
   | { type: 'openai-key'; label: string }
   | { type: 'reminders'; label: string }
+  | { type: 'diagnostics'; label: string }
   | {
       type: 'contact-support';
       label: string;
@@ -214,6 +215,36 @@ export const SUPPORT_ARTICLES: readonly SupportArticle[] = [
     escalationCategory: 'CONNECTIVITY',
   },
   {
+    slug: 'understand-connection-status',
+    topic: 'connectivity',
+    title: 'Understand connection status checks',
+    summary: 'Use safe diagnostics to tell whether the app, network, API, or stored CRM connection needs attention.',
+    keywords: ['diagnostics', 'connection status', 'crm connection', 'network check', 'integration status'],
+    steps: [
+      { title: 'Run diagnostics', body: 'Open Help & Support and choose Run diagnostics. The check is read-only and does not open your CRM records.' },
+      { title: 'Review attention items', body: 'A warning usually means a permission, network state, or stored integration setting needs attention.' },
+      { title: 'Review unavailable items', body: 'An unavailable result means the app could not confirm that service during this check.' },
+      { title: 'Run the check again', body: 'After changing a setting or connection, run diagnostics again to create a fresh snapshot.' },
+    ],
+    actions: [{ type: 'diagnostics', label: 'Run diagnostics' }],
+    escalationCategory: 'CONNECTIVITY',
+  },
+  {
+    slug: 'api-service-availability',
+    topic: 'connectivity',
+    title: 'When the AI Concierge service is unavailable',
+    summary: 'Check API reachability safely when requests time out or the app cannot load current information.',
+    keywords: ['api', 'server', 'service unavailable', 'health check', 'timeout', 'offline'],
+    steps: [
+      { title: 'Confirm internet access', body: 'Check another online service, then switch between Wi-Fi and mobile data if available.' },
+      { title: 'Run diagnostics', body: 'The API check sends a basic health request and records only whether the configured hostname responded.' },
+      { title: 'Wait before repeating', body: 'If the service is unavailable, wait a moment and run the check once more instead of repeatedly retrying.' },
+      { title: 'Keep your support draft', body: 'Your support message stays saved on this device while the service is unavailable.' },
+    ],
+    actions: [{ type: 'diagnostics', label: 'Check service availability' }],
+    escalationCategory: 'CONNECTIVITY',
+  },
+  {
     slug: 'protect-your-account-and-data',
     topic: 'privacy',
     title: 'Protect your account and connected data',
@@ -226,6 +257,21 @@ export const SUPPORT_ARTICLES: readonly SupportArticle[] = [
       { title: 'Contact support safely', body: 'Use the in-app form and include only the minimum account context needed.' },
     ],
     actions: [{ type: 'contact-support', label: 'Contact support', category: 'PRIVACY_SECURITY' }],
+    escalationCategory: 'PRIVACY_SECURITY',
+  },
+  {
+    slug: 'what-support-diagnostics-include',
+    topic: 'privacy',
+    title: 'What support diagnostics include',
+    summary: 'Review the limited technical details diagnostics can collect and what is always excluded.',
+    keywords: ['diagnostics privacy', 'technical details', 'data collected', 'support attachment', 'tokens'],
+    steps: [
+      { title: 'See the allowed details', body: 'Diagnostics include app and build version, platform and OS, locale and time zone, coarse network and notification state, API hostname, and stored account configuration status.' },
+      { title: 'Know what is excluded', body: 'Passwords, tokens, API keys, full URLs, device identifiers, CRM records, messages, and recordings are never included.' },
+      { title: 'Review before sharing', body: 'Run diagnostics to see the current snapshot. Running the check alone does not attach it to anything.' },
+      { title: 'Choose on the support form', body: 'Use Include technical diagnostics to opt in. Turn it off to send only the message you entered.' },
+    ],
+    actions: [{ type: 'diagnostics', label: 'Review diagnostics' }],
     escalationCategory: 'PRIVACY_SECURITY',
   },
 ] as const;

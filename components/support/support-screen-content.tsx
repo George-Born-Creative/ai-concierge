@@ -179,6 +179,32 @@ export function SupportScreenContent() {
         )}
 
         <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Check your setup</Text>
+          <Pressable
+            accessibilityHint="Runs privacy-safe app, connection, and account checks"
+            accessibilityRole="button"
+            onPress={() => router.push('/support-diagnostics' as Href)}
+            style={({ pressed }) => [
+              styles.diagnosticsCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              pressed && { backgroundColor: colors.surfacePressed },
+            ]}>
+            <View style={[styles.diagnosticsIcon, { backgroundColor: colors.successSurface }]}>
+              <MaterialIcons name="health-and-safety" size={23} color={colors.success} />
+            </View>
+            <View style={styles.diagnosticsCopy}>
+              <Text style={[styles.diagnosticsTitle, { color: colors.textPrimary }]}>Run diagnostics</Text>
+              <Text style={[styles.diagnosticsSubtitle, { color: colors.textSecondary }]}>Safe, read-only checks you can review before sharing</Text>
+              <View style={styles.privacyLabel}>
+                <MaterialIcons name="lock-outline" size={13} color={colors.success} />
+                <Text style={[styles.privacyLabelText, { color: colors.success }]}>No passwords, tokens, or CRM records</Text>
+              </View>
+            </View>
+            <MaterialIcons name="chevron-right" size={23} color={colors.iconMuted} />
+          </Pressable>
+        </View>
+
+        <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Talk to us</Text>
           <View
             style={[
@@ -279,6 +305,13 @@ const styles = StyleSheet.create({
   emptyActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 4 },
   smallAction: { alignItems: 'center', borderRadius: 10, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
   smallActionText: { fontSize: 14, fontWeight: '700' },
+  diagnosticsCard: { alignItems: 'center', borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 12, minHeight: 88, padding: 14 },
+  diagnosticsIcon: { alignItems: 'center', borderRadius: 11, height: 42, justifyContent: 'center', width: 42 },
+  diagnosticsCopy: { flex: 1, gap: 2 },
+  diagnosticsTitle: { fontSize: 15, fontWeight: '700', lineHeight: 20 },
+  diagnosticsSubtitle: { fontSize: 13, lineHeight: 18 },
+  privacyLabel: { alignItems: 'center', flexDirection: 'row', gap: 4, marginTop: 3 },
+  privacyLabelText: { fontSize: 10, fontWeight: '700', lineHeight: 14 },
   contactCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   contactRow: { alignItems: 'center', flexDirection: 'row', gap: 12, minHeight: 68, paddingHorizontal: 14, paddingVertical: 11 },
   contactIcon: { alignItems: 'center', borderRadius: 10, height: 38, justifyContent: 'center', width: 38 },

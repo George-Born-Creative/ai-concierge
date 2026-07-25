@@ -111,6 +111,13 @@ export function HomeScreenContent() {
     // GHL has no companies/tickets objects, so those aren't shown.
     return [
       {
+        icon: 'chat',
+        title: 'Conversations',
+        tint: '#10B981',
+        bg: '#D1FAE5',
+        href: '/ghl-conversations' as Href,
+      },
+      {
         icon: 'contacts',
         title: 'Contacts',
         tint: '#1A73E8',

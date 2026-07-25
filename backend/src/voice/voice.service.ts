@@ -77,6 +77,9 @@ const SUPPORTED_INTENTS = [
   'detach_order_from_company',
   'attach_order_to_deal',
   'detach_order_from_deal',
+  'list_conversations',
+  'find_conversation',
+  'read_conversation',
   'create_note',
   'create_task',
   'create_deal',
@@ -187,6 +190,9 @@ Intent examples (informal → intent):
 - "detach the March Renewal order from Acme", "unlink that order from Globex" → detach_order_from_company
 - "attach the March Renewal order to the Website Redesign deal", "link that order to deal 12345" → attach_order_to_deal
 - "detach the March Renewal order from the Website Redesign deal" → detach_order_from_deal
+- "list my conversations", "show my inbox", "what are my recent messages", "show my chats" → list_conversations
+- "find the conversation with John Smith", "look up messages from Sarah", "search for chat with Acme" → find_conversation
+- "read the conversation with John", "show me the messages in that chat", "open conversation 12345" → read_conversation
 
 Entity rules:
 - find_contact / delete_contact: put the search target in "query" (name, phone, or email the user mentioned). Also set "name", "phone", or "email" when obvious.
@@ -234,6 +240,9 @@ Entity rules:
 - attach_order_to_company / detach_order_from_company: identify the order via "orderName"/"orderId" (or session lastOrderId), and the company via "companyName"/"companyDomain"/"companyId".
 - attach_order_to_deal / detach_order_from_deal: identify the order via "orderName"/"orderId" (or session lastOrderId), and the deal via "dealName" or "dealId".
 - For any order intent that refers to "it" / "that order", reuse lastOrderId/lastOrderName from session context.
+- list_conversations: optional "limit" or "query" or "unreadOnly" (boolean).
+- find_conversation: put the search target in "query" (contact name or phone).
+- read_conversation: identify the conversation via "conversationId", "contactName", or "query". Reuse lastConversationId from session context if user refers to "it" or "that chat".
 - Normalize phone to digits with optional leading +.
 - Lowercase emails.
 - If the user clearly wants an action but a required detail is missing, set needs_clarification true and notes to a short, friendly question (not formal).
