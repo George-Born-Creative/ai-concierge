@@ -1,8 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
@@ -34,6 +34,12 @@ export function SupportScreenContent() {
   const user = getUser();
   const pushState = usePushState();
   const normalizedQuery = normalizeSupportText(query);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
+  }, []);
 
   const results = useMemo(
     () => searchSupportArticles(query),
@@ -67,10 +73,11 @@ export function SupportScreenContent() {
     <ScreenShell edges={['bottom']}>
       <PageHeader title="Help & Support" showBack />
       <ScrollView
-        alwaysBounceVertical={false}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        overScrollMode="never"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
         showsVerticalScrollIndicator={false}>
         <View style={styles.intro}>
           <Text style={[styles.title, { color: colors.textPrimary }]}>How can we help?</Text>
