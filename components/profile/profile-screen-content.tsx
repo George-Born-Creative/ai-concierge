@@ -1,10 +1,12 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,7 +15,7 @@ import {
 
 import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { ThemeColors } from '@/constants/theme';
+import type { ResolvedTheme, ThemeColors } from '@/constants/theme';
 import { ghlApi, hubspotApi, openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
@@ -89,7 +91,8 @@ type CrmStatus = {
 export function ProfileScreenContent() {
   const router = useRouter();
   const { show } = useToast();
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
 
   const [user, setUser] = useState<User | null>(() => getUser());
   const [crmStatus, setCrmStatus] = useState<CrmStatus | null>(null);
@@ -97,6 +100,7 @@ export function ProfileScreenContent() {
   const [openAIConnected, setOpenAIConnected] = useState<boolean | null>(null);
   const [loadingStatuses, setLoadingStatuses] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Refresh the user profile + integration statuses whenever the tab gains
   // focus, so a freshly-rotated key or reconnected CRM shows up immediately.
@@ -159,6 +163,12 @@ export function ProfileScreenContent() {
     }
   }, []);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadEverything();
+    setRefreshing(false);
+  }, [loadEverything]);
+
   useEffect(() => {
     void loadEverything();
   }, [loadEverything]);
@@ -199,21 +209,29 @@ export function ProfileScreenContent() {
     <ScreenShell edges={[]}>
       <ScrollView
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        alwaysBounceVertical={false}
-        overScrollMode="never">
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+        showsVerticalScrollIndicator={false}>
         {/* ── Profile card ──────────────────────────────────────────────────── */}
-        <View style={styles.profileCard}>
+        <LinearGradient
+          colors={resolvedTheme === 'dark' ? [colors.surfacePressed, colors.backgroundSecondary] : [colors.primaryMuted, colors.surfaceMuted]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.profileCard,
+            resolvedTheme === 'dark' ? styles.profileCardDark : undefined,
+          ]}>
           <View style={styles.profileHeader}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{initials}</Text>
             </View>
             <View style={styles.profileHeaderCopy}>
-              <Text style={styles.name} numberOfLines={1}>
+              <Text style={[styles.name, { color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary }]} numberOfLines={1}>
                 {displayName}
               </Text>
               {user?.email ? (
-                <Text style={styles.subtitle} numberOfLines={1}>
+                <Text style={[styles.subtitle, { color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary }]} numberOfLines={1}>
                   {user.email}
                 </Text>
               ) : null}
@@ -233,32 +251,7 @@ export function ProfileScreenContent() {
               ) : null}
             </View>
           </View>
-
-          <View style={styles.profileDivider} />
-
-          {/* Connection status pills. */}
-          <View style={styles.statusRow}>
-            {loadingStatuses && !crmStatus && openAIConnected == null ? (
-              <>
-                <Skeleton width={150} height={30} radius={999} />
-                <Skeleton width={130} height={30} radius={999} />
-              </>
-            ) : (
-              <>
-                <StatusPill
-                  icon="hub"
-                  label={crmStatus?.connected ? `${crmLabel} · Connected` : `${crmLabel} · Not connected`}
-                  tone={crmStatus?.connected ? 'success' : 'muted'}
-                />
-                <StatusPill
-                  icon="vpn-key"
-                  label={openAIConnected ? 'OpenAI · Connected' : 'OpenAI · Not set'}
-                  tone={openAIConnected ? 'success' : 'muted'}
-                />
-              </>
-            )}
-          </View>
-        </View>
+        </LinearGradient>
 
         {/* ── Connections ───────────────────────────────────────────────────── */}
         <View style={styles.section}>
@@ -277,10 +270,10 @@ export function ProfileScreenContent() {
                 title={crmLabel}
                 value={
                   crmStatus?.connected
-                    ? crmStatus.detail ?? 'Connected — contacts & calendars enabled'
-                    : 'Not connected — open Settings to connect'
+                    ? crmStatus.detail ?? 'Contacts & calendars enabled'
+                    : 'Open Settings to connect'
                 }
-                statusLabel={crmStatus?.connected ? 'Connected' : 'Off'}
+                statusLabel={crmLabel}
                 tone={crmStatus?.connected ? 'success' : 'muted'}
               />
 
@@ -294,7 +287,7 @@ export function ProfileScreenContent() {
                       : 'Stored securely'
                     : 'Add a key to enable transcription & intent parsing'
                 }
-                statusLabel={openAIConnected ? 'Connected' : 'Not set'}
+                statusLabel="OpenAI"
                 tone={openAIConnected ? 'success' : 'muted'}
               />
 
@@ -303,10 +296,10 @@ export function ProfileScreenContent() {
                 title="Subscription"
                 value={
                   user?.plan
-                    ? `${user.plan.name} (${humanizePlanStatus(user.plan.status)})`
+                    ? `${user.plan.name} plan is active`
                     : 'No active plan — pick one in Plans'
                 }
-                statusLabel={user?.plan ? humanizePlanStatus(user.plan.status) : 'None'}
+                statusLabel={user?.plan ? user.plan.name : 'No plan'}
                 tone={user?.plan ? planTone(user.plan.status) : 'muted'}
               />
             </>
@@ -315,17 +308,14 @@ export function ProfileScreenContent() {
 
         {/* ── Assistant scope ───────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>What the assistant can do</Text>
+          <Text style={styles.sectionTitle}>Assistant Capabilities</Text>
           {assistantCapabilities.map((cap) => (
-            <View key={cap.title} style={styles.capabilityRow}>
-              <View style={styles.capabilityIcon}>
-                <MaterialIcons name={cap.icon} size={22} color={colors.primary} />
-              </View>
-              <View style={styles.capabilityCopy}>
-                <Text style={styles.capabilityTitle}>{cap.title}</Text>
-                <Text style={styles.capabilityText}>{cap.description}</Text>
-              </View>
-            </View>
+            <CollapsibleCapability
+              key={cap.title}
+              icon={cap.icon}
+              title={cap.title}
+              description={cap.description}
+            />
           ))}
         </View>
 
@@ -338,15 +328,13 @@ export function ProfileScreenContent() {
             </View>
           </View>
           {upcomingFeatures.map((feature) => (
-            <View key={feature.title} style={styles.upcomingRow}>
-              <View style={styles.upcomingIcon}>
-                <MaterialIcons name={feature.icon} size={22} color={colors.info} />
-              </View>
-              <View style={styles.capabilityCopy}>
-                <Text style={styles.capabilityTitle}>{feature.title}</Text>
-                <Text style={styles.capabilityText}>{feature.description}</Text>
-              </View>
-            </View>
+            <CollapsibleCapability
+              key={feature.title}
+              icon={feature.icon}
+              title={feature.title}
+              description={feature.description}
+              tone="info"
+            />
           ))}
         </View>
 
@@ -405,26 +393,7 @@ export function ProfileScreenContent() {
 
 type Tone = 'success' | 'muted' | 'brand' | 'warning';
 
-function StatusPill({
-  icon,
-  label,
-  tone,
-}: {
-  icon: keyof typeof MaterialIcons.glyphMap;
-  label: string;
-  tone: Tone;
-}) {
-  const { colors } = useAppTheme();
-  const pillStyle = getTonePillStyle(tone, colors);
-  return (
-    <View style={[styles.statusPill, { backgroundColor: pillStyle.bg, borderColor: pillStyle.border }]}>
-      <MaterialIcons name={icon} size={14} color={pillStyle.fg} />
-      <Text style={[styles.statusPillText, { color: pillStyle.fg }]} numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
-  );
-}
+
 
 function ConnectionRow({
   icon,
@@ -439,7 +408,8 @@ function ConnectionRow({
   statusLabel: string;
   tone: Tone;
 }) {
-  const { colors } = useAppTheme();
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
   const pillStyle = getTonePillStyle(tone, colors);
   return (
     <View style={styles.connectionRow}>
@@ -450,7 +420,8 @@ function ConnectionRow({
         <Text style={styles.capabilityTitle}>{title}</Text>
         <Text style={styles.capabilityText}>{value}</Text>
       </View>
-      <View style={[styles.connectionStatus, { backgroundColor: pillStyle.bg }]}>
+      <View style={[styles.connectionStatus, { backgroundColor: pillStyle.bg, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+        <MaterialIcons name={tone === 'success' ? 'check-circle' : 'cancel'} size={14} color={pillStyle.fg} />
         <Text style={[styles.connectionStatusText, { color: pillStyle.fg }]} numberOfLines={1}>
           {statusLabel}
         </Text>
@@ -460,6 +431,8 @@ function ConnectionRow({
 }
 
 function ConnectionRowSkeleton() {
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
   return (
     <View style={styles.connectionRow}>
       <View style={styles.connectionIcon}>
@@ -471,6 +444,44 @@ function ConnectionRowSkeleton() {
       </View>
       <Skeleton width={56} height={22} radius={999} />
     </View>
+  );
+}
+
+function CollapsibleCapability({
+  icon,
+  title,
+  description,
+  tone = 'primary',
+}: {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  title: string;
+  description: string;
+  tone?: 'primary' | 'info';
+}) {
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
+  const [open, setOpen] = useState(false);
+
+  const isInfo = tone === 'info';
+  const rowStyle = isInfo ? styles.upcomingRow : styles.capabilityRow;
+  const iconStyle = isInfo ? styles.upcomingIcon : styles.capabilityIcon;
+  const iconColor = isInfo ? colors.info : colors.primary;
+
+  return (
+    <Pressable style={rowStyle} onPress={() => setOpen(!open)}>
+      <View style={iconStyle}>
+        <MaterialIcons name={icon} size={22} color={iconColor} />
+      </View>
+      <View style={styles.capabilityCopy}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={styles.capabilityTitle}>{title}</Text>
+          <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={20} color={colors.iconMuted} />
+        </View>
+        {open && (
+          <Text style={[styles.capabilityText, { marginTop: 6 }]}>{description}</Text>
+        )}
+      </View>
+    </Pressable>
   );
 }
 
@@ -545,7 +556,8 @@ function getTonePillStyle(tone: Tone, colors: ThemeColors) {
   };
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
+  StyleSheet.create({
   content: {
     paddingHorizontal: 12,
     paddingBottom: 120,
@@ -553,52 +565,55 @@ const styles = StyleSheet.create({
   },
   // ── Profile card ──
   profileCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5E7EB',
+    borderColor: colors.borderStrong,
     borderRadius: 16,
     borderWidth: 1,
     elevation: 3,
-    padding: 20,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
+    padding: 24,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+  },
+  profileCardDark: {
+    borderColor: colors.borderStrong,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.3,
   },
   profileHeader: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 16,
+    flexDirection: 'column',
+    gap: 12,
   },
   profileHeaderCopy: {
-    flex: 1,
+    alignItems: 'center',
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 32,
-    height: 64,
+    backgroundColor: colors.primaryMuted,
+    borderRadius: 40,
+    height: 80,
     justifyContent: 'center',
-    width: 64,
+    width: 80,
   },
   avatarText: {
-    color: '#1A73E8',
-    fontSize: 24,
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.primary,
+    fontSize: 32,
     fontWeight: '700',
   },
   name: {
-    color: '#111827',
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
   subtitle: {
-    color: '#6B7280',
-    fontSize: 14,
-    marginTop: 2,
+    fontSize: 15,
+    marginTop: 4,
+    fontWeight: '500',
   },
   planBadge: {
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: 'row',
@@ -616,31 +631,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  profileDivider: {
-    backgroundColor: '#F0F1F3',
-    height: 1,
-    marginBottom: 16,
-    marginTop: 18,
-  },
-  statusRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  statusPill: {
-    alignItems: 'center',
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  statusPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
+
   // ── Sections ──
   section: {
     marginTop: 26,
@@ -652,20 +643,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    color: '#202124',
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 12,
   },
   soonBadge: {
-    backgroundColor: '#EDE7FF',
+    backgroundColor: resolvedTheme === 'dark' ? colors.infoSurface : colors.surfaceSelected,
     borderRadius: 999,
     marginBottom: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   soonBadgeText: {
-    color: '#5E35B1',
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.primaryPressed,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.3,
@@ -674,8 +665,8 @@ const styles = StyleSheet.create({
   // ── Connection rows ──
   connectionRow: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -685,7 +676,7 @@ const styles = StyleSheet.create({
   },
   connectionIcon: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
     borderRadius: 20,
     height: 40,
     justifyContent: 'center',
@@ -703,8 +694,8 @@ const styles = StyleSheet.create({
   // ── Capability rows ──
   capabilityRow: {
     alignItems: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -714,7 +705,7 @@ const styles = StyleSheet.create({
   },
   capabilityIcon: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
     borderRadius: 20,
     height: 40,
     justifyContent: 'center',
@@ -724,12 +715,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   capabilityTitle: {
-    color: '#202124',
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
   capabilityText: {
-    color: '#5F6368',
+    color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary,
     fontSize: 13,
     lineHeight: 19,
     marginTop: 3,
@@ -737,8 +728,8 @@ const styles = StyleSheet.create({
   // ── Upcoming rows ──
   upcomingRow: {
     alignItems: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EDE7FF',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -748,7 +739,7 @@ const styles = StyleSheet.create({
   },
   upcomingIcon: {
     alignItems: 'center',
-    backgroundColor: '#EDE7FF',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.surfaceSelected,
     borderRadius: 20,
     height: 40,
     justifyContent: 'center',
@@ -761,8 +752,8 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -770,35 +761,35 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   logoutButton: {
-    borderColor: '#FAD2CF',
+    borderColor: colors.dangerBorder,
   },
   actionButtonDisabled: {
     opacity: 0.65,
   },
   actionIcon: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
     borderRadius: 20,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   logoutIcon: {
-    backgroundColor: '#FCE8E6',
+    backgroundColor: colors.dangerSurface,
   },
   actionCopy: {
     flex: 1,
   },
   actionTitle: {
-    color: '#202124',
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
   logoutTitle: {
-    color: '#EA4335',
+    color: colors.dangerText,
   },
   actionDescription: {
-    color: '#5F6368',
+    color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary,
     fontSize: 13,
     marginTop: 3,
   },

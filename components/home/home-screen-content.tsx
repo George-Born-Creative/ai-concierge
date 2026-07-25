@@ -1,10 +1,11 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { type Href, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ScreenShell } from '@/components/screen';
-import { getUser } from '@/lib/session';
+import { getMe } from '@/lib/api/auth';
+import { getUser, refreshUser } from '@/lib/session';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type QuickAction = {
@@ -48,6 +49,19 @@ function firstName(name: string | undefined): string {
 export function HomeScreenContent() {
   const router = useRouter();
   const { colors, resolvedTheme } = useAppTheme();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const result = await getMe();
+      await refreshUser(result);
+    } catch {
+      // ignore
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const user = getUser();
   const isHubspot = user?.provider === 'hubspot';
@@ -169,10 +183,11 @@ export function HomeScreenContent() {
     <ScreenShell edges={[]}>
       <ScrollView
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        alwaysBounceVertical={false}
-        overScrollMode="never">
+        keyboardShouldPersistTaps="handled">
         {/* Greeting */}
         <Animated.View
           style={[styles.greeting, { opacity: intro, transform: [{ translateY: introTranslate }] }]}>

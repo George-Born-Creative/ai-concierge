@@ -1,6 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
@@ -11,10 +12,17 @@ export function HistoryScreenContent() {
   const router = useRouter();
   const { colors } = useAppTheme();
   const { chats, clearAllChats, createChat, deleteChat, openChat } = useAssistantHistory();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
+  }, []);
 
   const sortedChats = [...chats].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
+
 
   async function startNewChat() {
     const id = await createChat();
@@ -51,9 +59,10 @@ export function HistoryScreenContent() {
 
       <ScrollView
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        alwaysBounceVertical={false}
-        overScrollMode="never">
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+        showsVerticalScrollIndicator={false}>
         <Text style={styles.subtitle}>
           Each block is one conversation. Open a chat to see all messages, or start a new one.
         </Text>

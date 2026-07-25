@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -72,6 +73,7 @@ export function SettingsScreenContent() {
   const [status, setStatus] = useState<CrmStatus | null>(null);
   const [openaiStatus, setOpenaiStatus] = useState<OpenAIKeyStatus | null>(null);
   const [loadingOpenai, setLoadingOpenai] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const onStatusChange = useCallback((isConnected: boolean) => {
     setConnected(isConnected);
@@ -116,6 +118,12 @@ export function SettingsScreenContent() {
       setLoadingOpenai(false);
     }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([refreshStatus(), refreshOpenaiStatus()]);
+    setRefreshing(false);
+  }, [refreshStatus, refreshOpenaiStatus]);
 
   useFocusEffect(
     useCallback(() => {
@@ -206,9 +214,10 @@ export function SettingsScreenContent() {
       <PageHeader title="Settings" showBack onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        alwaysBounceVertical={false}
-        overScrollMode="never">
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+        showsVerticalScrollIndicator={false}>
         {/* ── Account group ─────────────────────────────────────────────────── */}
         <SectionLabel>Appearance</SectionLabel>
         <Group>
