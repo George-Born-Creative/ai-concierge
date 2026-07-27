@@ -270,31 +270,6 @@ export function HomeScreenContent() {
           </View>
         </Animated.View>
 
-        {/* Help Card */}
-        <View style={styles.helpCard}>
-          <View style={styles.helpIcon}>
-            <MaterialIcons name="help-outline" size={24} color={colors.primary} />
-          </View>
-          <View style={styles.helpCopy}>
-            <Text style={styles.helpTitle}>Need Help?</Text>
-            <Text style={styles.helpDescription}>
-              Learn how to use voice commands and manage your CRM.
-            </Text>
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: '/chat',
-                  params: {
-                    command: 'What can you help me with? Show me example voice commands.',
-                    source: 'text',
-                  },
-                })
-              }
-              style={({ pressed }) => [styles.helpButton, pressed && { opacity: 0.9 }]}>
-              <Text style={styles.helpButtonText}>View Help</Text>
-            </Pressable>
-          </View>
-        </View>
       </ScrollView>
     </ScreenShell>
   );
@@ -312,7 +287,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingBottom: 138,
+    paddingBottom: 32,
     paddingTop: 24,
   },
   // Greeting
@@ -482,52 +457,5 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontSize: 14,
   },
-  // Help Card
-  helpCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5E7EB',
-    borderRadius: 16,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 14,
-    marginTop: 26,
-    padding: 20,
-    ...CARD_SHADOW,
-  },
-  helpIcon: {
-    alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 24,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
-  },
-  helpCopy: {
-    flex: 1,
-  },
-  helpTitle: {
-    color: '#111827',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  helpDescription: {
-    color: '#6B7280',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  helpButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1A73E8',
-    borderRadius: 12,
-    height: 44,
-    justifyContent: 'center',
-    marginTop: 14,
-    paddingHorizontal: 20,
-  },
-  helpButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+
 });
