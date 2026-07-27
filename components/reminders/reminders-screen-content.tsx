@@ -17,6 +17,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { CreateReminderModal } from '@/components/reminders/create-reminder-modal';
 import { ReminderRow } from '@/components/reminders/reminder-row';
 import { ghlApi, remindersApi } from '@/lib/api';
@@ -392,6 +393,10 @@ export function RemindersScreenContent() {
 
   const pushDenied = pushState.status === 'denied';
 
+  if (loading) {
+    return <PageSkeleton title="Reminders" />;
+  }
+
   return (
     <ScreenShell edges={['bottom']}>
       <PageHeader title="Reminders" showBack />
@@ -433,11 +438,7 @@ export function RemindersScreenContent() {
         </View>
       ) : null}
 
-      {loading ? (
-        <View style={styles.loadingState}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      ) : listData.length === 0 ? (
+      {listData.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>
             {range === 'cancelled'
@@ -767,7 +768,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   menuCancelText: { fontSize: 16, color: '#0F172A', fontWeight: '600' },
-  loadingState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyState: {
     flex: 1,
     justifyContent: 'center',

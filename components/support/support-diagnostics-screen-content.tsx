@@ -14,6 +14,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { DiagnosticRow } from '@/components/support/diagnostic-row';
 import { supportApi } from '@/lib/api';
 import type {
@@ -92,6 +93,10 @@ export function SupportDiagnosticsScreenContent() {
     router.push('/contact-support?mode=support&includeDiagnostics=1' as Href);
   }
 
+  if (loading) {
+    return <PageSkeleton title="Support diagnostics" />;
+  }
+
   return (
     <ScreenShell edges={['bottom']}>
       <PageHeader title="Support diagnostics" showBack />
@@ -127,9 +132,7 @@ export function SupportDiagnosticsScreenContent() {
           </View>
         </View>
 
-        {loading ? (
-          <LoadingState />
-        ) : error ? (
+        {error ? (
           <ErrorState onRetry={() => void runDiagnostics()} />
         ) : result ? (
           <>
@@ -192,21 +195,6 @@ export function SupportDiagnosticsScreenContent() {
   );
 }
 
-function LoadingState() {
-  const { colors } = useAppTheme();
-  return (
-    <View
-      accessibilityLabel="Running support diagnostics"
-      accessibilityLiveRegion="polite"
-      style={[styles.stateCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={[styles.stateIcon, { backgroundColor: colors.primaryMuted }]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-      <Text style={[styles.stateTitle, { color: colors.textPrimary }]}>Running safe checks...</Text>
-      <Text style={[styles.stateText, { color: colors.textSecondary }]}>Checking this app, your connection, and stored account configuration. No third-party data is opened.</Text>
-    </View>
-  );
-}
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   const { colors } = useAppTheme();

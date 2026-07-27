@@ -14,6 +14,7 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import {
   useAssistantHistory,
@@ -89,6 +90,10 @@ export function ChatsScreenContent() {
     ]);
   }
 
+  if (loading && totalChats === 0) {
+    return <PageSkeleton title="Chats" />;
+  }
+
   return (
     <ScreenShell edges={['bottom']}>
       <PageHeader
@@ -104,9 +109,7 @@ export function ChatsScreenContent() {
         }
       />
 
-      {loading && totalChats === 0 ? (
-        <ChatsSkeleton />
-      ) : totalChats === 0 ? (
+      {totalChats === 0 ? (
         <EmptyState onStart={() => router.push('/(chat)/chat')} />
       ) : (
         <SectionList
@@ -235,30 +238,6 @@ function EmptyState({ onStart }: { onStart: () => void }) {
   );
 }
 
-function ChatsSkeleton() {
-  return (
-    <View style={styles.listContent}>
-      {[0, 1].map((s) => (
-        <View key={s} style={{ marginBottom: 18 }}>
-          <Skeleton width={120} height={11} radius={6} style={{ marginLeft: 4, marginBottom: 10 }} />
-          <View style={styles.skeletonGroup}>
-            {[0, 1, 2].map((i) => (
-              <View key={i} style={[styles.row, i === 0 && styles.rowTop, i === 2 && styles.rowBottom]}>
-                <View style={styles.rowIcon}>
-                  <Skeleton width={18} height={18} radius={6} />
-                </View>
-                <View style={styles.rowCopy}>
-                  <Skeleton width="55%" height={14} radius={6} />
-                  <SkeletonLines lines={1} lineHeight={11} gap={6} lastLineWidth="80%" />
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
