@@ -4,6 +4,7 @@ import { Dimensions, StyleSheet, Text, View, Pressable } from 'react-native';
 import Animated, {
   Extrapolation,
   interpolate,
+  type SharedValue,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
@@ -111,35 +112,13 @@ export default function IntroScreen() {
 
       <View style={styles.footer}>
         <View style={styles.pagination}>
-          {SLIDES.map((_, index) => {
-            const animatedDotStyle = useAnimatedStyle(() => {
-              const widthAnimation = interpolate(
-                scrollX.value,
-                [(index - 1) * width, index * width, (index + 1) * width],
-                [10, 24, 10],
-                Extrapolation.CLAMP
-              );
-              
-              const opacityAnimation = interpolate(
-                scrollX.value,
-                [(index - 1) * width, index * width, (index + 1) * width],
-                [0.4, 1, 0.4],
-                Extrapolation.CLAMP
-              );
-
-              return {
-                width: widthAnimation,
-                opacity: opacityAnimation,
-              };
-            });
-
-            return (
-              <Animated.View
-                key={index}
-                style={[styles.dot, animatedDotStyle]}
-              />
-            );
-          })}
+          {SLIDES.map((slide, index) => (
+            <PaginationDot
+              key={slide.id}
+              index={index}
+              scrollX={scrollX}
+            />
+          ))}
         </View>
 
         <View style={styles.buttonContainer}>
@@ -161,6 +140,38 @@ export default function IntroScreen() {
       </View>
     </View>
   );
+}
+
+function PaginationDot({
+  index,
+  scrollX,
+}: {
+  index: number;
+  scrollX: SharedValue<number>;
+}) {
+  const animatedDotStyle = useAnimatedStyle(() => {
+    const inputRange = [
+      (index - 1) * width,
+      index * width,
+      (index + 1) * width,
+    ];
+    return {
+      width: interpolate(
+        scrollX.value,
+        inputRange,
+        [10, 24, 10],
+        Extrapolation.CLAMP,
+      ),
+      opacity: interpolate(
+        scrollX.value,
+        inputRange,
+        [0.4, 1, 0.4],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
+
+  return <Animated.View style={[styles.dot, animatedDotStyle]} />;
 }
 
 const styles = StyleSheet.create({
