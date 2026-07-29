@@ -15,7 +15,6 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
 import { PageSkeleton } from '@/components/ui/page-skeleton';
-import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import {
   useAssistantHistory,
   type AssistantChat,

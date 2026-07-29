@@ -17,6 +17,11 @@ import { ScreenShell } from '@/components/screen';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { requestPasswordReset } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
+import {
+  OTP_RESEND_COOLDOWN_SECONDS,
+  startOtpCooldown,
+} from '@/lib/auth/otp-cooldown';
+import { getOtpErrorMessage } from '@/lib/auth/otp-error';
 import { useToast } from '@/lib/toast';
 
 // Loose client-side check only — the backend is the source of truth.
@@ -38,7 +43,12 @@ export function ForgotPasswordScreen() {
 
     setSubmitting(true);
     try {
-      await requestPasswordReset({ email: trimmed });
+      const result = await requestPasswordReset({ email: trimmed });
+      await startOtpCooldown(
+        'password-reset',
+        trimmed,
+        result.retryAfterSeconds ?? OTP_RESEND_COOLDOWN_SECONDS,
+      );
       show('We sent a reset code to your email.', 'success');
       router.push(
         `/reset-password?email=${encodeURIComponent(trimmed)}` as Href,
@@ -51,11 +61,7 @@ export function ForgotPasswordScreen() {
         router.replace('/signup');
         return;
       }
-      const message =
-        err instanceof ApiError
-          ? err.message || 'Could not start the reset.'
-          : 'Something went wrong. Please try again.';
-      show(message, 'error');
+      show(getOtpErrorMessage(err, 'Could not start the reset.'), 'error');
     } finally {
       setSubmitting(false);
     }

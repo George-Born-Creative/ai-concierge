@@ -20,6 +20,7 @@ import { remindersApi } from '@/lib/api';
 import { getMe, signIn, signUp } from '@/lib/api/auth';
 import { getApiBaseUrl } from '@/lib/api/base-url';
 import { ApiError } from '@/lib/api/client';
+import { startOtpCooldown } from '@/lib/auth/otp-cooldown';
 import { routeForUser } from '@/lib/onboarding-route';
 import { registerPushToken } from '@/lib/push/register-push-token';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
@@ -118,6 +119,11 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         : await signIn({ email: email.trim(), password });
 
       await setSession(result.token, result.user);
+      if (isSignup && result.user.emailVerified === false) {
+        // The current signup response does not expose Twilio delivery status,
+        // so treat a successful signup as the start of the initial cooldown.
+        await startOtpCooldown('email-verification', result.user.email);
+      }
       attachDevicePreferences();
 
       if (!isSignup) {
