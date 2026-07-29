@@ -19,7 +19,8 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed": "ts-node --project prisma/tsconfig.json prisma/seed.ts",
-    "test:support-diagnostics": "npm run build && node --test test/support-diagnostics.test.js"
+    "test:support-diagnostics": "npm run build && node --test test/support-diagnostics.test.js",
+    "test:twilio-verification": "npm run build && node --test test/twilio-verification.test.js"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^3.1.0",
@@ -47,7 +48,8 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
-    "stripe": "^17.5.0"
+    "stripe": "^17.5.0",
+    "twilio": "^6.0.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
