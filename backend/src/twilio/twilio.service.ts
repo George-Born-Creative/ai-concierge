@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Twilio from 'twilio';
 
 export type OtpChannel = 'email' | 'sms';
 
@@ -10,11 +9,28 @@ export interface OtpVerificationResult {
   devMode?: boolean;
 }
 
+interface TwilioVerificationResponse {
+  sid: string;
+  status: string;
+  to: string;
+  channel: string;
+}
+
+interface TwilioVerificationCheckResponse {
+  status: string;
+}
+
+interface TwilioErrorResponse {
+  code?: number;
+  message?: string;
+}
+
 @Injectable()
 export class TwilioService {
   private readonly logger = new Logger(TwilioService.name);
-  private client: Twilio.Twilio | null = null;
-  private serviceSid: string | null = null;
+  private readonly accountSid: string | null;
+  private readonly authToken: string | null;
+  private readonly serviceSid: string | null;
   private readonly isProd: boolean;
   private readonly defaultChannel: OtpChannel;
 
@@ -32,23 +48,17 @@ export class TwilioService {
       );
     }
 
-    const accountSid = this.config.get<string>('TWILIO_ACCOUNT_SID')?.trim();
-    const authToken = this.config.get<string>('TWILIO_AUTH_TOKEN')?.trim();
+    this.accountSid =
+      this.config.get<string>('TWILIO_ACCOUNT_SID')?.trim() || null;
+    this.authToken =
+      this.config.get<string>('TWILIO_AUTH_TOKEN')?.trim() || null;
     this.serviceSid =
       this.config.get<string>('TWILIO_VERIFY_SERVICE_SID')?.trim() || null;
 
-    if (accountSid && authToken && this.serviceSid) {
-      try {
-        this.client = Twilio(accountSid, authToken);
-        this.logger.log(
-          `Twilio Verify Service initialized (Service SID: ${this.serviceSid})`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to initialize Twilio client: ${this.errorMessage(error)}`,
-        );
-        this.client = null;
-      }
+    if (this.isConfigured()) {
+      this.logger.log(
+        `Twilio Verify REST client initialized (Service SID: ${this.serviceSid})`,
+      );
     } else {
       this.logger.warn(
         this.isProd
@@ -59,7 +69,7 @@ export class TwilioService {
   }
 
   isConfigured(): boolean {
-    return Boolean(this.client && this.serviceSid);
+    return Boolean(this.accountSid && this.authToken && this.serviceSid);
   }
 
   async sendOtp(
@@ -78,7 +88,7 @@ export class TwilioService {
       throw new BadRequestException('Recipient is required');
     }
 
-    if (!this.client || !this.serviceSid) {
+    if (!this.isConfigured()) {
       if (!this.isProd) {
         this.logger.warn(
           `[DEV MODE] Mock ${channel} OTP requested for "${recipient}". Dev bypass active (use code 123456 to verify).`,
@@ -95,12 +105,17 @@ export class TwilioService {
     }
 
     try {
-      const verification = await this.client.verify.v2
-        .services(this.serviceSid)
-        .verifications.create({
-          to: recipient,
-          channel,
-        });
+      // Equivalent to:
+      // curl -X POST .../Verifications --data-urlencode "To=..."
+      //   --data-urlencode "Channel=email" -u "ACCOUNT_SID:AUTH_TOKEN"
+      const verification =
+        await this.postVerifyRequest<TwilioVerificationResponse>(
+          'Verifications',
+          {
+            To: recipient,
+            Channel: channel,
+          },
+        );
 
       this.logger.log(
         `Twilio ${channel} OTP sent to ${recipient} (status: ${verification.status})`,
@@ -129,7 +144,7 @@ export class TwilioService {
       throw new BadRequestException('Recipient and OTP code are required');
     }
 
-    if (!this.client || !this.serviceSid) {
+    if (!this.isConfigured()) {
       if (!this.isProd) {
         const devApproved = cleanCode === '123456';
         this.logger.warn(
@@ -151,12 +166,14 @@ export class TwilioService {
 
     let status: string;
     try {
-      const check = await this.client.verify.v2
-        .services(this.serviceSid)
-        .verificationChecks.create({
-          to: recipient,
-          code: cleanCode,
-        });
+      const check =
+        await this.postVerifyRequest<TwilioVerificationCheckResponse>(
+          'VerificationCheck',
+          {
+            To: recipient,
+            Code: cleanCode,
+          },
+        );
 
       status = check.status;
       this.logger.log(`Twilio verifyOtp for ${recipient}: ${status}`);
@@ -175,6 +192,47 @@ export class TwilioService {
     }
 
     return { verified: true, status: 'approved' };
+  }
+
+  private async postVerifyRequest<T>(
+    resource: 'Verifications' | 'VerificationCheck',
+    form: Record<string, string>,
+  ): Promise<T> {
+    if (!this.accountSid || !this.authToken || !this.serviceSid) {
+      throw new Error('Twilio Verify service is not configured');
+    }
+
+    const authorization = Buffer.from(
+      `${this.accountSid}:${this.authToken}`,
+    ).toString('base64');
+    const response = await fetch(
+      `https://verify.twilio.com/v2/Services/${encodeURIComponent(
+        this.serviceSid,
+      )}/${resource}`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Basic ${authorization}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(form).toString(),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+
+    const payload = (await response.json().catch(() => ({}))) as
+      | T
+      | TwilioErrorResponse;
+    if (!response.ok) {
+      const error = payload as TwilioErrorResponse;
+      const code = error.code ? ` ${error.code}` : '';
+      throw new Error(
+        `Twilio API error${code}: ${error.message || response.statusText}`,
+      );
+    }
+
+    return payload as T;
   }
 
   private normalizeRecipient(to: string, channel: OtpChannel): string {
