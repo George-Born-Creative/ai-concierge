@@ -14,6 +14,12 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { requestPasswordReset } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
@@ -129,52 +135,57 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
+    alignSelf: 'center',
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    maxWidth: 480,
+    paddingHorizontal: UiSpacing.xxl,
+    width: '100%',
   },
   title: {
     color: '#202124',
-    fontSize: 28,
+    fontSize: UiTypography.pageTitle.fontSize,
     fontWeight: '600',
     letterSpacing: -0.5,
+    lineHeight: UiTypography.pageTitle.lineHeight,
     textAlign: 'center',
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 10,
-    maxWidth: 320,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
+    maxWidth: 360,
     textAlign: 'center',
   },
   inputShell: {
     alignItems: 'center',
     backgroundColor: '#F8FAFF',
     borderColor: '#E4EBF7',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 28,
-    minHeight: 54,
-    paddingHorizontal: 16,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.xxl,
+    minHeight: UiControlHeights.input,
+    paddingHorizontal: UiSpacing.md,
     width: '100%',
   },
   input: {
     color: '#202124',
     flex: 1,
-    fontSize: 16,
+    fontSize: UiTypography.input.fontSize,
+    lineHeight: UiTypography.input.lineHeight,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 56,
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
     width: '100%',
   },
   primaryButtonDisabled: {
@@ -182,16 +193,20 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   switchButton: {
     alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    marginTop: UiSpacing.md,
+    minHeight: UiControlHeights.button,
   },
   switchText: {
     color: '#5F6368',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '500',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
 });

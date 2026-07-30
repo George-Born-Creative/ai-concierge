@@ -8,6 +8,12 @@ import {
   View,
 } from 'react-native';
 
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 // Which payment rail the user is mid-checkout on, so the sheet can show a
@@ -163,50 +169,55 @@ export function PaymentMethodSheet({
 
 const styles = StyleSheet.create({
   backdrop: {
+    alignItems: 'center',
     backgroundColor: 'rgba(32, 33, 36, 0.45)',
     flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 18,
+    borderTopLeftRadius: UiRadii.modal,
+    borderTopRightRadius: UiRadii.modal,
+    maxWidth: 640,
     paddingBottom: 34,
-    paddingTop: 12,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.md,
+    width: '100%',
   },
   handle: {
     alignSelf: 'center',
     backgroundColor: '#DADCE0',
     borderRadius: 3,
     height: 5,
-    marginBottom: 16,
+    marginBottom: UiSpacing.md,
     width: 44,
   },
   title: {
     color: '#202124',
-    fontSize: 22,
+    fontSize: UiTypography.sectionHeading.fontSize,
     fontWeight: '600',
     letterSpacing: -0.4,
+    lineHeight: UiTypography.sectionHeading.lineHeight,
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 14,
-    marginBottom: 18,
-    marginTop: 4,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginBottom: UiSpacing.md,
+    marginTop: UiSpacing.xxs,
   },
   option: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 14,
-    marginTop: 12,
-    minHeight: 74,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    gap: UiSpacing.md,
+    marginTop: UiSpacing.sm,
+    minHeight: 64,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.md,
   },
   optionStripe: {
     borderColor: '#1A73E8',
@@ -218,10 +229,10 @@ const styles = StyleSheet.create({
   optionIcon: {
     alignItems: 'center',
     backgroundColor: '#F1F3F4',
-    borderRadius: 12,
-    height: 44,
+    borderRadius: UiRadii.icon,
+    height: UiControlHeights.iconButton,
     justifyContent: 'center',
-    width: 44,
+    width: UiControlHeights.iconButton,
   },
   optionBody: {
     flex: 1,
@@ -229,17 +240,18 @@ const styles = StyleSheet.create({
   optionTitleRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
   },
   optionTitle: {
     color: '#202124',
-    fontSize: 16,
+    fontSize: UiTypography.body.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.body.lineHeight,
   },
   optionMeta: {
     color: '#5F6368',
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
     marginTop: 3,
   },
   optionRight: {
@@ -254,8 +266,9 @@ const styles = StyleSheet.create({
   },
   optionPriceMeta: {
     color: '#5F6368',
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.caption.lineHeight,
     paddingBottom: 2,
   },
   strikePrice: {
@@ -268,25 +281,27 @@ const styles = StyleSheet.create({
   },
   savingsBadge: {
     backgroundColor: '#E6F4EA',
-    borderRadius: 8,
-    paddingHorizontal: 8,
+    borderRadius: UiRadii.icon,
+    paddingHorizontal: UiSpacing.sm,
     paddingVertical: 2,
   },
   savingsBadgeText: {
     color: '#188038',
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '700',
+    lineHeight: UiTypography.caption.lineHeight,
   },
   cancelButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
-    minHeight: 44,
+    marginTop: UiSpacing.md,
+    minHeight: UiControlHeights.button,
   },
   cancelText: {
     color: '#5F6368',
-    fontSize: 15,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   cancelTextDisabled: {
     opacity: 0.5,
