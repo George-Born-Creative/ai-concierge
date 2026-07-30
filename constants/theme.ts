@@ -14,6 +14,56 @@ export const HEADER_ACTION = 40;
 /** Header content row height, excluding the status-bar inset. */
 export const HEADER_ROW = 56;
 
+/**
+ * Shared UI density tokens. These centralize size and spacing decisions while
+ * colors continue to come from the semantic light/dark palettes below.
+ */
+export const UiTypography = {
+  display: { fontSize: 28, lineHeight: 34 },
+  pageTitle: { fontSize: 24, lineHeight: 30 },
+  sectionHeading: { fontSize: 20, lineHeight: 26 },
+  cardHeading: { fontSize: 16, lineHeight: 22 },
+  body: { fontSize: 15, lineHeight: 21 },
+  bodySmall: { fontSize: 14, lineHeight: 20 },
+  input: { fontSize: 15, lineHeight: 20 },
+  button: { fontSize: 14, lineHeight: 20 },
+  label: { fontSize: 12, lineHeight: 16 },
+  caption: { fontSize: 11, lineHeight: 16 },
+  navigationTitle: { fontSize: 17, lineHeight: 22 },
+} as const;
+
+export const UiSpacing = {
+  xxs: 4,
+  xs: 6,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+} as const;
+
+export const UiRadii = {
+  icon: 8,
+  card: 10,
+  control: 10,
+  modal: 12,
+  pill: 999,
+} as const;
+
+export const UiControlHeights = {
+  compactButton: 40,
+  standard: 44,
+  input: 44,
+  search: 44,
+  dropdown: 44,
+  chatInput: 44,
+  button: 44,
+  iconButton: 40,
+  shortTextarea: 88,
+  longTextarea: 120,
+} as const;
+
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 

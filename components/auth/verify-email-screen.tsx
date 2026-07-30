@@ -14,6 +14,12 @@ import {
 
 import { LogoDotsIcon } from '@/components/brand/logo-dots-icon';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { resendCode, verifyEmail } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
@@ -182,7 +188,7 @@ export function VerifyEmailScreen() {
         style={styles.keyboardView}>
         <View style={styles.content}>
           <View style={styles.iconBadge}>
-            <LogoDotsIcon size={72} />
+            <LogoDotsIcon size={64} />
           </View>
 
           <Text style={styles.title}>Verify your email</Text>
@@ -276,34 +282,38 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
+    alignSelf: 'center',
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    maxWidth: 480,
+    paddingHorizontal: UiSpacing.xxl,
+    width: '100%',
   },
   iconBadge: {
     alignItems: 'center',
     backgroundColor: '#EDF4FF',
     borderColor: '#D7E6FF',
-    borderRadius: 28,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    height: 120,
+    height: 96,
     justifyContent: 'center',
-    marginBottom: 28,
-    width: 120,
+    marginBottom: UiSpacing.xxl,
+    width: 96,
   },
   title: {
     color: '#202124',
-    fontSize: 28,
+    fontSize: UiTypography.pageTitle.fontSize,
     fontWeight: '600',
     letterSpacing: -0.5,
+    lineHeight: UiTypography.pageTitle.lineHeight,
     textAlign: 'center',
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 10,
-    maxWidth: 320,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
+    maxWidth: 360,
     textAlign: 'center',
   },
   email: {
@@ -313,27 +323,27 @@ const styles = StyleSheet.create({
   codeInput: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E4EBF7',
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     color: '#202124',
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '700',
-    letterSpacing: 12,
-    marginTop: 28,
-    minHeight: 64,
-    paddingHorizontal: 16,
+    letterSpacing: 10,
+    marginTop: UiSpacing.xxl,
+    minHeight: 52,
+    paddingHorizontal: UiSpacing.md,
     textAlign: 'center',
     width: '100%',
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 56,
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
     width: '100%',
   },
   primaryButtonDisabled: {
@@ -341,30 +351,34 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   resendButton: {
     alignItems: 'center',
-    marginTop: 20,
-    minHeight: 40,
     justifyContent: 'center',
+    marginTop: UiSpacing.md,
+    minHeight: UiControlHeights.button,
   },
   resendText: {
     color: '#1A73E8',
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   resendTextDisabled: {
     color: '#9AA0A6',
   },
   switchButton: {
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    minHeight: UiControlHeights.button,
   },
   switchText: {
     color: '#5F6368',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '500',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
 });

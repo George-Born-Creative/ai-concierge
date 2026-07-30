@@ -29,7 +29,7 @@ export function ChatVoiceWaveOverlay({ activity }: ChatVoiceWaveOverlayProps) {
 
   return (
     <View pointerEvents="none" style={styles.overlay}>
-      <VoiceRecordingVisual seconds={elapsed} size={200} />
+      <VoiceRecordingVisual seconds={elapsed} size={176} />
     </View>
   );
 }

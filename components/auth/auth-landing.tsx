@@ -6,6 +6,12 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { LogoDotsIcon } from '@/components/brand/logo-dots-icon';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { remindersApi } from '@/lib/api';
 import { googleSignIn } from '@/lib/api/auth';
@@ -67,7 +73,7 @@ export function AuthLanding() {
     <ScreenShell>
       <View style={styles.content}>
         <View style={styles.iconBadge}>
-          <LogoDotsIcon size={72} />
+          <LogoDotsIcon size={64} />
         </View>
 
         <Text style={styles.title}>Let&apos;s get started</Text>
@@ -124,57 +130,61 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: UiSpacing.xxl,
+    paddingVertical: UiSpacing.xxl,
   },
   iconBadge: {
     alignItems: 'center',
     backgroundColor: '#EDF4FF',
     borderColor: '#D7E6FF',
-    borderRadius: 28,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    height: 120,
+    height: 96,
     justifyContent: 'center',
-    marginBottom: 28,
-    width: 120,
+    marginBottom: UiSpacing.xxl,
+    width: 96,
   },
   title: {
     color: '#202124',
-    fontSize: 30,
+    fontSize: UiTypography.display.fontSize,
     fontWeight: '700',
     letterSpacing: -0.5,
+    lineHeight: UiTypography.display.lineHeight,
     textAlign: 'center',
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 10,
-    maxWidth: 300,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
+    maxWidth: 320,
     textAlign: 'center',
   },
   actions: {
-    marginTop: 36,
+    marginTop: UiSpacing.xxl,
+    maxWidth: 440,
     width: '100%',
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 10,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    minHeight: 56,
+    minHeight: UiControlHeights.button,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   dividerRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
-    marginVertical: 20,
+    gap: UiSpacing.sm,
+    marginVertical: UiSpacing.lg,
   },
   dividerLine: {
     backgroundColor: '#E4EBF7',
@@ -183,35 +193,40 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     color: '#9AA0A6',
-    fontSize: 14,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '500',
+    lineHeight: UiTypography.label.lineHeight,
   },
   googleButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E4EBF7',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    minHeight: 56,
+    minHeight: UiControlHeights.button,
   },
   googleButtonBusy: {
     opacity: 0.7,
   },
   googleButtonText: {
     color: '#202124',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   footer: {
     alignItems: 'center',
-    marginTop: 32,
+    justifyContent: 'center',
+    marginTop: UiSpacing.xxl,
+    minHeight: UiControlHeights.button,
   },
   footerText: {
     color: '#5F6368',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   footerLink: {
     color: '#1A73E8',

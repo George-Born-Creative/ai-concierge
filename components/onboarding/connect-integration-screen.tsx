@@ -13,6 +13,12 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { ghlApi, hubspotApi } from '@/lib/api';
 import { CRM_LABELS } from '@/lib/crm/labels';
@@ -100,7 +106,7 @@ export function ConnectIntegrationScreen() {
         alwaysBounceVertical={false}
         overScrollMode="never">
         <View style={styles.headerIcon}>
-          <MaterialIcons name="lan" size={34} color={colors.primary} />
+          <MaterialIcons name="lan" size={28} color={colors.primary} />
         </View>
         <Text style={styles.title}>Connect {integration.name}</Text>
         <Text style={styles.subtitle}>
@@ -168,122 +174,130 @@ export function ConnectIntegrationScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 42,
+    alignSelf: 'center',
+    maxWidth: 640,
+    paddingBottom: UiSpacing.xxxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.xl,
+    width: '100%',
   },
   headerIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 32,
-    height: 64,
+    borderRadius: UiRadii.icon,
+    height: 52,
     justifyContent: 'center',
-    width: 64,
+    width: 52,
   },
   title: {
     color: '#202124',
-    fontSize: 34,
+    fontSize: UiTypography.display.fontSize,
     fontWeight: '600',
-    letterSpacing: -1,
-    marginTop: 22,
+    letterSpacing: -0.7,
+    lineHeight: UiTypography.display.lineHeight,
+    marginTop: UiSpacing.lg,
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 10,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
   },
   statusRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
   },
   statusText: {
     color: '#5F6368',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   connectedBanner: {
     alignItems: 'flex-start',
     backgroundColor: '#E6F4EA',
     borderColor: '#CEEAD6',
-    borderRadius: 12,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-    padding: 14,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
+    padding: UiSpacing.md,
   },
   connectedCopy: {
     flex: 1,
   },
   connectedTitle: {
     color: '#137333',
-    fontSize: 16,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   connectedSubtitle: {
     color: '#137333',
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 4,
+    marginTop: UiSpacing.xxs,
   },
   integrationCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 14,
-    marginTop: 28,
-    padding: 16,
+    gap: UiSpacing.md,
+    marginTop: UiSpacing.xl,
+    padding: UiSpacing.md,
   },
   integrationIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 14,
-    height: 52,
+    borderRadius: UiRadii.icon,
+    height: 44,
     justifyContent: 'center',
-    width: 52,
+    width: 44,
   },
   integrationCopy: {
     flex: 1,
   },
   integrationTitle: {
     color: '#202124',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   integrationDescription: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 22,
-    minHeight: 58,
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
   },
   primaryButtonDisabled: {
     opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   helperText: {
     color: '#5F6368',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 18,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: 18,
+    marginTop: UiSpacing.md,
     textAlign: 'center',
   },
 });

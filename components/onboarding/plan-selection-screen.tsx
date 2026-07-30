@@ -13,6 +13,12 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
@@ -434,7 +440,7 @@ export function PlanSelectionScreen() {
         alwaysBounceVertical={false}
         overScrollMode="never">
         <View style={styles.headerIcon}>
-          <MaterialIcons name="workspace-premium" size={34} color={colors.primary} />
+          <MaterialIcons name="workspace-premium" size={28} color={colors.primary} />
         </View>
         <Text style={styles.title}>Choose your CRM plan</Text>
         <Text style={styles.subtitle}>
@@ -572,41 +578,45 @@ export function PlanSelectionScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 42,
+    alignSelf: 'center',
+    maxWidth: 700,
+    paddingBottom: UiSpacing.xxxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.xl,
+    width: '100%',
   },
   headerIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 32,
-    height: 64,
+    borderRadius: UiRadii.icon,
+    height: 52,
     justifyContent: 'center',
-    width: 64,
+    width: 52,
   },
   title: {
     color: '#202124',
-    fontSize: 34,
+    fontSize: UiTypography.display.fontSize,
     fontWeight: '600',
-    letterSpacing: -1,
-    marginTop: 22,
+    letterSpacing: -0.7,
+    lineHeight: UiTypography.display.lineHeight,
+    marginTop: UiSpacing.lg,
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 10,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
   },
   planList: {
-    gap: 16,
-    marginTop: 28,
+    gap: UiSpacing.md,
+    marginTop: UiSpacing.xl,
   },
   planCard: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 18,
+    padding: UiSpacing.md,
   },
   selectedPlanCard: {
     borderColor: '#1A73E8',
@@ -618,46 +628,47 @@ const styles = StyleSheet.create({
   planHeader: {
     alignItems: 'flex-start',
     flexDirection: 'row',
-    gap: 12,
+    gap: UiSpacing.sm,
     justifyContent: 'space-between',
   },
   planTitleRow: {
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
-    gap: 12,
+    gap: UiSpacing.sm,
   },
   planIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 12,
-    height: 42,
+    borderRadius: UiRadii.icon,
+    height: UiControlHeights.iconButton,
     justifyContent: 'center',
-    width: 42,
+    width: UiControlHeights.iconButton,
   },
   planTitleCopy: {
     flex: 1,
   },
   planName: {
     color: '#202124',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   planDescription: {
     color: '#5F6368',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: 18,
+    marginTop: UiSpacing.xxs,
   },
   pricePill: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 18,
-    minHeight: 50,
-    minWidth: 64,
+    borderRadius: UiRadii.control,
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: UiControlHeights.button,
+    minWidth: 62,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xs,
   },
   priceSkeleton: {
     alignItems: 'center',
@@ -666,22 +677,24 @@ const styles = StyleSheet.create({
   },
   price: {
     color: '#1A73E8',
-    fontSize: 22,
+    fontSize: UiTypography.sectionHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.sectionHeading.lineHeight,
   },
   priceMeta: {
     color: '#5F6368',
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.caption.lineHeight,
   },
   featuresList: {
-    gap: 10,
-    marginTop: 18,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
   },
   featureRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
+    gap: UiSpacing.sm,
   },
   featureSkeletonRow: {
     backgroundColor: '#F1F3F4',
@@ -691,8 +704,9 @@ const styles = StyleSheet.create({
   },
   featureText: {
     color: '#3C4043',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   radio: {
     alignItems: 'center',
@@ -702,8 +716,8 @@ const styles = StyleSheet.create({
     height: 24,
     justifyContent: 'center',
     position: 'absolute',
-    right: 18,
-    bottom: 18,
+    right: UiSpacing.md,
+    bottom: UiSpacing.md,
     width: 24,
   },
   selectedRadio: {
@@ -718,39 +732,40 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 24,
-    minHeight: 58,
+    marginTop: UiSpacing.xl,
+    minHeight: UiControlHeights.button,
   },
   primaryButtonDisabled: {
     opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   checkoutHint: {
     color: '#5F6368',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 12,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginTop: UiSpacing.sm,
     textAlign: 'center',
   },
   restoreButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
-    minHeight: 36,
-    paddingVertical: 8,
+    marginTop: UiSpacing.xs,
+    minHeight: UiControlHeights.button,
   },
   restoreButtonText: {
     color: '#1A73E8',
-    fontSize: 14,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
     textDecorationLine: 'underline',
   },
 });
