@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 
 import { VoiceRecordingVisual } from "@/components/voice/voice-recording-visual";
+import { UiControlHeights, UiRadii } from "@/constants/theme";
 import { useAppTheme } from "@/lib/theme/theme-provider";
 
 type VoiceActivity = "idle" | "recording" | "sending";
@@ -362,11 +363,11 @@ export function AIConciergeVoiceRecorder({
           ]}
         >
           {isComposer && isSending ? (
-            <MaterialIcons name="hourglass-top" size={22} color={colors.onPrimary} />
+            <MaterialIcons name="hourglass-top" size={20} color={colors.onPrimary} />
           ) : (
             <MaterialIcons
               name="mic"
-              size={isComposer ? 25 : 40}
+              size={isComposer ? 22 : 40}
               color={colors.onPrimary}
             />
           )}
@@ -384,7 +385,7 @@ const styles = StyleSheet.create({
     width: 120,
   },
   composerShell: {
-    width: 48,
+    width: UiControlHeights.chatInput,
   },
   recordingShell: {
     transform: [{ translateY: -4 }],
@@ -401,8 +402,8 @@ const styles = StyleSheet.create({
     width: 106,
   },
   composerMicStage: {
-    height: 48,
-    width: 48,
+    height: UiControlHeights.chatInput,
+    width: UiControlHeights.chatInput,
   },
   glowRing: {
     backgroundColor: "#1A73E8",
@@ -425,11 +426,11 @@ const styles = StyleSheet.create({
     width: 92,
   },
   composerMicButton: {
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     elevation: 0,
-    height: 48,
+    height: UiControlHeights.chatInput,
     shadowOpacity: 0,
-    width: 48,
+    width: UiControlHeights.chatInput,
   },
   recordingMicButton: {
     backgroundColor: "#1558D6",

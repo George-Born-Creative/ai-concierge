@@ -3,6 +3,8 @@ import type React from "react";
 import { useMemo } from "react";
 import { Linking, Platform, StyleSheet, Text, View } from "react-native";
 
+import { UiRadii, UiSpacing, UiTypography } from "@/constants/theme";
+
 // Single shared parser. `markdown-it` (https://github.com/markdown-it/markdown-it)
 // turns the assistant's Markdown reply into a token stream that we render with
 // native RN <Text>/<View> components below (no HTML / WebView).
@@ -284,13 +286,13 @@ export function MarkdownMessage({ content }: MarkdownMessageProps) {
 }
 
 const BASE_COLOR = "#202124";
-const BASE_SIZE = 15;
-const BASE_LINE = 22;
+const BASE_SIZE = UiTypography.bodySmall.fontSize;
+const BASE_LINE = UiTypography.bodySmall.lineHeight;
 const MONO = Platform.select({ ios: "Menlo", default: "monospace" });
 
 const styles = StyleSheet.create({
   root: {
-    rowGap: 10,
+    rowGap: UiSpacing.sm,
   },
   paragraph: {
     color: BASE_COLOR,
@@ -312,21 +314,21 @@ const styles = StyleSheet.create({
   },
   h1: {
     color: BASE_COLOR,
-    fontSize: 22,
+    fontSize: UiTypography.sectionHeading.fontSize,
     fontWeight: "700",
-    lineHeight: 28,
+    lineHeight: UiTypography.sectionHeading.lineHeight,
   },
   h2: {
     color: BASE_COLOR,
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: "700",
-    lineHeight: 25,
+    lineHeight: 24,
   },
   h3: {
     color: BASE_COLOR,
-    fontSize: 17,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: "700",
-    lineHeight: 23,
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   h4: {
     color: BASE_COLOR,
@@ -338,14 +340,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#F1F3F4",
     color: "#37474F",
     fontFamily: MONO,
-    fontSize: 13.5,
+    fontSize: 13,
   },
   codeBlock: {
     backgroundColor: "#F1F3F4",
     borderColor: "#E1E5EA",
-    borderRadius: 8,
+    borderRadius: UiRadii.icon,
     borderWidth: 1,
-    padding: 12,
+    padding: UiSpacing.sm,
   },
   codeBlockText: {
     color: "#263238",
@@ -354,10 +356,10 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   list: {
-    rowGap: 4,
+    rowGap: UiSpacing.xxs,
   },
   listItem: {
-    columnGap: 8,
+    columnGap: UiSpacing.sm,
     flexDirection: "row",
   },
   listMarker: {
@@ -368,13 +370,13 @@ const styles = StyleSheet.create({
   },
   listItemContent: {
     flex: 1,
-    rowGap: 4,
+    rowGap: UiSpacing.xxs,
   },
   blockquote: {
     borderLeftColor: "#D2E3FC",
     borderLeftWidth: 3,
-    paddingLeft: 12,
-    rowGap: 8,
+    paddingLeft: UiSpacing.sm,
+    rowGap: UiSpacing.sm,
   },
   hr: {
     backgroundColor: "#E8EAED",
@@ -382,7 +384,7 @@ const styles = StyleSheet.create({
   },
   table: {
     borderColor: "#E1E5EA",
-    borderRadius: 8,
+    borderRadius: UiRadii.icon,
     borderWidth: 1,
     overflow: "hidden",
   },
@@ -399,18 +401,18 @@ const styles = StyleSheet.create({
     borderLeftColor: "#E8EAED",
     borderLeftWidth: StyleSheet.hairlineWidth,
     flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xs,
   },
   tableHeaderText: {
     color: BASE_COLOR,
-    fontSize: 13,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: "700",
-    lineHeight: 18,
+    lineHeight: UiTypography.label.lineHeight,
   },
   tableCellText: {
     color: BASE_COLOR,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
   },
 });

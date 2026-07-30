@@ -5,6 +5,12 @@ import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } 
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { AssistantChat, useAssistantHistory } from '@/lib/assistant-history';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
@@ -46,7 +52,7 @@ export function HistoryScreenContent() {
   }
 
   return (
-    <ScreenShell>
+    <ScreenShell edges={['bottom']}>
       <PageHeader
         title="History"
         showBack
@@ -67,7 +73,7 @@ export function HistoryScreenContent() {
           Each block is one conversation. Open a chat to see all messages, or start a new one.
         </Text>
         <Pressable style={styles.newChatButton} onPress={startNewChat}>
-          <MaterialIcons name="add-comment" size={22} color={colors.onPrimary} />
+          <MaterialIcons name="add-comment" size={20} color={colors.onPrimary} />
           <Text style={styles.newChatButtonText}>New chat</Text>
         </Pressable>
 
@@ -82,7 +88,7 @@ export function HistoryScreenContent() {
 
         {chats.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MaterialIcons name="forum" size={34} color={colors.primary} />
+            <MaterialIcons name="forum" size={30} color={colors.primary} />
             <Text style={styles.emptyTitle}>No chats yet</Text>
             <Text style={styles.emptyText}>
               Start a new chat to talk with the assistant. All messages in that session stay inside
@@ -101,7 +107,7 @@ export function HistoryScreenContent() {
                 accessibilityRole="button"
                 accessibilityLabel={`Open chat from ${formatTimestamp(chat.updatedAt)}`}>
                 <View style={styles.chatBlockIcon}>
-                  <MaterialIcons name="chat-bubble-outline" size={26} color={colors.primary} />
+                  <MaterialIcons name="chat-bubble-outline" size={22} color={colors.primary} />
                 </View>
                 <View style={styles.chatBlockBody}>
                   <View style={styles.chatBlockTop}>
@@ -125,7 +131,7 @@ export function HistoryScreenContent() {
                 style={styles.deleteChatButton}
                 onPress={() => confirmDeleteChat(chat)}
                 accessibilityLabel="Delete conversation">
-                <MaterialIcons name="delete-outline" size={22} color={colors.danger} />
+                <MaterialIcons name="delete-outline" size={20} color={colors.danger} />
               </Pressable>
             </View>
           ))
@@ -154,60 +160,68 @@ function formatTimestamp(value: string) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: 12,
-    paddingTop: 20,
-    paddingBottom: 36,
+    alignSelf: 'center',
+    maxWidth: 720,
+    paddingBottom: UiSpacing.xxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   historyCount: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 16,
-    height: 32,
+    borderRadius: UiRadii.pill,
+    height: 28,
     justifyContent: 'center',
-    minWidth: 32,
-    paddingHorizontal: 8,
+    minWidth: 28,
+    paddingHorizontal: UiSpacing.sm,
   },
   historyCountText: {
     color: '#1A73E8',
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   newChatButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.lg,
   },
   newChatButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   sectionHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: UiSpacing.md,
+    marginTop: UiSpacing.xxl,
   },
   sectionTitle: {
     color: '#202124',
-    fontSize: 20,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   sectionAction: {
     color: '#1A73E8',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   disabledAction: {
     color: '#BDC1C6',
@@ -216,64 +230,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 26,
+    padding: UiSpacing.xl,
   },
   emptyTitle: {
     color: '#202124',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
-    marginTop: 12,
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    marginTop: UiSpacing.md,
   },
   emptyText: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 6,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xs,
+    maxWidth: 360,
     textAlign: 'center',
   },
   emptyCta: {
-    marginTop: 18,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
     backgroundColor: '#E8F0FE',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
+    justifyContent: 'center',
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.xl,
   },
   emptyCtaText: {
     color: '#174EA6',
-    fontSize: 15,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   chatBlock: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    marginBottom: 12,
+    marginBottom: UiSpacing.sm,
     overflow: 'hidden',
   },
   chatBlockPressable: {
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
-    gap: 14,
-    padding: 16,
+    gap: UiSpacing.md,
+    minHeight: 76,
+    padding: UiSpacing.md,
   },
   deleteChatButton: {
     alignItems: 'center',
+    alignSelf: 'stretch',
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    width: UiControlHeights.button,
   },
   chatBlockIcon: {
     alignItems: 'center',
     backgroundColor: '#EDF4FF',
-    borderRadius: 14,
-    height: 52,
+    borderRadius: UiRadii.icon,
+    height: 40,
     justifyContent: 'center',
-    width: 52,
+    width: 40,
   },
   chatBlockBody: {
     flex: 1,
@@ -282,36 +302,39 @@ const styles = StyleSheet.create({
   chatBlockTop: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'space-between',
   },
   chatBlockTitle: {
     color: '#202124',
-    fontSize: 17,
-    fontWeight: '600',
     flex: 1,
+    fontSize: UiTypography.body.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.body.lineHeight,
   },
   messagePill: {
     backgroundColor: '#F1F3F4',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderRadius: UiRadii.pill,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
   },
   messagePillText: {
     color: '#5F6368',
-    fontSize: 12,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.caption.lineHeight,
   },
   chatBlockPreview: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 8,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xs,
   },
   timestamp: {
     color: '#80868B',
-    fontSize: 12,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
-    marginTop: 8,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginTop: UiSpacing.xs,
   },
 });
