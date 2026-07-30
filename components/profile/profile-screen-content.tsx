@@ -15,7 +15,13 @@ import {
 
 import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { ResolvedTheme, ThemeColors } from '@/constants/theme';
+import {
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+  type ResolvedTheme,
+  type ThemeColors,
+} from '@/constants/theme';
 import { ghlApi, hubspotApi, openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
@@ -322,7 +328,9 @@ export function ProfileScreenContent() {
         {/* ── Upcoming features ─────────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Upcoming features</Text>
+            <Text style={[styles.sectionTitle, styles.sectionTitleInRow]}>
+              Upcoming features
+            </Text>
             <View style={styles.soonBadge}>
               <Text style={styles.soonBadgeText}>Coming soon</Text>
             </View>
@@ -345,7 +353,7 @@ export function ProfileScreenContent() {
             onPress={() => router.push('/settings')}
             disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
-              <MaterialIcons name="settings" size={22} color={colors.primary} />
+              <MaterialIcons name="settings" size={20} color={colors.primary} />
             </View>
             <View style={styles.actionCopy}>
               <Text style={styles.actionTitle}>Settings</Text>
@@ -353,7 +361,7 @@ export function ProfileScreenContent() {
                 Manage your CRM connection, OpenAI key, and provider
               </Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color={colors.iconMuted} />
+            <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
           </Pressable>
 
           <Pressable
@@ -368,7 +376,7 @@ export function ProfileScreenContent() {
               {isLoggingOut ? (
                 <ActivityIndicator size="small" color={colors.danger} />
               ) : (
-                <MaterialIcons name="logout" size={22} color={colors.danger} />
+                <MaterialIcons name="logout" size={20} color={colors.danger} />
               )}
             </View>
             <View style={styles.actionCopy}>
@@ -380,7 +388,7 @@ export function ProfileScreenContent() {
               </Text>
             </View>
             {!isLoggingOut ? (
-              <MaterialIcons name="chevron-right" size={24} color={colors.dangerBorder} />
+              <MaterialIcons name="chevron-right" size={22} color={colors.dangerBorder} />
             ) : null}
           </Pressable>
         </View>
@@ -414,13 +422,13 @@ function ConnectionRow({
   return (
     <View style={styles.connectionRow}>
       <View style={styles.connectionIcon}>
-        <MaterialIcons name={icon} size={22} color={colors.primary} />
+        <MaterialIcons name={icon} size={20} color={colors.primary} />
       </View>
       <View style={styles.capabilityCopy}>
         <Text style={styles.capabilityTitle}>{title}</Text>
         <Text style={styles.capabilityText}>{value}</Text>
       </View>
-      <View style={[styles.connectionStatus, { backgroundColor: pillStyle.bg, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+      <View style={[styles.connectionStatus, { backgroundColor: pillStyle.bg, flexDirection: 'row', alignItems: 'center', gap: UiSpacing.xxs }]}>
         <MaterialIcons name={tone === 'success' ? 'check-circle' : 'cancel'} size={14} color={pillStyle.fg} />
         <Text style={[styles.connectionStatusText, { color: pillStyle.fg }]} numberOfLines={1}>
           {statusLabel}
@@ -470,7 +478,7 @@ function CollapsibleCapability({
   return (
     <Pressable style={rowStyle} onPress={() => setOpen(!open)}>
       <View style={iconStyle}>
-        <MaterialIcons name={icon} size={22} color={iconColor} />
+        <MaterialIcons name={icon} size={20} color={iconColor} />
       </View>
       <View style={styles.capabilityCopy}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -478,7 +486,9 @@ function CollapsibleCapability({
           <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={20} color={colors.iconMuted} />
         </View>
         {open && (
-          <Text style={[styles.capabilityText, { marginTop: 6 }]}>{description}</Text>
+          <Text style={[styles.capabilityText, { marginTop: UiSpacing.xs }]}>
+            {description}
+          </Text>
         )}
       </View>
     </Pressable>
@@ -559,21 +569,24 @@ function getTonePillStyle(tone: Tone, colors: ThemeColors) {
 const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
   StyleSheet.create({
   content: {
-    paddingHorizontal: 12,
-    paddingBottom: 120,
-    paddingTop: 24,
+    alignSelf: 'center',
+    maxWidth: 720,
+    paddingBottom: 96,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   // ── Profile card ──
   profileCard: {
     borderColor: colors.borderStrong,
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    elevation: 3,
-    padding: 24,
+    elevation: 2,
+    padding: UiSpacing.xl,
     shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
   },
   profileCardDark: {
     borderColor: colors.borderStrong,
@@ -583,7 +596,7 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
   profileHeader: {
     alignItems: 'center',
     flexDirection: 'column',
-    gap: 12,
+    gap: UiSpacing.md,
   },
   profileHeaderCopy: {
     alignItems: 'center',
@@ -591,36 +604,39 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
   avatar: {
     alignItems: 'center',
     backgroundColor: colors.primaryMuted,
-    borderRadius: 40,
-    height: 80,
+    borderRadius: UiRadii.pill,
+    height: 64,
     justifyContent: 'center',
-    width: 80,
+    width: 64,
   },
   avatarText: {
     color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.primary,
-    fontSize: 32,
+    fontSize: UiTypography.pageTitle.fontSize,
     fontWeight: '700',
+    lineHeight: UiTypography.pageTitle.lineHeight,
   },
   name: {
-    fontSize: 24,
+    fontSize: UiTypography.sectionHeading.fontSize,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
+    lineHeight: UiTypography.sectionHeading.lineHeight,
   },
   subtitle: {
-    fontSize: 15,
-    marginTop: 4,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '500',
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   planBadge: {
     alignItems: 'center',
     alignSelf: 'center',
-    borderRadius: 999,
+    borderRadius: UiRadii.pill,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 6,
-    marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    gap: UiSpacing.xs,
+    marginTop: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
   },
   planDot: {
     borderRadius: 4,
@@ -628,38 +644,43 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
     width: 7,
   },
   planBadgeText: {
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '700',
+    lineHeight: UiTypography.label.lineHeight,
   },
 
   // ── Sections ──
   section: {
-    marginTop: 26,
+    marginTop: UiSpacing.xl,
   },
   sectionHeaderRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
+    gap: UiSpacing.sm,
+    marginBottom: UiSpacing.md,
   },
   sectionTitle: {
     color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
-    fontSize: 20,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
-    marginBottom: 12,
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    marginBottom: UiSpacing.md,
+  },
+  sectionTitleInRow: {
+    marginBottom: 0,
   },
   soonBadge: {
     backgroundColor: resolvedTheme === 'dark' ? colors.infoSurface : colors.surfaceSelected,
-    borderRadius: 999,
-    marginBottom: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderRadius: UiRadii.pill,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
   },
   soonBadgeText: {
     color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.primaryPressed,
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '700',
     letterSpacing: 0.3,
+    lineHeight: UiTypography.caption.lineHeight,
     textTransform: 'uppercase',
   },
   // ── Connection rows ──
@@ -667,46 +688,49 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
     alignItems: 'center',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
     borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 10,
-    padding: 14,
+    gap: UiSpacing.md,
+    marginBottom: UiSpacing.sm,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   connectionIcon: {
     alignItems: 'center',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
-    borderRadius: 20,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   connectionStatus: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: UiRadii.pill,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xs,
   },
   connectionStatusText: {
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
   },
   // ── Capability rows ──
   capabilityRow: {
     alignItems: 'flex-start',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
     borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 10,
-    padding: 14,
+    gap: UiSpacing.md,
+    marginBottom: UiSpacing.sm,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   capabilityIcon: {
     alignItems: 'center',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
-    borderRadius: 20,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
@@ -716,49 +740,52 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
   },
   capabilityTitle: {
     color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
-    fontSize: 16,
+    fontSize: UiTypography.body.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.body.lineHeight,
   },
   capabilityText: {
     color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 3,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   // ── Upcoming rows ──
   upcomingRow: {
     alignItems: 'flex-start',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
     borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 10,
-    padding: 14,
+    gap: UiSpacing.md,
+    marginBottom: UiSpacing.sm,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   upcomingIcon: {
     alignItems: 'center',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.surfaceSelected,
-    borderRadius: 20,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   // ── Actions ──
   actionsSection: {
-    gap: 12,
-    marginTop: 30,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.xxl,
   },
   actionButton: {
     alignItems: 'center',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
     borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 14,
-    padding: 16,
+    gap: UiSpacing.md,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   logoutButton: {
     borderColor: colors.dangerBorder,
@@ -769,7 +796,7 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
   actionIcon: {
     alignItems: 'center',
     backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
-    borderRadius: 20,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
@@ -782,15 +809,17 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
   },
   actionTitle: {
     color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
-    fontSize: 16,
+    fontSize: UiTypography.body.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.body.lineHeight,
   },
   logoutTitle: {
     color: colors.dangerText,
   },
   actionDescription: {
     color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary,
-    fontSize: 13,
-    marginTop: 3,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
 });

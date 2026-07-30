@@ -1,6 +1,12 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type SupportSearchInputProps = {
@@ -58,25 +64,25 @@ export function SupportSearchInput({
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     flexDirection: 'row',
-    minHeight: 52,
-    paddingLeft: 14,
+    minHeight: UiControlHeights.search,
+    paddingLeft: UiSpacing.md,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    minHeight: 50,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
+    fontSize: UiTypography.input.fontSize,
+    lineHeight: UiTypography.input.lineHeight,
+    minHeight: UiControlHeights.search,
+    paddingHorizontal: UiSpacing.sm,
   },
   clearButton: {
     alignItems: 'center',
-    borderRadius: 10,
-    height: 44,
+    borderRadius: UiRadii.icon,
+    height: UiControlHeights.iconButton,
     justifyContent: 'center',
-    marginRight: 3,
-    width: 44,
+    marginRight: UiSpacing.xxs,
+    width: UiControlHeights.iconButton,
   },
 });
