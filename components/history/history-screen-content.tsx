@@ -100,40 +100,33 @@ export function HistoryScreenContent() {
           </View>
         ) : (
           sortedChats.map((chat) => (
-            <View key={chat.id} style={styles.chatBlock}>
-              <Pressable
-                style={styles.chatBlockPressable}
-                onPress={() => openConversation(chat)}
-                accessibilityRole="button"
-                accessibilityLabel={`Open chat from ${formatTimestamp(chat.updatedAt)}`}>
-                <View style={styles.chatBlockIcon}>
-                  <MaterialIcons name="chat-bubble-outline" size={22} color={colors.primary} />
-                </View>
-                <View style={styles.chatBlockBody}>
-                  <View style={styles.chatBlockTop}>
-                    <Text style={styles.chatBlockTitle} numberOfLines={1}>
-                      {chat.title?.trim() || 'Contact chat'}
-                    </Text>
-                    <View style={styles.messagePill}>
-                      <Text style={styles.messagePillText}>
-                        {chat.messageCount ?? chat.messages.length} messages
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.chatBlockPreview} numberOfLines={2}>
-                    {previewText(chat)}
-                  </Text>
-                  <Text style={styles.timestamp}>Updated {formatTimestamp(chat.updatedAt)}</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={24} color={colors.iconMuted} />
-              </Pressable>
-              <Pressable
-                style={styles.deleteChatButton}
-                onPress={() => confirmDeleteChat(chat)}
-                accessibilityLabel="Delete conversation">
-                <MaterialIcons name="delete-outline" size={20} color={colors.danger} />
-              </Pressable>
-            </View>
+            <Pressable
+              key={chat.id}
+              style={({ pressed }) => [
+                styles.chatBlock,
+                pressed && styles.chatBlockPressed,
+              ]}
+              onPress={() => openConversation(chat)}
+              onLongPress={() => confirmDeleteChat(chat)}
+              delayLongPress={400}
+              accessibilityRole="button"
+              accessibilityLabel={`${previewText(chat)}. Updated ${formatTimestamp(chat.updatedAt)}. ${formatMessageCount(chat)}.`}
+              accessibilityHint="Opens the conversation. Long press to delete it.">
+              <View style={styles.chatBlockIcon}>
+                <MaterialIcons name="chat-bubble-outline" size={20} color={colors.primary} />
+              </View>
+              <Text style={styles.chatBlockPreview} numberOfLines={2}>
+                {previewText(chat)}
+              </Text>
+              <View style={styles.chatBlockMeta}>
+                <Text style={styles.timestamp} numberOfLines={1}>
+                  {formatTimestamp(chat.updatedAt)}
+                </Text>
+                <Text style={styles.messageCount} numberOfLines={1}>
+                  {formatMessageCount(chat)}
+                </Text>
+              </View>
+            </Pressable>
           ))
         )}
       </ScrollView>
@@ -147,6 +140,11 @@ function previewText(chat: AssistantChat) {
   }
   const last = chat.messages[chat.messages.length - 1];
   return last.command;
+}
+
+function formatMessageCount(chat: AssistantChat) {
+  const count = chat.messageCount ?? chat.messages.length;
+  return `${count} ${count === 1 ? 'message' : 'messages'}`;
 }
 
 function formatTimestamp(value: string) {
@@ -270,22 +268,13 @@ const styles = StyleSheet.create({
     borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    marginBottom: UiSpacing.sm,
-    overflow: 'hidden',
-  },
-  chatBlockPressable: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
     gap: UiSpacing.md,
-    minHeight: 76,
+    marginBottom: UiSpacing.sm,
+    minHeight: 72,
     padding: UiSpacing.md,
   },
-  deleteChatButton: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    justifyContent: 'center',
-    width: UiControlHeights.button,
+  chatBlockPressed: {
+    backgroundColor: '#F6F8FB',
   },
   chatBlockIcon: {
     alignItems: 'center',
@@ -295,46 +284,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 40,
   },
-  chatBlockBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  chatBlockTop: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: UiSpacing.sm,
-    justifyContent: 'space-between',
-  },
-  chatBlockTitle: {
+  chatBlockPreview: {
     color: '#202124',
     flex: 1,
-    fontSize: UiTypography.body.fontSize,
-    fontWeight: '600',
-    lineHeight: UiTypography.body.lineHeight,
-  },
-  messagePill: {
-    backgroundColor: '#F1F3F4',
-    borderRadius: UiRadii.pill,
-    paddingHorizontal: UiSpacing.sm,
-    paddingVertical: UiSpacing.xxs,
-  },
-  messagePillText: {
-    color: '#5F6368',
-    fontSize: UiTypography.caption.fontSize,
-    fontWeight: '600',
-    lineHeight: UiTypography.caption.lineHeight,
-  },
-  chatBlockPreview: {
-    color: '#5F6368',
     fontSize: UiTypography.bodySmall.fontSize,
     lineHeight: UiTypography.bodySmall.lineHeight,
-    marginTop: UiSpacing.xs,
+    minWidth: 0,
+  },
+  chatBlockMeta: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    minHeight: 40,
+    minWidth: 104,
   },
   timestamp: {
     color: '#80868B',
     fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
     lineHeight: UiTypography.caption.lineHeight,
-    marginTop: UiSpacing.xs,
+    textAlign: 'right',
+  },
+  messageCount: {
+    color: '#5F6368',
+    fontSize: UiTypography.caption.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.caption.lineHeight,
+    textAlign: 'right',
   },
 });
