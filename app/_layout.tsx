@@ -177,7 +177,7 @@ function RootLayoutContent() {
                 options={{ headerShown: false }}
               />
               <Stack.Screen
-                name="(stack)/history"
+                name="(stack)/history/index"
                 options={{ headerShown: false }}
               />
               <Stack.Screen
