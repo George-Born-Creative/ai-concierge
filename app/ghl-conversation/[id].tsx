@@ -12,6 +12,12 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { getConversation, listConversationMessages } from '@/lib/api/ghl';
 import type { GhlConversationSummary, GhlMessageSummary } from '@/lib/api/types';
 import { useAppTheme } from '@/lib/theme/theme-provider';
@@ -138,20 +144,26 @@ export default function GhlConversationDetailScreen() {
 const styles = StyleSheet.create({
   center: {
     alignItems: 'center',
+    alignSelf: 'center',
     flex: 1,
     justifyContent: 'center',
-    padding: 20,
+    maxWidth: 720,
+    padding: UiSpacing.xl,
+    width: '100%',
   },
   container: {
     flex: 1,
   },
   messageList: {
-    padding: 16,
-    paddingBottom: 32,
+    alignSelf: 'center',
+    maxWidth: 720,
+    padding: UiSpacing.lg,
+    paddingBottom: UiSpacing.xxxl,
+    width: '100%',
   },
   messageWrapper: {
     flexDirection: 'row',
-    marginBottom: 12,
+    marginBottom: UiSpacing.md,
     width: '100%',
   },
   messageWrapperInbound: {
@@ -161,10 +173,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   messageBubble: {
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     maxWidth: '80%',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
   },
   messageBubbleInbound: {
     borderBottomLeftRadius: 4,
@@ -175,34 +187,39 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   messageText: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   messageTextOutbound: {
     color: '#FFF',
   },
   messageTime: {
-    fontSize: 11,
-    marginTop: 4,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginTop: UiSpacing.xxs,
     textAlign: 'right',
   },
   messageTimeOutbound: {
     color: 'rgba(255,255,255,0.7)',
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
     marginTop: 40,
     textAlign: 'center',
   },
   errorText: {
-    fontSize: 15,
-    marginBottom: 16,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginBottom: UiSpacing.lg,
     textAlign: 'center',
   },
   retryBtn: {
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: UiRadii.control,
+    justifyContent: 'center',
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.lg,
   },
   retryBtnText: {
     color: '#FFF',

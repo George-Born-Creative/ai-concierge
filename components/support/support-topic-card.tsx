@@ -1,6 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
 import {
   SUPPORT_TOPIC_META,
   type SupportArticle,
@@ -86,53 +87,54 @@ export function SupportArticleRow({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     overflow: 'hidden',
   },
   headingRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-    paddingBottom: 3,
-    paddingHorizontal: 14,
-    paddingTop: 14,
+    gap: UiSpacing.sm,
+    paddingBottom: UiSpacing.xxs,
+    paddingHorizontal: UiSpacing.md,
+    paddingTop: UiSpacing.md,
   },
   iconBox: {
     alignItems: 'center',
-    borderRadius: 9,
-    height: 34,
+    borderRadius: UiRadii.icon,
+    height: 32,
     justifyContent: 'center',
-    width: 34,
+    width: 32,
   },
   heading: {
     flex: 1,
-    fontSize: 16,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '700',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   divider: {
     height: 1,
-    marginLeft: 58,
+    marginLeft: 56,
   },
   articleRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 52,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    minHeight: 48,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
   },
   articleCopy: {
     flex: 1,
-    gap: 3,
-    paddingLeft: 44,
+    gap: UiSpacing.xxs,
+    paddingLeft: 40,
   },
   articleTitle: {
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
-    lineHeight: 20,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   summary: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
   },
 });

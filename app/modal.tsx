@@ -3,6 +3,12 @@ import { Link } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 export default function ModalScreen() {
@@ -32,46 +38,50 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 24,
+    paddingHorizontal: UiSpacing.lg,
+    paddingVertical: UiSpacing.xxl,
   },
   card: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 28,
+    maxWidth: 520,
+    padding: UiSpacing.xl,
+    width: '100%',
   },
   iconWrap: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 32,
-    height: 64,
+    borderRadius: UiRadii.card,
+    height: 52,
     justifyContent: 'center',
-    marginBottom: 20,
-    width: 64,
+    marginBottom: UiSpacing.lg,
+    width: 52,
   },
   title: {
     color: '#202124',
-    fontSize: 28,
+    fontSize: UiTypography.pageTitle.fontSize,
     fontWeight: '600',
     textAlign: 'center',
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 10,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
     textAlign: 'center',
   },
   link: {
-    marginTop: 18,
-    paddingVertical: 15,
+    justifyContent: 'center',
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
   },
   linkText: {
     color: '#1A73E8',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
 });

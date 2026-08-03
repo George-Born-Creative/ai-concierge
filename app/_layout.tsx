@@ -117,6 +117,7 @@ function RootLayoutContent() {
               initialRouteName="index"
               screenOptions={{
                 contentStyle: { backgroundColor: colors.background },
+                headerShown: false,
               }}>
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -177,7 +178,7 @@ function RootLayoutContent() {
                 options={{ headerShown: false }}
               />
               <Stack.Screen
-                name="(stack)/history"
+                name="(stack)/history/index"
                 options={{ headerShown: false }}
               />
               <Stack.Screen
