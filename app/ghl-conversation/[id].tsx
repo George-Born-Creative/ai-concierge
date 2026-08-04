@@ -12,9 +12,41 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
-import { getConversation, listConversationMessages } from '@/lib/api/ghl';
+import { getConversation, listConversationMessages, updateConversation } from '@/lib/api/ghl';
 import type { GhlConversationSummary, GhlMessageSummary } from '@/lib/api/types';
 import { useAppTheme } from '@/lib/theme/theme-provider';
+
+// ─── Channel helpers ─────────────────────────────────────────────────────────
+
+const CHANNEL_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
+  sms: 'sms',
+  email: 'email',
+  whatsapp: 'chat',
+  facebook: 'facebook',
+  instagram: 'photo-camera',
+  live_chat: 'chat-bubble',
+};
+
+const CHANNEL_LABELS: Record<string, string> = {
+  sms: 'SMS',
+  email: 'Email',
+  whatsapp: 'WhatsApp',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  live_chat: 'Live Chat',
+};
+
+function channelIcon(channel?: string): keyof typeof MaterialIcons.glyphMap {
+  if (!channel) return 'chat-bubble-outline';
+  return CHANNEL_ICONS[channel.toLowerCase()] ?? 'chat-bubble-outline';
+}
+
+function channelLabel(channel?: string): string {
+  if (!channel) return 'Chat';
+  return CHANNEL_LABELS[channel.toLowerCase()] ?? channel;
+}
+
+// ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function GhlConversationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,13 +67,14 @@ export default function GhlConversationDetailScreen() {
         listConversationMessages(id, { limit: 100 }),
       ]);
       setConversation(convRes);
-      // Messages are typically returned oldest-to-newest or newest-to-oldest.
-      // Usually chat UIs render newest at the bottom, so if we use inverted FlatList,
-      // we need newest at index 0. We'll assume the API returns newest first (descending).
-      // If not, we can reverse it here. For now, let's just reverse it if we want inverted=false,
-      // but typical React Native chats use inverted={true} and pass newest first.
-      // Let's stick to standard top-to-bottom for now, assuming chronological order.
-      // We will sort them by createdAt ascending just to be safe.
+
+      // Mark as read on entry.
+      if (convRes.unreadCount && convRes.unreadCount > 0) {
+        await updateConversation(id, { unreadCount: 0 });
+        setConversation((prev) => (prev ? { ...prev, unreadCount: 0 } : prev));
+      }
+
+      // Sort messages chronologically (oldest → newest).
       const sortedMsgs = msgsRes.messages.sort((a, b) => {
         const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -61,7 +94,7 @@ export default function GhlConversationDetailScreen() {
 
   const flatListRef = useRef<FlatList>(null);
 
-  // Scroll to bottom when messages load
+  // Scroll to bottom when messages load.
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => {
@@ -70,13 +103,28 @@ export default function GhlConversationDetailScreen() {
     }
   }, [messages]);
 
+  // ─── Star toggle in header ───────────────────────────────────────────────
+  async function handleStarToggle() {
+    if (!conversation || !id) return;
+    const newStarred = !(conversation.starred ?? false);
+    // Optimistic update.
+    setConversation((prev) => (prev ? { ...prev, starred: newStarred } : prev));
+    try {
+      await updateConversation(id, { starred: newStarred });
+    } catch {
+      // Revert on failure.
+      setConversation((prev) => (prev ? { ...prev, starred: !newStarred } : prev));
+    }
+  }
+
+  // ─── Render message bubble ───────────────────────────────────────────────
   function renderMessage({ item }: { item: GhlMessageSummary }) {
     const isOutbound = item.direction === 'outbound';
-    
+
     return (
       <View style={[styles.messageWrapper, isOutbound ? styles.messageWrapperOutbound : styles.messageWrapperInbound]}>
         <View style={[
-          styles.messageBubble, 
+          styles.messageBubble,
           isOutbound ? [styles.messageBubbleOutbound, { backgroundColor: colors.primary }] : [styles.messageBubbleInbound, { backgroundColor: colors.surface }]
         ]}>
           <Text style={[styles.messageText, isOutbound ? styles.messageTextOutbound : { color: colors.textPrimary }]}>
@@ -99,11 +147,37 @@ export default function GhlConversationDetailScreen() {
         showBack
         onBack={() => router.back()}
         right={
-          <Pressable onPress={() => fetchDetails()} hitSlop={8}>
-            <MaterialIcons name="refresh" size={24} color={colors.primary} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            {/* Star toggle */}
+            <Pressable onPress={handleStarToggle} hitSlop={8}>
+              <MaterialIcons
+                name={conversation?.starred ? 'star' : 'star-border'}
+                size={24}
+                color={conversation?.starred ? '#FBBC04' : colors.textMuted}
+              />
+            </Pressable>
+            {/* Refresh */}
+            <Pressable onPress={() => fetchDetails()} hitSlop={8}>
+              <MaterialIcons name="refresh" size={24} color={colors.primary} />
+            </Pressable>
+          </View>
         }
       />
+
+      {/* Channel type indicator bar */}
+      {conversation?.channel && (
+        <View style={[styles.channelBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+          <MaterialIcons
+            name={channelIcon(conversation.channel)}
+            size={16}
+            color={colors.primary}
+          />
+          <Text style={[styles.channelLabel, { color: colors.textMuted }]}>
+            {channelLabel(conversation.channel)}
+          </Text>
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
@@ -144,6 +218,23 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  channelBar: {
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  channelLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   messageList: {
     padding: 16,

@@ -1,24 +1,37 @@
+// Simple in-memory cache for GHL conversations during a session.
+// Now supports section‑keyed caching (e.g. "my-inbox:unread").
+
 import { GhlConversationSummary } from './types';
 
-// Simple in-memory cache for GHL conversations during a session.
-// In a more robust implementation, this might be backed by AsyncStorage or SQLite.
-let cachedConversations: GhlConversationSummary[] | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+type CacheEntry = {
+  conversations: GhlConversationSummary[];
+  timestamp: number;
+};
 
-export function getCachedConversations(): GhlConversationSummary[] | null {
-  if (Date.now() - lastFetchTime > CACHE_TTL_MS) {
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const cache: Record<string, CacheEntry> = {};
+
+/** Get cached conversations for a specific cache key. */
+export function getCachedConversations(key: string = 'default'): GhlConversationSummary[] | null {
+  const entry = cache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    delete cache[key];
     return null;
   }
-  return cachedConversations;
+  return entry.conversations;
 }
 
-export function setCachedConversations(conversations: GhlConversationSummary[]): void {
-  cachedConversations = conversations;
-  lastFetchTime = Date.now();
+/** Store conversations under a specific cache key. */
+export function setCachedConversations(key: string = 'default', conversations: GhlConversationSummary[]): void {
+  cache[key] = { conversations, timestamp: Date.now() };
 }
 
-export function clearConversationCache(): void {
-  cachedConversations = null;
-  lastFetchTime = 0;
+/** Clear cache for a specific key or all keys. */
+export function clearConversationCache(key?: string): void {
+  if (key) {
+    delete cache[key];
+  } else {
+    for (const k of Object.keys(cache)) delete cache[k];
+  }
 }
