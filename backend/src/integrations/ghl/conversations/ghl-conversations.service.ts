@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { GhlService } from '../ghl.service';
+import { ListConversationMessagesQueryDto } from './dto/list-conversation-messages.query.dto';
+import { ListConversationsQueryDto } from './dto/list-conversations.query.dto';
+import { UpdateConversationDto } from './dto/update-conversation.dto';
 import {
   GhlConversationMessagesListResult,
   GhlConversationsListResult,
@@ -8,9 +11,6 @@ import {
   GhlUpdateConversationResult,
   GhlUserIdentity,
 } from './ghl-conversations.types';
-import { ListConversationsQueryDto } from './dto/list-conversations.query.dto';
-import { ListConversationMessagesQueryDto } from './dto/list-conversation-messages.query.dto';
-import { UpdateConversationDto } from './dto/update-conversation.dto';
 
 // ── GHL raw response shapes ─────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ export class GhlConversationsService {
   private readonly ghlUserIdCache = new Map<string, { ghlUserId: string; expiresAt: number }>();
   private static readonly USER_ID_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-  constructor(private readonly ghlService: GhlService) {}
+  constructor(private readonly ghlService: GhlService) { }
 
   // ── Search / List ───────────────────────────────────────────────────────
 
@@ -97,6 +97,7 @@ export class GhlConversationsService {
     userId: string,
     query: ListConversationsQueryDto,
   ): Promise<GhlConversationsListResult> {
+    await this.ghlService.requireConversationScopes(userId);
     const { locationId } = await this.ghlService.getValidAccessToken(userId);
     if (!locationId) {
       throw new BadRequestException('GHL location is missing — reconnect GoHighLevel');
@@ -104,7 +105,7 @@ export class GhlConversationsService {
 
     const params = new URLSearchParams({
       locationId,
-      limit: String(query.limit ?? 20),
+      limit: String(query.limit ?? 50),
     });
 
     // Text search
@@ -113,9 +114,9 @@ export class GhlConversationsService {
     // Pagination cursor
     if (query.startAfterId?.trim()) params.set('startAfterId', query.startAfterId.trim());
 
-    // Status filter: all | read | unread | starred
-    if (query.status && query.status !== 'all') {
-      params.set('status', query.status);
+    // Status filter: all | read | unread | starred | recents
+    if (query.status !== 'all') {
+      params.set('status', query.status || 'recents');
     }
 
     // Assignment filter (GHL user ID or "unassigned")
@@ -155,12 +156,13 @@ export class GhlConversationsService {
     userId: string,
     conversationId: string,
   ): Promise<GhlConversationSummary> {
+    await this.ghlService.requireConversationScopes(userId);
     const raw = await this.ghlService.ghlRequest<{ conversation?: GhlRawConversation } & GhlRawConversation>(
       userId,
       'GET',
       `/conversations/${conversationId}`,
     );
-    
+
     const conversation = raw.conversation ?? raw;
     if (!conversation.id) {
       throw new BadRequestException('GHL did not return the conversation');
@@ -176,10 +178,11 @@ export class GhlConversationsService {
     conversationId: string,
     query: ListConversationMessagesQueryDto,
   ): Promise<GhlConversationMessagesListResult> {
+    await this.ghlService.requireConversationScopes(userId);
     const params = new URLSearchParams({
       limit: String(query.limit ?? 20),
     });
-    
+
     if (query.lastMessageId?.trim()) {
       params.set('lastMessageId', query.lastMessageId.trim());
     }
@@ -214,6 +217,7 @@ export class GhlConversationsService {
     conversationId: string,
     dto: UpdateConversationDto,
   ): Promise<GhlUpdateConversationResult> {
+    await this.ghlService.requireConversationScopes(userId);
     const body: Record<string, unknown> = {};
     if (dto.starred !== undefined) body.starred = dto.starred;
     if (dto.unreadCount !== undefined) body.unreadCount = dto.unreadCount;

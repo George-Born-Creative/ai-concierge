@@ -15,8 +15,8 @@ const CHANNEL_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
   live_chat: 'chat-bubble',
 };
 
-function channelIcon(channel?: string): keyof typeof MaterialIcons.glyphMap {
-  if (!channel) return 'chat-bubble-outline';
+function channelIcon(channel?: unknown): keyof typeof MaterialIcons.glyphMap {
+  if (typeof channel !== 'string' || !channel) return 'chat-bubble-outline';
   return CHANNEL_ICONS[channel.toLowerCase()] ?? 'chat-bubble-outline';
 }
 
@@ -36,7 +36,8 @@ function relativeTime(iso?: string): string {
 }
 
 /** Derive initials from a contact name for an avatar circle. */
-function initials(name: string): string {
+function initials(name?: unknown): string {
+  if (typeof name !== 'string' || !name.trim()) return '?';
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return (name[0] ?? '?').toUpperCase();

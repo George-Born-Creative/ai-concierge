@@ -1775,6 +1775,18 @@ export class GhlService {
     }
   }
 
+  async requireConversationScopes(userId: string): Promise<void> {
+    const row = await this.prisma.integrationConnection.findUnique({
+      where: { userId_provider: { userId, provider: CrmProvider.GHL } },
+    });
+    if (!row || !row.enabled) {
+      throw new ForbiddenException('GHL is not connected');
+    }
+    if (!this.hasConversationScopes(row.scopes)) {
+      throw new BadRequestException(this.conversationsReconnectMessage());
+    }
+  }
+
   private throwGhlHttpError(status: number, text: string, path?: string): never {
     const message = this.extractGhlError(text);
     if (status === 401 && /not authorized for this scope/i.test(message)) {

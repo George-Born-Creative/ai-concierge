@@ -42,13 +42,13 @@ const CHANNEL_LABELS: Record<string, string> = {
   live_chat: 'Live Chat',
 };
 
-function channelIcon(channel?: string): keyof typeof MaterialIcons.glyphMap {
-  if (!channel) return 'chat-bubble-outline';
+function channelIcon(channel?: unknown): keyof typeof MaterialIcons.glyphMap {
+  if (typeof channel !== 'string' || !channel) return 'chat-bubble-outline';
   return CHANNEL_ICONS[channel.toLowerCase()] ?? 'chat-bubble-outline';
 }
 
-function channelLabel(channel?: string): string {
-  if (!channel) return 'Chat';
+function channelLabel(channel?: unknown): string {
+  if (typeof channel !== 'string' || !channel) return 'Chat';
   return CHANNEL_LABELS[channel.toLowerCase()] ?? channel;
 }
 
