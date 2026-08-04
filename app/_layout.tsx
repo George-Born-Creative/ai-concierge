@@ -118,7 +118,6 @@ function RootLayoutContent() {
               screenOptions={{
                 headerShown: false,
                 contentStyle: { backgroundColor: colors.background },
-                headerShown: false,
               }}>
               <Stack.Screen
                 name="modal"
