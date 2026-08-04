@@ -356,7 +356,10 @@ export class AssistantCommandService {
     details: { limit: number; unreadOnly: boolean },
   ): Promise<AssistantCommandResult> {
     try {
-      const result = await this.ghlConversations.searchConversations(userId, details);
+      const result = await this.ghlConversations.searchConversations(userId, {
+        limit: details.limit,
+        ...(details.unreadOnly ? { status: 'unread' as const } : {}),
+      });
       if (!result.conversations || result.conversations.length === 0) {
         return { response: 'You have no recent conversations.', status: 'success' };
       }
@@ -383,7 +386,10 @@ export class AssistantCommandService {
       return { response: 'Who are you looking for?', status: 'error' };
     }
     try {
-      const result = await this.ghlConversations.searchConversations(userId, details);
+      const result = await this.ghlConversations.searchConversations(userId, {
+        query: details.query,
+        ...(details.unreadOnly ? { status: 'unread' as const } : {}),
+      });
       if (!result.conversations || result.conversations.length === 0) {
         return { response: `I couldn't find any conversations for "${details.query}".`, status: 'success' };
       }
@@ -404,7 +410,7 @@ export class AssistantCommandService {
     try {
       let conversationId = details.id;
       if (!conversationId && details.contactName) {
-         const search = await this.ghlConversations.searchConversations(userId, { query: details.contactName, unreadOnly: false });
+         const search = await this.ghlConversations.searchConversations(userId, { query: details.contactName });
          if (search.conversations && search.conversations.length > 0) {
            conversationId = search.conversations[0].id;
          }
