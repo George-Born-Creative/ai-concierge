@@ -97,6 +97,7 @@ export class GhlWebhookController {
     if (/^contact/i.test(type)) return 'contacts';
     if (/^opportunity/i.test(type)) return 'opportunities';
     if (/^(appointment|calendar)/i.test(type)) return 'calendar';
+    if (/^(conversation|inboundmessage|outboundmessage)/i.test(type)) return 'conversations';
     return undefined;
   }
 

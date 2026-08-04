@@ -37,6 +37,7 @@ import { GhlService } from './ghl.service';
 import { GhlConversationsService } from './conversations/ghl-conversations.service';
 import { ListConversationsQueryDto } from './conversations/dto/list-conversations.query.dto';
 import { ListConversationMessagesQueryDto } from './conversations/dto/list-conversation-messages.query.dto';
+import { UpdateConversationDto } from './conversations/dto/update-conversation.dto';
 
 @Controller('integrations/ghl')
 export class GhlController {
@@ -293,6 +294,14 @@ export class GhlController {
     return this.ghlConversations.searchConversations(user.id, query);
   }
 
+  @Get('conversations/ghl-user-id')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  getGhlUserId(
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ghlConversations.getGhlUserId(user.id);
+  }
+
   @Get('conversations/:id')
   @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
   getConversation(
@@ -300,6 +309,17 @@ export class GhlController {
     @Param('id') conversationId: string,
   ) {
     return this.ghlConversations.getConversation(user.id, conversationId);
+  }
+
+  @Put('conversations/:id')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  updateConversation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') conversationId: string,
+    @Body() body: UpdateConversationDto,
+  ) {
+    return this.ghlConversations.updateConversation(user.id, conversationId, body);
   }
 
   @Get('conversations/:id/messages')
