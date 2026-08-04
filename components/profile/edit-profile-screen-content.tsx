@@ -15,10 +15,16 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
-import { useAppTheme } from '@/lib/theme/theme-provider';
-import { ApiError } from '@/lib/api/client';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { updateMe } from '@/lib/api/auth';
+import { ApiError } from '@/lib/api/client';
 import { getUser, refreshUser } from '@/lib/session';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 export function EditProfileScreenContent() {
@@ -112,7 +118,7 @@ export function EditProfileScreenContent() {
           {/* ── Account info ──────────────────────────────────────────────── */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <MaterialIcons name="person" size={26} color={colors.primary} />
+              <MaterialIcons name="person" size={22} color={colors.primary} />
               <Text style={styles.cardTitle}>Account info</Text>
             </View>
 
@@ -139,7 +145,7 @@ export function EditProfileScreenContent() {
           {/* ── Password ─────────────────────────────────────────────────── */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <MaterialIcons name="lock" size={26} color={colors.primary} />
+              <MaterialIcons name="lock" size={22} color={colors.primary} />
               <Text style={styles.cardTitle}>Change password</Text>
             </View>
 
@@ -257,74 +263,82 @@ function isLikelyEmail(value: string): boolean {
 const styles = StyleSheet.create({
   kbView: { flex: 1 },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 120,
-    gap: 16,
+    alignSelf: 'center',
+    gap: UiSpacing.md,
+    maxWidth: 640,
+    paddingBottom: UiSpacing.xxxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 18,
-    gap: 14,
+    gap: UiSpacing.md,
+    padding: UiSpacing.lg,
   },
   cardHeader: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
   },
   cardTitle: {
     color: '#202124',
-    fontSize: 17,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   fieldGroup: {
-    gap: 6,
+    gap: UiSpacing.xs,
   },
   fieldLabel: {
     color: '#5F6368',
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
     letterSpacing: 0.4,
+    lineHeight: UiTypography.label.lineHeight,
     textTransform: 'uppercase',
   },
   input: {
     backgroundColor: '#F1F3F4',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     color: '#202124',
-    fontSize: 15,
-    minHeight: 46,
-    paddingHorizontal: 14,
+    fontSize: UiTypography.input.fontSize,
+    lineHeight: UiTypography.input.lineHeight,
+    minHeight: UiControlHeights.input,
+    paddingHorizontal: UiSpacing.md,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     justifyContent: 'center',
-    marginTop: 4,
-    minHeight: 52,
+    marginTop: UiSpacing.xxs,
+    minHeight: UiControlHeights.button,
   },
   buttonDisabled: { opacity: 0.5 },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   secondaryButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
+    minHeight: UiControlHeights.button,
   },
   secondaryButtonText: {
     color: '#5F6368',
-    fontSize: 15,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
 });

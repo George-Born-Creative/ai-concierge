@@ -16,6 +16,12 @@ import { ConversationSectionTabs, type SectionKey } from '@/components/ghl/conve
 import { MyInboxSubSelector, type MyInboxSub } from '@/components/ghl/my-inbox-sub-selector';
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { getGhlUserId, listConversations } from '@/lib/api/ghl';
 import {
   getCachedConversations,
@@ -219,32 +225,91 @@ export default function GhlConversationsScreen() {
 const styles = StyleSheet.create({
   center: {
     alignItems: 'center',
+    alignSelf: 'center',
     flex: 1,
     justifyContent: 'center',
-    padding: 20,
+    maxWidth: 720,
+    padding: UiSpacing.xl,
+    width: '100%',
   },
   listContent: {
-    padding: 16,
-    paddingBottom: 40,
+    alignSelf: 'center',
+    maxWidth: 720,
+    padding: UiSpacing.lg,
+    width: '100%',
   },
   emptyWrap: {
     alignItems: 'center',
     gap: 12,
     paddingTop: 60,
   },
+  item: {
+    borderRadius: UiRadii.card,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: UiSpacing.sm,
+    padding: UiSpacing.md,
+  },
+  itemHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: UiSpacing.xs,
+  },
+  contactName: {
+    fontSize: UiTypography.bodySmall.fontSize,
+    fontWeight: '500',
+    lineHeight: UiTypography.bodySmall.lineHeight,
+  },
+  unreadText: {
+    fontWeight: '700',
+  },
+  dateText: {
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+  },
+  itemBody: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  messagePreview: {
+    flex: 1,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginRight: UiSpacing.md,
+  },
+  unreadBadge: {
+    alignItems: 'center',
+    borderRadius: UiRadii.pill,
+    height: 24,
+    justifyContent: 'center',
+    minWidth: 24,
+    paddingHorizontal: UiSpacing.xs,
+  },
+  unreadBadgeText: {
+    color: '#FFF',
+    fontSize: UiTypography.label.fontSize,
+    fontWeight: '700',
+    lineHeight: UiTypography.label.lineHeight,
+  },
   emptyText: {
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
     textAlign: 'center',
   },
   errorText: {
-    fontSize: 15,
-    marginBottom: 16,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginBottom: UiSpacing.lg,
     textAlign: 'center',
   },
   retryBtn: {
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: UiRadii.control,
+    justifyContent: 'center',
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.lg,
   },
   retryBtnText: {
     color: '#FFF',

@@ -29,6 +29,13 @@ export type ResetPasswordRequest = {
   newPassword: string;
 };
 
+export type CodeDeliveryResponse = {
+  ok: true;
+  // Optional so the current backend response remains compatible while allowing
+  // a future Twilio rate-limit/cooldown value to drive the UI.
+  retryAfterSeconds?: number;
+};
+
 export type AuthResponse = {
   token: string;
   user: User;

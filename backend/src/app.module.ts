@@ -13,10 +13,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PushModule } from './push/push.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RemindersModule } from './reminders/reminders.module';
+import { SupportModule } from './support/support.module';
+import { TwilioModule } from './twilio/twilio.module';
 import { UsersModule } from './users/users.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { VoiceModule } from './voice/voice.module';
-import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SupportModule } from './support/support.module';
     PushModule,
     RemindersModule,
     SupportModule,
+    TwilioModule,
   ],
 })
 export class AppModule {}

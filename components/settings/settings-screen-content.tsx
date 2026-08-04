@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +15,12 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import type {
@@ -72,6 +79,7 @@ export function SettingsScreenContent() {
   const [status, setStatus] = useState<CrmStatus | null>(null);
   const [openaiStatus, setOpenaiStatus] = useState<OpenAIKeyStatus | null>(null);
   const [loadingOpenai, setLoadingOpenai] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const onStatusChange = useCallback((isConnected: boolean) => {
     setConnected(isConnected);
@@ -116,6 +124,12 @@ export function SettingsScreenContent() {
       setLoadingOpenai(false);
     }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([refreshStatus(), refreshOpenaiStatus()]);
+    setRefreshing(false);
+  }, [refreshStatus, refreshOpenaiStatus]);
 
   useFocusEffect(
     useCallback(() => {
@@ -206,9 +220,10 @@ export function SettingsScreenContent() {
       <PageHeader title="Settings" showBack onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        alwaysBounceVertical={false}
-        overScrollMode="never">
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+        showsVerticalScrollIndicator={false}>
         {/* ── Account group ─────────────────────────────────────────────────── */}
         <SectionLabel>Appearance</SectionLabel>
         <Group>
@@ -549,32 +564,35 @@ function InfoBanner({
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: 16,
-    paddingBottom: 48,
-    paddingTop: 8,
+    alignSelf: 'center',
+    maxWidth: 720,
+    paddingBottom: UiSpacing.xxxl,
+    paddingHorizontal: UiSpacing.lg,
+    width: '100%',
   },
 
   // ── Section labels & groups ──
   sectionLabel: {
     color: '#80868B',
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '700',
     letterSpacing: 1.1,
-    marginBottom: 8,
-    marginLeft: 4,
-    marginTop: 22,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginBottom: UiSpacing.sm,
+    marginLeft: UiSpacing.xxs,
+    marginTop: UiSpacing.xl,
   },
   group: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     overflow: 'hidden',
   },
   divider: {
     backgroundColor: '#EEF0F3',
     height: 1,
-    marginLeft: 60,
+    marginLeft: 56,
   },
 
   // ── Row ──
@@ -582,9 +600,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    gap: UiSpacing.md,
+    minHeight: 56,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
   },
   rowPressed: {
     backgroundColor: '#F6F8FB',
@@ -594,47 +613,49 @@ const styles = StyleSheet.create({
   },
   rowIcon: {
     alignItems: 'center',
-    borderRadius: 10,
-    height: 34,
+    borderRadius: UiRadii.icon,
+    height: 32,
     justifyContent: 'center',
-    width: 34,
+    width: 32,
   },
   rowCopy: {
     flex: 1,
   },
   rowTitle: {
     color: '#202124',
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   rowSubtitle: {
     color: '#5F6368',
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 2,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   rowRight: {
     alignItems: 'flex-end',
     flexDirection: 'row',
-    gap: 6,
+    gap: UiSpacing.xs,
     justifyContent: 'flex-end',
     maxWidth: 160,
   },
   rowValue: {
     color: '#5F6368',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '500',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
 
   // ── Pill ──
   pill: {
     alignItems: 'center',
-    borderRadius: 999,
+    borderRadius: UiRadii.pill,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    gap: UiSpacing.xs,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
   },
   pillDot: {
     borderRadius: 4,
@@ -642,56 +663,59 @@ const styles = StyleSheet.create({
     width: 6,
   },
   pillText: {
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '700',
+    lineHeight: UiTypography.caption.lineHeight,
   },
 
   // ── Banner ──
   banner: {
     alignItems: 'flex-start',
-    borderRadius: 12,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 10,
-    padding: 12,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.sm,
+    padding: UiSpacing.md,
   },
   bannerText: {
     flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
   },
 
   // ── Action buttons ──
   actionStack: {
-    gap: 10,
-    marginTop: 14,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 14,
-    minHeight: 50,
+    borderRadius: UiRadii.control,
     justifyContent: 'center',
+    minHeight: UiControlHeights.button,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   dangerButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#FAD2CF',
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
-    minHeight: 50,
     justifyContent: 'center',
+    minHeight: UiControlHeights.button,
   },
   dangerButtonText: {
     color: '#EA4335',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -699,9 +723,9 @@ const styles = StyleSheet.create({
 
   helpText: {
     color: '#80868B',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 12,
-    paddingHorizontal: 4,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginTop: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.xxs,
   },
 });

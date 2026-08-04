@@ -2,6 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
 import type { Reminder } from '@/lib/api/types';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
@@ -109,50 +110,52 @@ function formatOffset(minutes: number): string {
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    minHeight: 64,
+    paddingHorizontal: UiSpacing.lg,
+    paddingVertical: UiSpacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5EAF5',
     backgroundColor: 'white',
   },
   rowFocused: { backgroundColor: '#EEF3FF' },
-  left: { flex: 1, paddingRight: 12 },
+  left: { flex: 1, paddingRight: UiSpacing.md },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
     color: '#0F172A',
-    marginBottom: 4,
+    fontSize: UiTypography.bodySmall.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginBottom: UiSpacing.xxs,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: UiSpacing.sm,
     flexWrap: 'wrap',
   },
-  due: { fontSize: 13, color: '#1F49E0', fontWeight: '500' },
+  due: { fontSize: UiTypography.label.fontSize, color: '#1F49E0', fontWeight: '500', lineHeight: UiTypography.label.lineHeight },
   dueOverdue: { color: '#B91C1C' },
-  dueAbsolute: { fontSize: 12, color: '#5B6B82' },
+  dueAbsolute: { fontSize: UiTypography.caption.fontSize, color: '#5B6B82', lineHeight: UiTypography.caption.lineHeight },
   linkChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    gap: UiSpacing.xxs,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
     backgroundColor: '#EEF3FF',
-    borderRadius: 999,
+    borderRadius: UiRadii.pill,
   },
-  linkChipText: { fontSize: 12, color: '#1F49E0', maxWidth: 120 },
+  linkChipText: { fontSize: UiTypography.caption.fontSize, color: '#1F49E0', lineHeight: UiTypography.caption.lineHeight, maxWidth: 120 },
   offsetChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    gap: UiSpacing.xxs,
+    paddingHorizontal: UiSpacing.xs,
+    paddingVertical: UiSpacing.xxs,
     backgroundColor: '#F1F5F9',
-    borderRadius: 999,
+    borderRadius: UiRadii.pill,
   },
-  offsetChipText: { fontSize: 11, color: '#5B6B82', fontWeight: '500' },
-  moreButton: { padding: 4 },
+  offsetChipText: { fontSize: UiTypography.caption.fontSize, color: '#5B6B82', fontWeight: '500', lineHeight: UiTypography.caption.lineHeight },
+  moreButton: { padding: UiSpacing.xxs },
 });

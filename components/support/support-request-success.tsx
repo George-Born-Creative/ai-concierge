@@ -3,6 +3,12 @@ import * as Clipboard from 'expo-clipboard';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import type { CreateSupportRequestResponse } from '@/lib/api/types';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
@@ -84,16 +90,16 @@ export function SupportRequestSuccess({
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', gap: 10, paddingHorizontal: 22, paddingTop: 48 },
-  successIcon: { alignItems: 'center', borderRadius: 20, height: 72, justifyContent: 'center', width: 72 },
-  title: { fontSize: 24, fontWeight: '700', letterSpacing: -0.4, marginTop: 8, textAlign: 'center' },
-  body: { fontSize: 15, lineHeight: 22, maxWidth: 440, textAlign: 'center' },
-  referenceCard: { alignItems: 'center', borderRadius: 16, borderWidth: 1, gap: 8, marginTop: 14, maxWidth: 440, padding: 18, width: '100%' },
-  referenceLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  reference: { fontSize: 21, fontWeight: '700', letterSpacing: 0.6, textAlign: 'center' },
-  copyButton: { alignItems: 'center', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
-  copyText: { fontSize: 14, fontWeight: '700' },
-  delivery: { fontSize: 13, lineHeight: 19, maxWidth: 430, textAlign: 'center' },
-  doneButton: { alignItems: 'center', borderRadius: 13, justifyContent: 'center', marginTop: 12, maxWidth: 440, minHeight: 50, width: '100%' },
-  doneText: { fontSize: 16, fontWeight: '700' },
+  wrap: { alignItems: 'center', gap: UiSpacing.sm, paddingHorizontal: UiSpacing.xl, paddingTop: UiSpacing.xxxl },
+  successIcon: { alignItems: 'center', borderRadius: UiRadii.card, height: 56, justifyContent: 'center', width: 56 },
+  title: { fontSize: UiTypography.sectionHeading.fontSize, fontWeight: '700', letterSpacing: -0.3, lineHeight: UiTypography.sectionHeading.lineHeight, marginTop: UiSpacing.sm, textAlign: 'center' },
+  body: { fontSize: UiTypography.bodySmall.fontSize, lineHeight: UiTypography.bodySmall.lineHeight, maxWidth: 440, textAlign: 'center' },
+  referenceCard: { alignItems: 'center', borderRadius: UiRadii.card, borderWidth: 1, gap: UiSpacing.sm, marginTop: UiSpacing.md, maxWidth: 440, padding: UiSpacing.lg, width: '100%' },
+  referenceLabel: { fontSize: UiTypography.caption.fontSize, fontWeight: '800', letterSpacing: 1, lineHeight: UiTypography.caption.lineHeight },
+  reference: { fontSize: UiTypography.sectionHeading.fontSize, fontWeight: '700', letterSpacing: 0.6, lineHeight: UiTypography.sectionHeading.lineHeight, textAlign: 'center' },
+  copyButton: { alignItems: 'center', borderRadius: UiRadii.control, borderWidth: 1, flexDirection: 'row', gap: UiSpacing.xs, justifyContent: 'center', minHeight: UiControlHeights.button, paddingHorizontal: UiSpacing.md },
+  copyText: { fontSize: UiTypography.button.fontSize, fontWeight: '700', lineHeight: UiTypography.button.lineHeight },
+  delivery: { fontSize: UiTypography.label.fontSize, lineHeight: UiTypography.label.lineHeight, maxWidth: 430, textAlign: 'center' },
+  doneButton: { alignItems: 'center', borderRadius: UiRadii.control, justifyContent: 'center', marginTop: UiSpacing.md, maxWidth: 440, minHeight: UiControlHeights.button, width: '100%' },
+  doneText: { fontSize: UiTypography.button.fontSize, fontWeight: '700', lineHeight: UiTypography.button.lineHeight },
 });

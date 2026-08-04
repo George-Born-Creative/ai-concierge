@@ -14,17 +14,31 @@ import {
 
 import { LogoDotsIcon } from '@/components/brand/logo-dots-icon';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { resendCode, verifyEmail } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
+import {
+  clearOtpCooldown,
+  getOtpCooldownRemaining,
+  OTP_RESEND_COOLDOWN_SECONDS,
+  startOtpCooldown,
+} from '@/lib/auth/otp-cooldown';
+import { getOtpErrorMessage } from '@/lib/auth/otp-error';
 import { routeForUser } from '@/lib/onboarding-route';
-import { clearSession, getUser, refreshUser } from '@/lib/session';
+import {
+  clearSession,
+  hydrateSession,
+  refreshUser,
+} from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
 const CODE_LENGTH = 6;
-// A code is emailed at signup, and the backend enforces a ~30s resend cooldown,
-// so start the client countdown on mount to match.
-const RESEND_COOLDOWN_SECONDS = 30;
 
 export function VerifyEmailScreen() {
   const { colors, resolvedTheme } = useAppTheme();
@@ -32,9 +46,50 @@ export function VerifyEmailScreen() {
   const { show } = useToast();
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
-  const email = getUser()?.email ?? null;
+  const [resending, setResending] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [cooldown, setCooldown] = useState(0);
+  const [email, setEmail] = useState<string | null>(null);
+  const codeInputRef = useRef<TextInput>(null);
   const redirected = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSession() {
+      const session = await hydrateSession();
+      if (!active || redirected.current) return;
+
+      if (!session.token || !session.user) {
+        redirected.current = true;
+        show('Sign in to request a new verification code.', 'error');
+        router.replace('/signin');
+        return;
+      }
+
+      if (session.user.emailVerified !== false) {
+        redirected.current = true;
+        router.replace(routeForUser(session.user));
+        return;
+      }
+
+      const recipient = session.user.email;
+      const remaining = await getOtpCooldownRemaining(
+        'email-verification',
+        recipient,
+      );
+      if (!active) return;
+
+      setEmail(recipient);
+      setCooldown(remaining);
+      setCheckingSession(false);
+    }
+
+    void loadSession();
+    return () => {
+      active = false;
+    };
+  }, [router, show]);
 
   // Tick the resend cooldown down to zero.
   useEffect(() => {
@@ -54,39 +109,76 @@ export function VerifyEmailScreen() {
     setSubmitting(true);
     try {
       const user = await verifyEmail(code);
+      await clearOtpCooldown('email-verification', user.email);
       await refreshUser(user);
       if (redirected.current) return;
       redirected.current = true;
       show('Email verified.', 'success');
       router.replace(routeForUser(user));
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message || 'Verification failed.'
-          : 'Something went wrong. Please try again.';
-      show(message, 'error');
+      if (err instanceof ApiError && err.status === 401) {
+        await clearSession();
+        if (!redirected.current) {
+          redirected.current = true;
+          show(getOtpErrorMessage(err, 'Verification failed.'), 'error');
+          router.replace('/signin');
+        }
+        return;
+      }
+      show(getOtpErrorMessage(err, 'Verification failed.'), 'error');
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleResend() {
-    if (cooldown > 0) return;
+    if (cooldown > 0 || resending || submitting || !email) return;
+    setResending(true);
     try {
-      await resendCode();
+      const result = await resendCode();
+      const nextCooldown =
+        result.retryAfterSeconds ?? OTP_RESEND_COOLDOWN_SECONDS;
+      await startOtpCooldown(
+        'email-verification',
+        email,
+        nextCooldown,
+      );
       setCode('');
-      setCooldown(RESEND_COOLDOWN_SECONDS);
+      setCooldown(Math.ceil(nextCooldown));
+      codeInputRef.current?.focus();
       show('A new code is on its way.', 'success');
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : 'Could not resend the code.';
-      show(message, 'error');
+      if (err instanceof ApiError && err.status === 401) {
+        await clearSession();
+        if (!redirected.current) {
+          redirected.current = true;
+          show(getOtpErrorMessage(err, 'Could not resend the code.'), 'error');
+          router.replace('/signin');
+        }
+        return;
+      }
+      show(getOtpErrorMessage(err, 'Could not resend the code.'), 'error');
+    } finally {
+      setResending(false);
     }
   }
 
   async function handleUseAnotherEmail() {
+    if (email) {
+      await clearOtpCooldown('email-verification', email);
+    }
     await clearSession();
     router.replace('/signup');
+  }
+
+  if (checkingSession) {
+    return (
+      <ScreenShell>
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ScreenShell>
+    );
   }
 
   return (
@@ -96,7 +188,7 @@ export function VerifyEmailScreen() {
         style={styles.keyboardView}>
         <View style={styles.content}>
           <View style={styles.iconBadge}>
-            <LogoDotsIcon size={72} />
+            <LogoDotsIcon size={64} />
           </View>
 
           <Text style={styles.title}>Verify your email</Text>
@@ -107,6 +199,7 @@ export function VerifyEmailScreen() {
           </Text>
 
           <TextInput
+            ref={codeInputRef}
             value={code}
             onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH))}
             placeholder="______"
@@ -117,13 +210,17 @@ export function VerifyEmailScreen() {
             maxLength={CODE_LENGTH}
             returnKeyType="done"
             autoFocus
+            editable={!submitting && !resending}
             onSubmitEditing={submitCode}
           />
 
           <Pressable
-            style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
+            style={[
+              styles.primaryButton,
+              (submitting || resending) && styles.primaryButtonDisabled,
+            ]}
             onPress={submitCode}
-            disabled={submitting}>
+            disabled={submitting || resending}>
             {submitting ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
@@ -137,13 +234,25 @@ export function VerifyEmailScreen() {
           <Pressable
             style={styles.resendButton}
             onPress={handleResend}
-            disabled={cooldown > 0}>
-            <Text style={[styles.resendText, cooldown > 0 && styles.resendTextDisabled]}>
-              {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+            disabled={cooldown > 0 || resending || submitting}>
+            <Text
+              style={[
+                styles.resendText,
+                (cooldown > 0 || resending || submitting) &&
+                  styles.resendTextDisabled,
+              ]}>
+              {resending
+                ? 'Sending new code…'
+                : cooldown > 0
+                  ? `Resend code in ${cooldown}s`
+                  : 'Resend code'}
             </Text>
           </Pressable>
 
-          <Pressable style={styles.switchButton} onPress={handleUseAnotherEmail}>
+          <Pressable
+            style={styles.switchButton}
+            disabled={submitting || resending}
+            onPress={handleUseAnotherEmail}>
             <Text style={styles.switchText}>Use a different email</Text>
           </Pressable>
         </View>
@@ -163,39 +272,48 @@ function maskEmail(email: string | null): string {
 }
 
 const styles = StyleSheet.create({
+  loadingState: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
   keyboardView: {
     flex: 1,
   },
   content: {
     alignItems: 'center',
+    alignSelf: 'center',
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    maxWidth: 480,
+    paddingHorizontal: UiSpacing.xxl,
+    width: '100%',
   },
   iconBadge: {
     alignItems: 'center',
     backgroundColor: '#EDF4FF',
     borderColor: '#D7E6FF',
-    borderRadius: 28,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    height: 120,
+    height: 96,
     justifyContent: 'center',
-    marginBottom: 28,
-    width: 120,
+    marginBottom: UiSpacing.xxl,
+    width: 96,
   },
   title: {
     color: '#202124',
-    fontSize: 28,
+    fontSize: UiTypography.pageTitle.fontSize,
     fontWeight: '600',
     letterSpacing: -0.5,
+    lineHeight: UiTypography.pageTitle.lineHeight,
     textAlign: 'center',
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 10,
-    maxWidth: 320,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
+    maxWidth: 360,
     textAlign: 'center',
   },
   email: {
@@ -205,27 +323,27 @@ const styles = StyleSheet.create({
   codeInput: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E4EBF7',
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     color: '#202124',
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '700',
-    letterSpacing: 12,
-    marginTop: 28,
-    minHeight: 64,
-    paddingHorizontal: 16,
+    letterSpacing: 10,
+    marginTop: UiSpacing.xxl,
+    minHeight: 52,
+    paddingHorizontal: UiSpacing.md,
     textAlign: 'center',
     width: '100%',
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 56,
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
     width: '100%',
   },
   primaryButtonDisabled: {
@@ -233,30 +351,34 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   resendButton: {
     alignItems: 'center',
-    marginTop: 20,
-    minHeight: 40,
     justifyContent: 'center',
+    marginTop: UiSpacing.md,
+    minHeight: UiControlHeights.button,
   },
   resendText: {
     color: '#1A73E8',
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   resendTextDisabled: {
     color: '#9AA0A6',
   },
   switchButton: {
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    minHeight: UiControlHeights.button,
   },
   switchText: {
     color: '#5F6368',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '500',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
 });

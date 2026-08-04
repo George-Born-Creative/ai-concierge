@@ -4,7 +4,6 @@ import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,7 +13,9 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { DiagnosticRow } from '@/components/support/diagnostic-row';
+import { UiControlHeights, UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
 import { supportApi } from '@/lib/api';
 import type {
   ClientSupportDiagnostics,
@@ -92,6 +93,10 @@ export function SupportDiagnosticsScreenContent() {
     router.push('/contact-support?mode=support&includeDiagnostics=1' as Href);
   }
 
+  if (loading) {
+    return <PageSkeleton title="Support diagnostics" />;
+  }
+
   return (
     <ScreenShell edges={['bottom']}>
       <PageHeader title="Support diagnostics" showBack />
@@ -127,9 +132,7 @@ export function SupportDiagnosticsScreenContent() {
           </View>
         </View>
 
-        {loading ? (
-          <LoadingState />
-        ) : error ? (
+        {error ? (
           <ErrorState onRetry={() => void runDiagnostics()} />
         ) : result ? (
           <>
@@ -192,21 +195,6 @@ export function SupportDiagnosticsScreenContent() {
   );
 }
 
-function LoadingState() {
-  const { colors } = useAppTheme();
-  return (
-    <View
-      accessibilityLabel="Running support diagnostics"
-      accessibilityLiveRegion="polite"
-      style={[styles.stateCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={[styles.stateIcon, { backgroundColor: colors.primaryMuted }]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-      <Text style={[styles.stateTitle, { color: colors.textPrimary }]}>Running safe checks...</Text>
-      <Text style={[styles.stateText, { color: colors.textSecondary }]}>Checking this app, your connection, and stored account configuration. No third-party data is opened.</Text>
-    </View>
-  );
-}
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   const { colors } = useAppTheme();
@@ -318,42 +306,139 @@ function formatTimestamp(value: string): string {
 const styles = StyleSheet.create({
   content: {
     alignSelf: 'center',
-    gap: 18,
+    gap: UiSpacing.lg,
     maxWidth: 720,
-    paddingBottom: 44,
-    paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingBottom: UiSpacing.xxxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
     width: '100%',
   },
-  intro: { alignItems: 'flex-start', flexDirection: 'row', gap: 12 },
-  introIcon: { alignItems: 'center', borderRadius: 12, height: 46, justifyContent: 'center', width: 46 },
-  introCopy: { flex: 1, gap: 5, paddingTop: 1 },
-  title: { fontSize: 23, fontWeight: '700', letterSpacing: -0.5, lineHeight: 29 },
-  subtitle: { fontSize: 14, lineHeight: 20 },
-  privacyPanel: { alignItems: 'flex-start', borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 10, padding: 14 },
-  privacyCopy: { flex: 1, gap: 5 },
-  privacyTitle: { fontSize: 14, fontWeight: '800', lineHeight: 19 },
-  privacyText: { fontSize: 12, lineHeight: 18 },
-  stateCard: { alignItems: 'center', borderRadius: 17, borderWidth: 1, gap: 8, paddingHorizontal: 22, paddingVertical: 30 },
-  stateIcon: { alignItems: 'center', borderRadius: 14, height: 50, justifyContent: 'center', marginBottom: 2, width: 50 },
-  stateTitle: { fontSize: 17, fontWeight: '700', lineHeight: 22, textAlign: 'center' },
-  stateText: { fontSize: 14, lineHeight: 20, maxWidth: 420, textAlign: 'center' },
-  retryButton: { alignItems: 'center', borderRadius: 11, borderWidth: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', marginTop: 5, minHeight: 45, paddingHorizontal: 16 },
-  retryText: { fontSize: 14, fontWeight: '700' },
-  summaryBand: { alignItems: 'stretch', borderRadius: 15, borderWidth: 1, flexDirection: 'row', minHeight: 74, overflow: 'hidden' },
-  summaryItem: { alignItems: 'center', flex: 1, gap: 1, justifyContent: 'center', paddingHorizontal: 5, paddingVertical: 10 },
-  summaryCount: { fontSize: 18, fontWeight: '800', lineHeight: 22 },
+  intro: { alignItems: 'flex-start', flexDirection: 'row', gap: UiSpacing.md },
+  introIcon: {
+    alignItems: 'center',
+    borderRadius: UiRadii.icon,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  introCopy: { flex: 1, gap: UiSpacing.xxs, paddingTop: 1 },
+  title: {
+    fontSize: UiTypography.sectionHeading.fontSize,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    lineHeight: UiTypography.sectionHeading.lineHeight,
+  },
+  subtitle: {
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+  },
+  privacyPanel: {
+    alignItems: 'flex-start',
+    borderRadius: UiRadii.card,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
+    padding: UiSpacing.md,
+  },
+  privacyCopy: { flex: 1, gap: UiSpacing.xxs },
+  privacyTitle: { fontSize: UiTypography.bodySmall.fontSize, fontWeight: '800', lineHeight: 19 },
+  privacyText: { fontSize: UiTypography.label.fontSize, lineHeight: 18 },
+  stateCard: {
+    alignItems: 'center',
+    borderRadius: UiRadii.card,
+    borderWidth: 1,
+    gap: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.xl,
+    paddingVertical: UiSpacing.xxl,
+  },
+  stateIcon: {
+    alignItems: 'center',
+    borderRadius: UiRadii.icon,
+    height: 44,
+    justifyContent: 'center',
+    marginBottom: 2,
+    width: 44,
+  },
+  stateTitle: {
+    fontSize: UiTypography.cardHeading.fontSize,
+    fontWeight: '700',
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    textAlign: 'center',
+  },
+  stateText: {
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    maxWidth: 420,
+    textAlign: 'center',
+  },
+  retryButton: {
+    alignItems: 'center',
+    borderRadius: UiRadii.control,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: UiSpacing.xs,
+    justifyContent: 'center',
+    marginTop: UiSpacing.xxs,
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.lg,
+  },
+  retryText: { fontSize: UiTypography.button.fontSize, fontWeight: '700' },
+  summaryBand: {
+    alignItems: 'stretch',
+    borderRadius: UiRadii.card,
+    borderWidth: 1,
+    flexDirection: 'row',
+    minHeight: 68,
+    overflow: 'hidden',
+  },
+  summaryItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 1,
+    justifyContent: 'center',
+    paddingHorizontal: UiSpacing.xxs,
+    paddingVertical: UiSpacing.sm,
+  },
+  summaryCount: { fontSize: 17, fontWeight: '800', lineHeight: 22 },
   summaryLabel: { fontSize: 10, fontWeight: '700', lineHeight: 14 },
   summaryDivider: { alignSelf: 'stretch', width: 1 },
-  groupStack: { gap: 17 },
-  group: { gap: 7 },
-  groupLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.85, lineHeight: 16, paddingHorizontal: 2 },
-  groupCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  groupStack: { gap: UiSpacing.lg },
+  group: { gap: UiSpacing.xs },
+  groupLabel: {
+    fontSize: UiTypography.caption.fontSize,
+    fontWeight: '800',
+    letterSpacing: 0.85,
+    lineHeight: UiTypography.caption.lineHeight,
+    paddingHorizontal: 2,
+  },
+  groupCard: { borderRadius: UiRadii.card, borderWidth: 1, overflow: 'hidden' },
   divider: { height: 1, marginLeft: 61 },
-  generatedAt: { fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  secondaryActions: { flexDirection: 'row', gap: 9 },
-  secondaryAction: { alignItems: 'center', borderRadius: 12, borderWidth: 1, flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 48, paddingHorizontal: 12 },
-  secondaryActionText: { fontSize: 14, fontWeight: '700' },
-  primaryAction: { alignItems: 'center', borderRadius: 13, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 52, paddingHorizontal: 18 },
-  primaryActionText: { fontSize: 15, fontWeight: '700' },
+  generatedAt: {
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  secondaryActions: { flexDirection: 'row', gap: UiSpacing.sm },
+  secondaryAction: {
+    alignItems: 'center',
+    borderRadius: UiRadii.control,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: UiSpacing.xs,
+    justifyContent: 'center',
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.md,
+  },
+  secondaryActionText: { fontSize: UiTypography.button.fontSize, fontWeight: '700' },
+  primaryAction: {
+    alignItems: 'center',
+    borderRadius: UiRadii.control,
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
+    justifyContent: 'center',
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.lg,
+  },
+  primaryActionText: { fontSize: UiTypography.button.fontSize, fontWeight: '700' },
 });

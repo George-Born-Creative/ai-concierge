@@ -1,6 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
 import type {
   SupportDiagnosticItem,
   SupportDiagnosticStatus,
@@ -67,22 +68,22 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 11,
-    minHeight: 68,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    gap: UiSpacing.sm,
+    minHeight: 60,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
   },
   iconWrap: {
     alignItems: 'center',
-    borderRadius: 10,
-    height: 36,
+    borderRadius: UiRadii.icon,
+    height: 32,
     justifyContent: 'center',
-    width: 36,
+    width: 32,
   },
-  copy: { flex: 1, gap: 2 },
-  label: { fontSize: 14, fontWeight: '700', lineHeight: 19 },
-  detail: { fontSize: 12, lineHeight: 17 },
+  copy: { flex: 1, gap: UiSpacing.xxs },
+  label: { fontSize: UiTypography.bodySmall.fontSize, fontWeight: '700', lineHeight: UiTypography.bodySmall.lineHeight },
+  detail: { fontSize: UiTypography.label.fontSize, lineHeight: UiTypography.label.lineHeight },
   valueWrap: { alignItems: 'flex-end', gap: 1, maxWidth: '37%' },
-  value: { fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'right' },
+  value: { fontSize: UiTypography.label.fontSize, fontWeight: '700', lineHeight: UiTypography.label.lineHeight, textAlign: 'right' },
   statusLabel: { fontSize: 10, fontWeight: '600', lineHeight: 14, textAlign: 'right' },
 });

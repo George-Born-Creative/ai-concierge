@@ -5,6 +5,7 @@ import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,6 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AIConciergeVoiceRecorder } from '@/components/ai-concierge-voice-recorder';
 import {
@@ -24,13 +26,22 @@ import { MarkdownMessage } from '@/components/chat/markdown-message';
 import { TypewriterText } from '@/components/chat/typewriter-text';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
-import { APP_BG, BORDER, HEADER_ACTION } from '@/constants/theme';
+import {
+  APP_BG,
+  BORDER,
+  HEADER_ACTION,
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 export default function ChatScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { show } = useToast();
   const { colors, resolvedTheme } = useAppTheme();
   const params = useLocalSearchParams<{
@@ -51,7 +62,9 @@ export default function ChatScreen() {
     runCommand,
   } = useAssistantHistory();
   const [input, setInput] = useState('');
+  const [inputHeight, setInputHeight] = useState<number>(UiControlHeights.chatInput);
   const [isRunning, setIsRunning] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [voiceActivity, setVoiceActivity] = useState<ChatVoiceActivity>('idle');
   const hasPendingMessage = isRunning || activeMessages.some((m) => m.pending);
   const commandHandledKey = useRef<string | null>(null);
@@ -73,6 +86,7 @@ export default function ChatScreen() {
       }
 
       setInput('');
+      setInputHeight(UiControlHeights.chatInput);
       setIsRunning(true);
 
       try {
@@ -133,6 +147,18 @@ export default function ChatScreen() {
     }
   }, [activeMessages, isRunning, scrollToBottom]);
 
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
   async function handleVoiceRecorded(voiceUri: string) {
     let convId = paramOne(params.conversationId) ?? activeChatId;
     if (!convId) {
@@ -149,10 +175,10 @@ export default function ChatScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
-        keyboardVerticalOffset={0}>
+        keyboardVerticalOffset={Platform.OS === 'android' ? UiSpacing.lg : 0}>
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={24} color={colors.textPrimary} />
+            <MaterialIcons name="arrow-back" size={22} color={colors.textPrimary} />
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>AI Concierge</Text>
@@ -227,7 +253,15 @@ export default function ChatScreen() {
 
         <ChatVoiceWaveOverlay activity={voiceActivity} />
 
-        <View style={styles.composer}>
+        <View
+          style={[
+            styles.composer,
+            {
+              paddingBottom: keyboardVisible
+                ? UiSpacing.lg
+                : Math.max(insets.bottom, UiSpacing.sm),
+            },
+          ]}>
           {/* Press-to-record mic backed by expo-av. Records an audio
               file, uploads it to the backend for Whisper STT + LLM,
               and the response streams back through the typewriter in
@@ -242,11 +276,24 @@ export default function ChatScreen() {
           <TextInput
             value={input}
             onChangeText={setInput}
+            onContentSizeChange={({ nativeEvent }) => {
+              const nextHeight = Math.min(
+                UiControlHeights.longTextarea,
+                Math.max(
+                  UiControlHeights.chatInput,
+                  Math.ceil(nativeEvent.contentSize.height),
+                ),
+              );
+              setInputHeight(nextHeight);
+            }}
             placeholder="Say or type a command"
             placeholderTextColor={colors.placeholder}
             keyboardAppearance={resolvedTheme}
-            style={styles.input}
+            multiline
+            scrollEnabled={inputHeight >= UiControlHeights.longTextarea}
+            style={[styles.input, { height: inputHeight }]}
             returnKeyType="send"
+            submitBehavior="submit"
             onSubmitEditing={() => submitCommand(input)}
           />
           {hasPendingMessage ? (
@@ -258,14 +305,14 @@ export default function ChatScreen() {
                 setIsRunning(false);
               }}
               accessibilityLabel="Stop processing">
-              <MaterialIcons name="stop" size={22} color={colors.onPrimary} />
+              <MaterialIcons name="stop" size={20} color={colors.onPrimary} />
             </Pressable>
           ) : (
             <Pressable
               style={[styles.sendButton, !input.trim() && styles.disabledButton]}
               onPress={() => submitCommand(input)}
               disabled={!input.trim()}>
-              <MaterialIcons name="send" size={22} color={colors.onPrimary} />
+              <MaterialIcons name="send" size={20} color={colors.onPrimary} />
             </Pressable>
           )}
         </View>
@@ -540,7 +587,7 @@ function ActionChip({
 function ChatSkeleton() {
   const { colors } = useAppTheme();
   return (
-    <View style={{ gap: 18 }}>
+    <View style={{ gap: UiSpacing.lg }}>
       {[0, 1, 2].map((i) => (
         <View key={i} style={styles.commandGroup}>
           <View style={styles.skeletonUserBubble}>
@@ -554,7 +601,7 @@ function ChatSkeleton() {
               width="45%"
               height={12}
               radius={6}
-              style={{ backgroundColor: colors.infoBorder, marginTop: 8 }}
+              style={{ backgroundColor: colors.infoBorder, marginTop: UiSpacing.sm }}
             />
           </View>
           <View style={styles.skeletonAssistantBubble}>
@@ -616,10 +663,10 @@ const styles = StyleSheet.create({
     borderBottomColor: BORDER,
     borderBottomWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    paddingBottom: 10,
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    gap: UiSpacing.sm,
+    paddingBottom: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.md,
+    paddingTop: UiSpacing.xs,
   },
   backButton: {
     alignItems: 'center',
@@ -634,117 +681,126 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     color: '#5F6368',
-    fontSize: 12,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
+    lineHeight: UiTypography.caption.lineHeight,
     textTransform: 'uppercase',
   },
   title: {
     color: '#202124',
-    fontSize: 22,
+    fontSize: UiTypography.navigationTitle.fontSize,
     fontWeight: '600',
-    marginTop: 2,
+    lineHeight: UiTypography.navigationTitle.lineHeight,
   },
   avatar: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: UiRadii.control,
+    height: UiControlHeights.iconButton,
     justifyContent: 'center',
-    width: 44,
+    width: UiControlHeights.iconButton,
   },
   avatarText: {
     color: '#1A73E8',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   chatScroll: {
     flex: 1,
   },
   chatContent: {
+    alignSelf: 'center',
     flexGrow: 1,
-    gap: 18,
-    paddingHorizontal: 12,
-    paddingTop: 20,
-    paddingBottom: 16,
+    gap: UiSpacing.lg,
+    maxWidth: 720,
+    paddingBottom: UiSpacing.lg,
+    paddingHorizontal: UiSpacing.md,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   heroCard: {
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 24,
+    maxWidth: 520,
+    padding: UiSpacing.xl,
+    width: '100%',
   },
   assistantMark: {
     alignItems: 'center',
-    height: 70,
+    height: 56,
     justifyContent: 'center',
-    marginBottom: 14,
-    width: 70,
+    marginBottom: UiSpacing.md,
+    width: 56,
   },
   dot: {
-    borderRadius: 18,
+    borderRadius: UiRadii.pill,
     position: 'absolute',
   },
   blueDot: {
     backgroundColor: '#4285F4',
-    height: 40,
-    left: 6,
-    width: 40,
+    height: 32,
+    left: 5,
+    width: 32,
   },
   redDot: {
     backgroundColor: '#EA4335',
-    height: 26,
-    right: 9,
-    top: 9,
-    width: 26,
+    height: 21,
+    right: 7,
+    top: 7,
+    width: 21,
   },
   yellowDot: {
     backgroundColor: '#FBBC04',
-    bottom: 10,
-    height: 24,
-    right: 12,
-    width: 24,
+    bottom: 8,
+    height: 19,
+    right: 10,
+    width: 19,
   },
   greenDot: {
     backgroundColor: '#34A853',
-    bottom: 14,
-    height: 18,
-    left: 18,
-    width: 18,
+    bottom: 11,
+    height: 14,
+    left: 14,
+    width: 14,
   },
   heroTitle: {
     color: '#202124',
-    fontSize: 24,
+    fontSize: UiTypography.sectionHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.sectionHeading.lineHeight,
     textAlign: 'center',
   },
   heroText: {
     color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 8,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
     textAlign: 'center',
   },
   commandGroup: {
-    gap: 10,
+    gap: UiSpacing.sm,
   },
   userBubble: {
     alignSelf: 'flex-end',
     backgroundColor: '#1A73E8',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     maxWidth: '86%',
-    padding: 14,
+    padding: UiSpacing.md,
   },
   assistantBubble: {
     alignSelf: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     maxWidth: '92%',
-    padding: 14,
+    padding: UiSpacing.md,
   },
   errorBubble: {
     backgroundColor: '#FCE8E6',
@@ -752,16 +808,17 @@ const styles = StyleSheet.create({
   },
   bubbleLabel: {
     color: '#80868B',
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
     letterSpacing: 0.7,
-    marginBottom: 5,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginBottom: UiSpacing.xs,
     textTransform: 'uppercase',
   },
   userText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    lineHeight: 23,
+    fontSize: UiTypography.body.fontSize,
+    lineHeight: UiTypography.body.lineHeight,
   },
   pendingUserBubble: {
     opacity: 0.95,
@@ -773,94 +830,103 @@ const styles = StyleSheet.create({
   skeletonUserBubble: {
     alignSelf: 'flex-end',
     backgroundColor: '#1A73E8',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     maxWidth: '70%',
     minWidth: 180,
     opacity: 0.85,
-    padding: 14,
+    padding: UiSpacing.md,
   },
   skeletonAssistantBubble: {
     alignSelf: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     maxWidth: '85%',
     minWidth: 220,
-    padding: 14,
+    padding: UiSpacing.md,
   },
   assistantText: {
     color: '#202124',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   composer: {
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopColor: '#E8EAED',
     borderTopWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
+    gap: UiSpacing.sm,
+    maxWidth: 720,
+    paddingHorizontal: UiSpacing.md,
+    paddingTop: UiSpacing.sm,
+    width: '100%',
   },
   input: {
     backgroundColor: '#F1F3F4',
-    borderRadius: 24,
+    borderRadius: UiRadii.control,
     color: '#202124',
     flex: 1,
-    fontSize: 15,
-    minHeight: 48,
-    paddingHorizontal: 16,
+    fontSize: UiTypography.input.fontSize,
+    lineHeight: UiTypography.input.lineHeight,
+    maxHeight: UiControlHeights.longTextarea,
+    minHeight: UiControlHeights.chatInput,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.md,
+    textAlignVertical: 'top',
   },
   sendButton: {
     alignItems: 'center',
     backgroundColor: '#34A853',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: UiRadii.control,
+    height: UiControlHeights.button,
     justifyContent: 'center',
-    width: 48,
+    width: UiControlHeights.button,
   },
   stopButton: {
     alignItems: 'center',
     backgroundColor: '#EA4335',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: UiRadii.control,
+    height: UiControlHeights.button,
     justifyContent: 'center',
-    width: 48,
+    width: UiControlHeights.button,
   },
   disabledButton: {
     opacity: 0.45,
   },
   userMetaRow: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: UiSpacing.xs,
     justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 4,
+    marginTop: UiSpacing.xxs,
   },
   assistantMetaRow: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: UiSpacing.xs,
     justifyContent: 'flex-start',
-    gap: 8,
-    marginTop: 4,
+    marginTop: UiSpacing.xxs,
   },
   userTimestamp: {
     color: '#80868B',
-    fontSize: 11,
-    marginRight: 4,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginRight: UiSpacing.xxs,
   },
   assistantTimestamp: {
     color: '#80868B',
-    fontSize: 11,
-    marginLeft: 4,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginLeft: UiSpacing.xxs,
   },
   actionChip: {
     alignItems: 'center',
     backgroundColor: '#F1F3F4',
     borderColor: '#D2E3FC',
-    borderRadius: 14,
+    borderRadius: UiRadii.icon,
     borderWidth: 1,
     height: 28,
     justifyContent: 'center',
@@ -872,28 +938,29 @@ const styles = StyleSheet.create({
   },
   userEditInput: {
     backgroundColor: 'rgba(255, 255, 255, 0.16)',
-    borderRadius: 10,
+    borderRadius: UiRadii.icon,
     color: '#FFFFFF',
-    fontSize: 16,
-    lineHeight: 22,
-    minHeight: 60,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    fontSize: UiTypography.body.fontSize,
+    lineHeight: UiTypography.body.lineHeight,
+    minHeight: 56,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xs,
     textAlignVertical: 'top',
   },
   editActionRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'flex-end',
-    marginTop: 10,
+    marginTop: UiSpacing.sm,
   },
   editChip: {
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    gap: UiSpacing.xxs,
+    minHeight: 32,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.xs,
   },
   editChipCancel: {
     backgroundColor: 'transparent',
@@ -902,15 +969,17 @@ const styles = StyleSheet.create({
   },
   editChipCancelText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
   },
   editChipSave: {
     backgroundColor: '#FFFFFF',
   },
   editChipSaveText: {
     color: '#1A73E8',
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
   },
 });

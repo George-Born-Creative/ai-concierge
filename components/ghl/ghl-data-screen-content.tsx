@@ -14,6 +14,7 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
+import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
 import { ghlApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -445,16 +446,19 @@ function RowCard({ title, subtitle, meta, onPress }: RowCardProps) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 48,
-    gap: 18,
+    alignSelf: 'center',
+    gap: UiSpacing.lg,
+    maxWidth: 720,
+    paddingBottom: UiSpacing.xxxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.sm,
+    width: '100%',
   },
 
   section: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     overflow: 'hidden',
   },
@@ -464,14 +468,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E8EAED',
     borderBottomWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    gap: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
   },
   sectionIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 8,
+    borderRadius: UiRadii.icon,
     height: 30,
     justifyContent: 'center',
     width: 30,
@@ -479,82 +483,85 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: '#202124',
     flex: 1,
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   sectionCount: {
     color: '#80868B',
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
   },
   sectionBody: {
     gap: 1,
-    padding: 12,
+    padding: UiSpacing.md,
   },
 
   rowCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#EEF0F3',
-    borderRadius: 12,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    gap: UiSpacing.sm,
+    minHeight: 52,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
   },
   rowCopy: { flex: 1, gap: 2 },
-  rowTitle: { color: '#202124', fontSize: 14, fontWeight: '600' },
-  rowSubtitle: { color: '#5F6368', fontSize: 12 },
-  rowMeta: { color: '#80868B', fontSize: 11 },
+  rowTitle: { color: '#202124', fontSize: UiTypography.bodySmall.fontSize, fontWeight: '600', lineHeight: UiTypography.bodySmall.lineHeight },
+  rowSubtitle: { color: '#5F6368', fontSize: UiTypography.label.fontSize, lineHeight: UiTypography.label.lineHeight },
+  rowMeta: { color: '#80868B', fontSize: UiTypography.caption.fontSize, lineHeight: UiTypography.caption.lineHeight },
 
   emptyCard: {
     alignItems: 'center',
     backgroundColor: '#F8FAFF',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 18,
+    borderRadius: UiRadii.card,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.lg,
   },
-  emptyText: { color: '#5F6368', fontSize: 13, textAlign: 'center' },
+  emptyText: { color: '#5F6368', fontSize: UiTypography.label.fontSize, lineHeight: UiTypography.label.lineHeight, textAlign: 'center' },
 
   errorCard: {
     alignItems: 'flex-start',
     backgroundColor: '#FDEDED',
     borderColor: '#F5C2C7',
-    borderRadius: 12,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 8,
-    padding: 12,
+    gap: UiSpacing.sm,
+    padding: UiSpacing.md,
   },
-  errorText: { color: '#5F2120', flex: 1, fontSize: 13, lineHeight: 18 },
+  errorText: { color: '#5F2120', flex: 1, fontSize: UiTypography.label.fontSize, lineHeight: UiTypography.label.lineHeight },
 
   skeletonRow: {
     backgroundColor: '#F8FAFF',
-    borderRadius: 12,
-    gap: 8,
-    padding: 12,
+    borderRadius: UiRadii.card,
+    gap: UiSpacing.sm,
+    padding: UiSpacing.md,
   },
 
   notFor: {
     alignItems: 'center',
-    gap: 12,
-    padding: 32,
+    gap: UiSpacing.md,
+    padding: UiSpacing.xxxl,
   },
-  notForTitle: { color: '#202124', fontSize: 18, fontWeight: '600' },
+  notForTitle: { color: '#202124', fontSize: UiTypography.cardHeading.fontSize, fontWeight: '600', lineHeight: UiTypography.cardHeading.lineHeight },
   notForText: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
     maxWidth: 280,
     textAlign: 'center',
   },
 
   footnote: {
     color: '#80868B',
-    fontSize: 12,
-    lineHeight: 18,
-    paddingHorizontal: 4,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    paddingHorizontal: UiSpacing.xxs,
     textAlign: 'center',
   },
 });

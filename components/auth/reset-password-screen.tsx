@@ -15,16 +15,25 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { requestPasswordReset, resetPassword } from '@/lib/api/auth';
-import { ApiError } from '@/lib/api/client';
+import {
+  clearOtpCooldown,
+  getOtpCooldownRemaining,
+  OTP_RESEND_COOLDOWN_SECONDS,
+  startOtpCooldown,
+} from '@/lib/auth/otp-cooldown';
+import { getOtpErrorMessage } from '@/lib/auth/otp-error';
 import { useToast } from '@/lib/toast';
 
 const CODE_LENGTH = 6;
 const MIN_PASSWORD_LENGTH = 8;
-// The backend enforces a ~30s resend cooldown, so start the client countdown on
-// mount to match (a code was just sent from the previous screen).
-const RESEND_COOLDOWN_SECONDS = 30;
 
 export function ResetPasswordScreen() {
   const { colors, resolvedTheme } = useAppTheme();
@@ -38,8 +47,38 @@ export function ResetPasswordScreen() {
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
+  const [resending, setResending] = useState(false);
+  const [checkingContext, setCheckingContext] = useState(true);
+  const [cooldown, setCooldown] = useState(0);
+  const codeInputRef = useRef<TextInput>(null);
   const redirected = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadResetContext() {
+      if (!email) {
+        redirected.current = true;
+        show('Enter your email to request a password-reset code.', 'error');
+        router.replace('/forgot-password');
+        return;
+      }
+
+      const remaining = await getOtpCooldownRemaining(
+        'password-reset',
+        email,
+      );
+      if (!active) return;
+
+      setCooldown(remaining);
+      setCheckingContext(false);
+    }
+
+    void loadResetContext();
+    return () => {
+      active = false;
+    };
+  }, [email, router, show]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -66,38 +105,53 @@ export function ResetPasswordScreen() {
     setSubmitting(true);
     try {
       await resetPassword({ email, code, newPassword: password });
+      await clearOtpCooldown('password-reset', email);
       if (redirected.current) return;
       redirected.current = true;
       show('Password updated — sign in with your new password.', 'success');
       router.replace('/signin');
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message || 'Could not reset your password.'
-          : 'Something went wrong. Please try again.';
-      show(message, 'error');
+      show(
+        getOtpErrorMessage(err, 'Could not reset your password.'),
+        'error',
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleResend() {
-    if (cooldown > 0 || !email) return;
+    if (cooldown > 0 || !email || resending || submitting) return;
+    setResending(true);
     try {
-      await requestPasswordReset({ email });
+      const result = await requestPasswordReset({ email });
+      const nextCooldown =
+        result.retryAfterSeconds ?? OTP_RESEND_COOLDOWN_SECONDS;
+      await startOtpCooldown('password-reset', email, nextCooldown);
       setCode('');
-      setCooldown(RESEND_COOLDOWN_SECONDS);
+      setCooldown(Math.ceil(nextCooldown));
+      codeInputRef.current?.focus();
       show('A new code is on its way.', 'success');
     } catch (err) {
-      const message =
-        err instanceof ApiError ? err.message : 'Could not resend the code.';
-      show(message, 'error');
+      show(getOtpErrorMessage(err, 'Could not resend the code.'), 'error');
+    } finally {
+      setResending(false);
     }
+  }
+
+  if (checkingContext) {
+    return (
+      <ScreenShell>
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ScreenShell>
+    );
   }
 
   return (
     <ScreenShell>
-      <PageHeader showBack onBack={() => router.replace('/signin')} />
+      <PageHeader showBack onBack={() => router.replace('/forgot-password')} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
@@ -115,6 +169,7 @@ export function ResetPasswordScreen() {
           </Text>
 
           <TextInput
+            ref={codeInputRef}
             value={code}
             onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, CODE_LENGTH))}
             placeholder="______"
@@ -125,6 +180,7 @@ export function ResetPasswordScreen() {
             maxLength={CODE_LENGTH}
             returnKeyType="next"
             autoFocus
+            editable={!submitting && !resending}
           />
 
           <View style={styles.inputShell}>
@@ -142,6 +198,7 @@ export function ResetPasswordScreen() {
               autoComplete="password-new"
               textContentType="newPassword"
               returnKeyType="next"
+              editable={!submitting && !resending}
             />
             <Pressable
               accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
@@ -171,14 +228,18 @@ export function ResetPasswordScreen() {
               autoComplete="password-new"
               textContentType="newPassword"
               returnKeyType="done"
+              editable={!submitting && !resending}
               onSubmitEditing={submit}
             />
           </View>
 
           <Pressable
-            style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
+            style={[
+              styles.primaryButton,
+              (submitting || resending) && styles.primaryButtonDisabled,
+            ]}
             onPress={submit}
-            disabled={submitting}>
+            disabled={submitting || resending}>
             {submitting ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
@@ -192,9 +253,18 @@ export function ResetPasswordScreen() {
           <Pressable
             style={styles.resendButton}
             onPress={handleResend}
-            disabled={cooldown > 0}>
-            <Text style={[styles.resendText, cooldown > 0 && styles.resendTextDisabled]}>
-              {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+            disabled={cooldown > 0 || resending || submitting}>
+            <Text
+              style={[
+                styles.resendText,
+                (cooldown > 0 || resending || submitting) &&
+                  styles.resendTextDisabled,
+              ]}>
+              {resending
+                ? 'Sending new code…'
+                : cooldown > 0
+                  ? `Resend code in ${cooldown}s`
+                  : 'Resend code'}
             </Text>
           </Pressable>
         </ScrollView>
@@ -214,29 +284,38 @@ function maskEmail(email: string): string {
 }
 
 const styles = StyleSheet.create({
+  loadingState: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
   keyboardView: {
     flex: 1,
   },
   content: {
     alignItems: 'center',
+    alignSelf: 'center',
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 24,
+    maxWidth: 480,
+    paddingHorizontal: UiSpacing.xxl,
+    paddingVertical: UiSpacing.lg,
+    width: '100%',
   },
   title: {
     color: '#202124',
-    fontSize: 28,
+    fontSize: UiTypography.pageTitle.fontSize,
     fontWeight: '600',
     letterSpacing: -0.5,
+    lineHeight: UiTypography.pageTitle.lineHeight,
     textAlign: 'center',
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 10,
-    maxWidth: 320,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
+    maxWidth: 360,
     textAlign: 'center',
   },
   email: {
@@ -246,15 +325,15 @@ const styles = StyleSheet.create({
   codeInput: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E4EBF7',
-    borderRadius: 14,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     color: '#202124',
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '700',
-    letterSpacing: 12,
-    marginTop: 28,
-    minHeight: 64,
-    paddingHorizontal: 16,
+    letterSpacing: 10,
+    marginTop: UiSpacing.xxl,
+    minHeight: 52,
+    paddingHorizontal: UiSpacing.md,
     textAlign: 'center',
     width: '100%',
   },
@@ -262,19 +341,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F8FAFF',
     borderColor: '#E4EBF7',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-    minHeight: 54,
-    paddingHorizontal: 16,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.sm,
+    minHeight: UiControlHeights.input,
+    paddingHorizontal: UiSpacing.md,
     width: '100%',
   },
   input: {
     color: '#202124',
     flex: 1,
-    fontSize: 16,
+    fontSize: UiTypography.input.fontSize,
+    lineHeight: UiTypography.input.lineHeight,
   },
   eyeButton: {
     alignItems: 'center',
@@ -285,12 +365,12 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 56,
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
     width: '100%',
   },
   primaryButtonDisabled: {
@@ -298,19 +378,21 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   resendButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    minHeight: 40,
+    marginTop: UiSpacing.md,
+    minHeight: UiControlHeights.button,
   },
   resendText: {
     color: '#1A73E8',
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   resendTextDisabled: {
     color: '#9AA0A6',

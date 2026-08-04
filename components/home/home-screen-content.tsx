@@ -1,10 +1,12 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { type Href, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ScreenShell } from '@/components/screen';
-import { getUser } from '@/lib/session';
+import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
+import { getMe } from '@/lib/api/auth';
+import { getUser, refreshUser } from '@/lib/session';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type QuickAction = {
@@ -48,6 +50,19 @@ function firstName(name: string | undefined): string {
 export function HomeScreenContent() {
   const router = useRouter();
   const { colors, resolvedTheme } = useAppTheme();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const result = await getMe();
+      await refreshUser(result);
+    } catch {
+      // ignore
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const user = getUser();
   const isHubspot = user?.provider === 'hubspot';
@@ -169,10 +184,11 @@ export function HomeScreenContent() {
     <ScreenShell edges={[]}>
       <ScrollView
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        alwaysBounceVertical={false}
-        overScrollMode="never">
+        keyboardShouldPersistTaps="handled">
         {/* Greeting */}
         <Animated.View
           style={[styles.greeting, { opacity: intro, transform: [{ translateY: introTranslate }] }]}>
@@ -203,7 +219,7 @@ export function HomeScreenContent() {
                   ]}>
                   <MaterialIcons
                     name={action.icon}
-                    size={24}
+                    size={22}
                     color={resolvedTheme === 'dark' ? colors.primary : action.tint}
                   />
                 </View>
@@ -218,7 +234,7 @@ export function HomeScreenContent() {
           onPress={() => router.push('/reminders' as Href)}
           style={({ pressed }) => [styles.reminderCard, pressed && { opacity: 0.9 }]}>
           <View style={styles.reminderIcon}>
-            <MaterialIcons name="notifications-active" size={24} color={colors.primary} />
+            <MaterialIcons name="notifications-active" size={22} color={colors.primary} />
           </View>
           <View style={styles.reminderCopy}>
             <Text style={styles.reminderTitle}>Reminders</Text>
@@ -255,92 +271,72 @@ export function HomeScreenContent() {
           </View>
         </Animated.View>
 
-        {/* Help Card */}
-        <View style={styles.helpCard}>
-          <View style={styles.helpIcon}>
-            <MaterialIcons name="help-outline" size={24} color={colors.primary} />
-          </View>
-          <View style={styles.helpCopy}>
-            <Text style={styles.helpTitle}>Need Help?</Text>
-            <Text style={styles.helpDescription}>
-              Learn how to use voice commands and manage your CRM.
-            </Text>
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: '/chat',
-                  params: {
-                    command: 'What can you help me with? Show me example voice commands.',
-                    source: 'text',
-                  },
-                })
-              }
-              style={({ pressed }) => [styles.helpButton, pressed && { opacity: 0.9 }]}>
-              <Text style={styles.helpButtonText}>View Help</Text>
-            </Pressable>
-          </View>
-        </View>
       </ScrollView>
     </ScreenShell>
   );
 }
 
 const CARD_SHADOW = {
-  elevation: 3,
+  elevation: 2,
   shadowColor: '#0F172A',
-  shadowOffset: { width: 0, height: 6 },
+  shadowOffset: { width: 0, height: 4 },
   shadowOpacity: 0.06,
-  shadowRadius: 16,
+  shadowRadius: 10,
 } as const;
 
 const styles = StyleSheet.create({
   content: {
+    alignSelf: 'center',
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 138,
-    paddingTop: 24,
+    maxWidth: 720,
+    paddingBottom: UiSpacing.xxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   // Greeting
   greeting: {
-    marginBottom: 4,
+    marginBottom: UiSpacing.xxs,
   },
   greetingHello: {
     color: '#111827',
-    fontSize: 24,
+    fontSize: UiTypography.sectionHeading.fontSize,
     fontWeight: '700',
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
+    lineHeight: UiTypography.sectionHeading.lineHeight,
   },
   greetingSub: {
     color: '#6B7280',
-    fontSize: 15,
-    marginTop: 4,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   // Sections
   section: {
-    marginTop: 26,
+    marginTop: UiSpacing.xl,
   },
   sectionTitle: {
     color: '#111827',
-    fontSize: 17,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '700',
-    letterSpacing: -0.2,
-    marginBottom: 14,
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    marginBottom: UiSpacing.md,
   },
   // Quick Actions
   quickGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 14,
+    gap: UiSpacing.md,
   },
   quickCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E5E7EB',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexBasis: '47%',
     flexGrow: 1,
-    height: 110,
+    height: 96,
     justifyContent: 'center',
     ...CARD_SHADOW,
   },
@@ -349,60 +345,63 @@ const styles = StyleSheet.create({
   },
   quickIcon: {
     alignItems: 'center',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: UiRadii.icon,
+    height: 40,
     justifyContent: 'center',
-    width: 48,
+    width: 40,
   },
   quickTitle: {
     color: '#111827',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
-    marginTop: 10,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
   },
   // Reminders card
   reminderCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E5E7EB',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 14,
-    marginTop: 26,
-    padding: 16,
+    gap: UiSpacing.md,
+    marginTop: UiSpacing.xl,
+    minHeight: 64,
+    padding: UiSpacing.md,
     ...CARD_SHADOW,
   },
   reminderIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: UiRadii.icon,
+    height: 40,
     justifyContent: 'center',
-    width: 48,
+    width: 40,
   },
   reminderCopy: {
     flex: 1,
   },
   reminderTitle: {
     color: '#111827',
-    fontSize: 16,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '700',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   reminderSubtitle: {
     color: '#6B7280',
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 2,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   // AI Assistant Card
   aiCard: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E5E7EB',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    marginTop: 26,
-    padding: 20,
+    marginTop: UiSpacing.xl,
+    padding: UiSpacing.lg,
     ...CARD_SHADOW,
   },
   aiCardHeaderRow: {
@@ -413,21 +412,22 @@ const styles = StyleSheet.create({
   aiBadge: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 999,
+    borderRadius: UiRadii.pill,
     flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: UiSpacing.xs,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
   },
   aiBadgeText: {
     color: '#1A73E8',
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '700',
+    lineHeight: UiTypography.label.lineHeight,
   },
   waveformMini: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 3,
+    gap: UiSpacing.xxs,
     height: 24,
   },
   waveformBar: {
@@ -437,25 +437,26 @@ const styles = StyleSheet.create({
   },
   aiTitle: {
     color: '#111827',
-    fontSize: 20,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '700',
-    letterSpacing: -0.3,
-    marginTop: 14,
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    marginTop: UiSpacing.md,
   },
   trySaying: {
     color: '#6B7280',
-    fontSize: 13,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
-    marginTop: 12,
+    lineHeight: UiTypography.label.lineHeight,
+    marginTop: UiSpacing.sm,
   },
   tryList: {
-    gap: 6,
-    marginTop: 8,
+    gap: UiSpacing.xxs,
+    marginTop: UiSpacing.xs,
   },
   tryRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
   },
   tryDot: {
     backgroundColor: '#1A73E8',
@@ -465,54 +466,8 @@ const styles = StyleSheet.create({
   },
   tryText: {
     color: '#374151',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
-  // Help Card
-  helpCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5E7EB',
-    borderRadius: 16,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 14,
-    marginTop: 26,
-    padding: 20,
-    ...CARD_SHADOW,
-  },
-  helpIcon: {
-    alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 24,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
-  },
-  helpCopy: {
-    flex: 1,
-  },
-  helpTitle: {
-    color: '#111827',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  helpDescription: {
-    color: '#6B7280',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  helpButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1A73E8',
-    borderRadius: 12,
-    height: 44,
-    justifyContent: 'center',
-    marginTop: 14,
-    paddingHorizontal: 20,
-  },
-  helpButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+
 });
