@@ -21,6 +21,7 @@ import type {
   GhlConversationsListResponse,
   GhlConversationMessagesListResponse,
   ListGhlConversationsParams,
+  UpdateGhlConversationRequest,
   ListGhlConversationMessagesParams,
 } from './types';
 
@@ -175,7 +176,12 @@ export async function listConversations(
   if (params?.limit) q.set('limit', String(params.limit));
   if (params?.query) q.set('query', params.query);
   if (params?.startAfterId) q.set('startAfterId', params.startAfterId);
-  if (params?.unreadOnly) q.set('unreadOnly', 'true');
+  if (params?.status) q.set('status', params.status);
+  if (params?.assignedTo) q.set('assignedTo', params.assignedTo);
+  if (params?.followers) q.set('followers', params.followers);
+  if (params?.lastMessageType) q.set('lastMessageType', params.lastMessageType);
+  if (params?.sortBy) q.set('sortBy', params.sortBy);
+  if (params?.sort) q.set('sort', params.sort);
   const suffix = q.toString();
   return apiRequest<GhlConversationsListResponse>(
     suffix ? `/integrations/ghl/conversations?${suffix}` : '/integrations/ghl/conversations',
@@ -199,4 +205,15 @@ export async function listConversationMessages(
       ? `/integrations/ghl/conversations/${conversationId}/messages?${suffix}`
       : `/integrations/ghl/conversations/${conversationId}/messages`,
   );
+}
+export async function getGhlUserId(): Promise<string | null> {
+  const res = await apiRequest<{ ghlUserId: string }>('/integrations/ghl/conversations/ghl-user-id');
+  return res?.ghlUserId ?? null;
+}
+
+export async function updateConversation(conversationId: string, body: UpdateGhlConversationRequest): Promise<GhlConversationSummary> {
+  return apiRequest<GhlConversationSummary>(`/integrations/ghl/conversations/${conversationId}`, {
+    method: 'PUT',
+    body,
+  });
 }

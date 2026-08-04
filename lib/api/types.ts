@@ -294,6 +294,17 @@ export type GhlConversationSummary = {
   lastMessageAt?: string;
   unreadCount: number;
   starred?: boolean;
+  // New fields for inbox organization
+  assignedTo?: string;
+  followers?: string[];
+  inbox?: string;
+  lastMessageType?: string;
+};
+
+/** Request payload for updating a conversation (star/unstar, mark as read) */
+export type UpdateGhlConversationRequest = {
+  starred?: boolean;
+  unreadCount?: number;
 };
 
 export type GhlMessageSummary = {
@@ -329,7 +340,13 @@ export type ListGhlConversationsParams = {
   limit?: number;
   query?: string;
   startAfterId?: string;
-  unreadOnly?: boolean;
+  // New filter fields:
+  status?: 'all' | 'read' | 'unread' | 'starred'; // GHL status filter
+  assignedTo?: string; // GHL user ID or "unassigned"
+  followers?: string; // comma‑separated GHL user IDs
+  lastMessageType?: string; // e.g. "TYPE_INTERNAL_COMMENT"
+  sortBy?: 'last_message_date' | 'last_manual_message_date' | 'score_profile';
+  sort?: 'asc' | 'desc';
 };
 
 export type ListGhlConversationMessagesParams = {
