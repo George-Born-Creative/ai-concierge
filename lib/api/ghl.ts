@@ -23,6 +23,8 @@ import type {
   ListGhlConversationsParams,
   UpdateGhlConversationRequest,
   ListGhlConversationMessagesParams,
+  SendGhlMessageRequest,
+  SendGhlMessageResponse,
 } from './types';
 
 // Returns the GHL OAuth URL the app should open in an in-app browser session.
@@ -215,5 +217,19 @@ export async function updateConversation(conversationId: string, body: UpdateGhl
   return apiRequest<GhlConversationSummary>(`/integrations/ghl/conversations/${conversationId}`, {
     method: 'PUT',
     body,
+  });
+}
+
+export async function sendMessage(body: SendGhlMessageRequest): Promise<SendGhlMessageResponse> {
+  return apiRequest<SendGhlMessageResponse>('/integrations/ghl/conversations/messages', {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function createConversation(contactId: string): Promise<{ conversationId: string }> {
+  return apiRequest<{ conversationId: string }>('/integrations/ghl/conversations', {
+    method: 'POST',
+    body: { contactId },
   });
 }

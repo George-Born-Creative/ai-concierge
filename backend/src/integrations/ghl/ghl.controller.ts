@@ -37,6 +37,7 @@ import { GhlService } from './ghl.service';
 import { GhlConversationsService } from './conversations/ghl-conversations.service';
 import { ListConversationsQueryDto } from './conversations/dto/list-conversations.query.dto';
 import { ListConversationMessagesQueryDto } from './conversations/dto/list-conversation-messages.query.dto';
+import { SendMessageDto } from './conversations/dto/send-message.dto';
 import { UpdateConversationDto } from './conversations/dto/update-conversation.dto';
 
 @Controller('integrations/ghl')
@@ -330,5 +331,25 @@ export class GhlController {
     @Query() query: ListConversationMessagesQueryDto,
   ) {
     return this.ghlConversations.getMessages(user.id, conversationId, query);
+  }
+
+  @Post('conversations/messages')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  sendMessage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SendMessageDto,
+  ) {
+    return this.ghlConversations.sendMessage(user.id, body);
+  }
+
+  @Post('conversations')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  createConversation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body('contactId') contactId: string,
+  ) {
+    return this.ghlConversations.createConversation(user.id, contactId);
   }
 }

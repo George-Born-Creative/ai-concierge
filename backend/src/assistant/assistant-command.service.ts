@@ -42,6 +42,7 @@ import {
   extractProductCreateDetails,
   extractProductUpdateDetails,
   extractSearchQuery,
+  extractSendMessageDetails,
   extractTicketCompanyAssociation,
   extractTicketContactAssociation,
   extractTicketCreateDetails,
@@ -98,6 +99,7 @@ export class AssistantCommandService {
     create_order: 'orders',
     update_order: 'orders',
     delete_order: 'orders',
+    send_message: 'conversations',
     attach_order_to_contact: 'orders',
     detach_order_from_contact: 'orders',
     attach_order_to_company: 'orders',
@@ -346,6 +348,8 @@ export class AssistantCommandService {
         return this.findConversation(userId, extractConversationQuery(intent.entities));
       case 'read_conversation':
         return this.readConversation(userId, extractConversationRead(intent.entities));
+      case 'send_message':
+        return this.sendMessageFromDetails(userId, extractSendMessageDetails(intent.entities));
       default:
         return null;
     }
@@ -433,6 +437,65 @@ export class AssistantCommandService {
     }
   }
 
+  private async sendMessageFromDetails(
+    userId: string,
+    details: {
+      recipient?: string;
+      text: string;
+      conversationId?: string;
+      contactId?: string;
+      type: 'SMS' | 'Email' | 'InternalComment' | 'WhatsApp' | 'Live_Chat' | 'FB' | 'IG' | 'Custom';
+      subject?: string;
+    },
+  ): Promise<AssistantCommandResult> {
+    if (!details.text) {
+      return { response: 'What message would you like to send?', status: 'error' };
+    }
+
+    try {
+      let conversationId = details.conversationId;
+      let contactId = details.contactId;
+
+      if (!conversationId && !contactId && details.recipient) {
+        // Search active conversations first
+        const search = await this.ghlConversations.searchConversations(userId, { query: details.recipient });
+        if (search.conversations && search.conversations.length > 0) {
+          conversationId = search.conversations[0].id;
+          contactId = search.conversations[0].contactId;
+        } else {
+          // Fall back to contact lookup
+          const contacts = await this.ghl.listContacts(userId, 10, details.recipient);
+          if (contacts.contacts && contacts.contacts.length > 0) {
+            contactId = contacts.contacts[0].id;
+          }
+        }
+      }
+
+      if (!conversationId && !contactId) {
+        return {
+          response: `Could not find a contact or conversation matching "${details.recipient || 'the recipient'}".`,
+          status: 'error',
+        };
+      }
+
+      await this.ghlConversations.sendMessage(userId, {
+        type: details.type,
+        message: details.text,
+        conversationId,
+        contactId,
+        subject: details.subject,
+      });
+
+      return {
+        response: `Sent ${details.type === 'InternalComment' ? 'internal comment' : details.type + ' message'}: "${details.text}"`,
+        status: 'success',
+      };
+    } catch (err: any) {
+      this.logger.error(`sendMessageFromDetails failed for user ${userId}: ${err.message}`, err.stack);
+      return { response: `Failed to send message: ${err.message}`, status: 'error' };
+    }
+  }
+
   private async executeWithHeuristics(userId: string, command: string): Promise<AssistantCommandResult> {
     const lower = command.toLowerCase();
     if (/\bcalendar(s)?\b/.test(lower) && /\b(list|show|what|my|which|got)\b/.test(lower)) {
@@ -453,9 +516,22 @@ export class AssistantCommandService {
         extractOpportunityListDetails({ limit: 10 }),
       );
     }
+    if (/\b(conversations?|messages?|chats?|inbox)\b/.test(lower) && /\b(list|show|pull up|get|see|recent|latest|my|unread|all)\b/.test(lower)) {
+      return this.listConversations(userId, { limit: 10, unreadOnly: /\bunread\b/.test(lower) });
+    }
+    if (/\b(send|text|message|write|email|internal note|comment)\b/.test(lower) && /\b(to|saying|text|message)\b/.test(lower)) {
+      const match = lower.match(/(?:send|text|message|write|email)\s+(?:a\s+message\s+to\s+|to\s+)?([a-z0-9\s]+?)\s+(?:saying|that|with)\s+(.+)/i);
+      if (match) {
+        return this.sendMessageFromDetails(userId, {
+          recipient: match[1].trim(),
+          text: match[2].trim(),
+          type: /\bemail\b/.test(lower) ? 'Email' : /\b(internal|note|comment)\b/.test(lower) ? 'InternalComment' : 'SMS',
+        });
+      }
+    }
     return {
       response:
-        'I can handle contacts, calendars, appointments, and opportunities in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", "book Sarah tomorrow at 2pm", "show my pipelines", or "create an opportunity Website Redesign for John Smith worth 2500 in Sales".',
+        'I can handle contacts, calendars, appointments, opportunities, and conversations in GoHighLevel. Try "pull up my contacts", "show my conversations", "send a message to John saying hello", "book Sarah tomorrow at 2pm", or "show my pipelines".',
       status: 'error',
     };
   }

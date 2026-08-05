@@ -2,12 +2,14 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { GhlService } from '../ghl.service';
 import { ListConversationMessagesQueryDto } from './dto/list-conversation-messages.query.dto';
 import { ListConversationsQueryDto } from './dto/list-conversations.query.dto';
+import { SendMessageDto } from './dto/send-message.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import {
   GhlConversationMessagesListResult,
   GhlConversationsListResult,
   GhlConversationSummary,
   GhlMessageSummary,
+  GhlSendMessageResult,
   GhlUpdateConversationResult,
   GhlUserIdentity,
 } from './ghl-conversations.types';
@@ -20,7 +22,7 @@ type GhlRawConversation = {
   locationId?: string;
   lastMessageBody?: string;
   lastMessageType?: string;
-  type?: string;
+  type?: string | number;
   unreadCount?: number;
   fullName?: string;
   contactName?: string;
@@ -32,7 +34,9 @@ type GhlRawConversation = {
   starred?: boolean;
   assignedTo?: string;
   followers?: string[];
-  inbox?: string;
+  inbox?: boolean | string;
+  deleted?: boolean;
+  archived?: boolean;
 };
 
 type GhlRawConversationsResponse = {
@@ -86,8 +90,9 @@ export class GhlConversationsService {
    * Cleared naturally when the process restarts; a short TTL prevents stale
    * data if the user changes their GHL account.
    */
-  private readonly ghlUserIdCache = new Map<string, { ghlUserId: string; expiresAt: number }>();
+  private readonly ghlUserIdCache = new Map<string, { identity: GhlUserIdentity | null; expiresAt: number }>();
   private static readonly USER_ID_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+  private static readonly USER_ID_FAIL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache for un-scoped/failed lookups
 
   constructor(private readonly ghlService: GhlService) { }
 
@@ -114,9 +119,9 @@ export class GhlConversationsService {
     // Pagination cursor
     if (query.startAfterId?.trim()) params.set('startAfterId', query.startAfterId.trim());
 
-    // Status filter: all | read | unread | starred | recents
-    if (query.status !== 'all') {
-      params.set('status', query.status || 'recents');
+    // Status filter: read | unread | starred (omit if 'all' or undefined)
+    if (query.status && query.status !== 'all') {
+      params.set('status', query.status);
     }
 
     // Assignment filter (GHL user ID or "unassigned")
@@ -139,6 +144,14 @@ export class GhlConversationsService {
     );
 
     const conversations = (raw.conversations ?? [])
+      .filter(
+        (c) =>
+          c.deleted !== true &&
+          c.archived !== true &&
+          c.inbox !== false &&
+          c.inbox !== 'false' &&
+          c.lastMessageType !== 'TYPE_NO_SHOW',
+      )
       .map((c) => this.toConversationSummary(c))
       .filter((c): c is GhlConversationSummary => Boolean(c.id));
 
@@ -164,8 +177,8 @@ export class GhlConversationsService {
     );
 
     const conversation = raw.conversation ?? raw;
-    if (!conversation.id) {
-      throw new BadRequestException('GHL did not return the conversation');
+    if (!conversation.id || conversation.deleted === true) {
+      throw new BadRequestException('GHL did not return the conversation or it was deleted');
     }
 
     return this.toConversationSummary(conversation);
@@ -236,6 +249,70 @@ export class GhlConversationsService {
     };
   }
 
+  // ── Send message ────────────────────────────────────────────────────────
+  async sendMessage(
+    userId: string,
+    dto: SendMessageDto,
+  ): Promise<GhlSendMessageResult> {
+    await this.ghlService.requireConversationScopes(userId);
+    const { locationId } = await this.ghlService.getValidAccessToken(userId);
+    if (!locationId) {
+      throw new BadRequestException('GHL location is missing — reconnect GoHighLevel');
+    }
+    if (!dto.contactId && !dto.conversationId) {
+      throw new BadRequestException('Either contactId or conversationId is required to send a message');
+    }
+
+    const body: Record<string, unknown> = {
+      locationId,
+      type: dto.type,
+      message: dto.message,
+    };
+    if (dto.contactId) body.contactId = dto.contactId;
+    if (dto.conversationId) body.conversationId = dto.conversationId;
+    if (dto.subject) body.subject = dto.subject;
+    if (dto.html) body.html = dto.html;
+    if (dto.attachments?.length) body.attachments = dto.attachments;
+
+    const res = await this.ghlService.ghlRequest<GhlSendMessageResult>(
+      userId,
+      'POST',
+      '/conversations/messages',
+      body,
+    );
+
+    return res;
+  }
+
+  // ── Create conversation ──────────────────────────────────────────────────
+  async createConversation(
+    userId: string,
+    contactId: string,
+  ): Promise<{ conversationId: string }> {
+    await this.ghlService.requireConversationScopes(userId);
+    const { locationId } = await this.ghlService.getValidAccessToken(userId);
+    if (!locationId) {
+      throw new BadRequestException('GHL location is missing — reconnect GoHighLevel');
+    }
+    if (!contactId?.trim()) {
+      throw new BadRequestException('contactId is required');
+    }
+
+    const res = await this.ghlService.ghlRequest<{ conversationId?: string; id?: string }>(
+      userId,
+      'POST',
+      '/conversations/',
+      { locationId, contactId: contactId.trim() },
+    );
+
+    const conversationId = res.conversationId ?? res.id;
+    if (!conversationId) {
+      throw new BadRequestException('GHL did not return a conversation ID');
+    }
+
+    return { conversationId };
+  }
+
   // ── Resolve GHL user ID ─────────────────────────────────────────────────
 
   /**
@@ -252,22 +329,26 @@ export class GhlConversationsService {
     // Check cache first
     const cached = this.ghlUserIdCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) {
-      return { ghlUserId: cached.ghlUserId };
+      return cached.identity;
     }
 
     try {
       const { locationId } = await this.ghlService.getValidAccessToken(userId);
-      if (!locationId) return null;
+      if (!locationId) {
+        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
+        return null;
+      }
 
       const raw = await this.ghlService.ghlRequest<GhlRawUsersSearchResponse>(
         userId,
         'GET',
-        `/users/search?locationId=${locationId}&limit=100`,
+        `/users/?locationId=${locationId}`,
       );
 
       const users = raw.users ?? [];
       if (users.length === 0) {
         this.logger.warn(`No GHL users found for location ${locationId}`);
+        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
         return null;
       }
 
@@ -277,12 +358,6 @@ export class GhlConversationsService {
       if (users.length === 1) {
         matched = users[0];
       } else {
-        // Attempt email match — we need the app user's email from the DB.
-        // The GhlService has access to Prisma via getValidAccessToken, but
-        // we don't expose the user record here. For now, return the first
-        // user if we can't narrow further. The frontend can also provide
-        // the GHL user ID manually.
-        // TODO: enhance with email matching once user email is accessible
         matched = users[0];
         this.logger.log(
           `Multiple GHL users (${users.length}) found for location ${locationId}, ` +
@@ -290,24 +365,30 @@ export class GhlConversationsService {
         );
       }
 
-      if (!matched?.id) return null;
+      if (!matched?.id) {
+        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
+        return null;
+      }
 
-      // Cache the resolved ID
-      this.ghlUserIdCache.set(userId, {
-        ghlUserId: matched.id,
-        expiresAt: Date.now() + GhlConversationsService.USER_ID_CACHE_TTL_MS,
-      });
-
-      return {
+      const identity: GhlUserIdentity = {
         ghlUserId: matched.id,
         name: matched.name ?? ([matched.firstName, matched.lastName].filter(Boolean).join(' ') || undefined),
         email: matched.email,
       };
+
+      // Cache the resolved ID
+      this.ghlUserIdCache.set(userId, {
+        identity,
+        expiresAt: Date.now() + GhlConversationsService.USER_ID_CACHE_TTL_MS,
+      });
+
+      return identity;
     } catch (err) {
-      // Graceful degradation — users.readonly scope may not be granted
+      // Graceful degradation — users.readonly scope may not be granted on older connections
       this.logger.warn(
         `Failed to resolve GHL user ID for user ${userId}: ${(err as Error).message}`,
       );
+      this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
       return null;
     }
   }
@@ -316,13 +397,14 @@ export class GhlConversationsService {
 
   private toConversationSummary(raw: GhlRawConversation): GhlConversationSummary {
     const contactName = raw.fullName || raw.contactName || 'Unknown Contact';
+    const channel = this.mapGhlChannel(raw.type, raw.lastMessageType);
     return {
       id: raw.id ?? '',
       contactId: raw.contactId ?? '',
       contactName: contactName.trim(),
       contactEmail: raw.email,
       contactPhone: raw.phone,
-      channel: raw.type ?? raw.lastMessageType,
+      channel,
       lastMessageBody: raw.lastMessageBody,
       lastMessageDirection: undefined, // GHL conversations endpoint typically doesn't give direction directly
       lastMessageType: raw.lastMessageType,
@@ -331,8 +413,24 @@ export class GhlConversationsService {
       starred: raw.starred,
       assignedTo: raw.assignedTo,
       followers: Array.isArray(raw.followers) ? raw.followers : undefined,
-      inbox: raw.inbox,
+      inbox: typeof raw.inbox === 'boolean' ? String(raw.inbox) : raw.inbox,
     };
+  }
+
+  private mapGhlChannel(type: string | number | undefined, lastMessageType?: string): string | undefined {
+    if (typeof type === 'string') return type;
+    if (typeof type === 'number') {
+      switch (type) {
+        case 1: return 'TYPE_PHONE';
+        case 2: return 'TYPE_EMAIL';
+        case 3: return 'TYPE_FB_MESSENGER';
+        case 4: return 'TYPE_REVIEW';
+        case 5: return 'TYPE_GROUP_SMS';
+        case 6: return 'TYPE_INTERNAL_COMMENT';
+        default: return lastMessageType ?? `TYPE_${type}`;
+      }
+    }
+    return lastMessageType;
   }
 
   private toMessageSummary(raw: GhlRawMessage, fallbackConversationId: string): GhlMessageSummary {

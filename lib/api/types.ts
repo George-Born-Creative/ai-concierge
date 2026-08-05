@@ -354,6 +354,23 @@ export type ListGhlConversationMessagesParams = {
   lastMessageId?: string;
 };
 
+export type SendGhlMessageRequest = {
+  type: 'SMS' | 'Email' | 'InternalComment' | 'WhatsApp' | 'Live_Chat' | 'FB' | 'IG' | 'Custom';
+  contactId?: string;
+  conversationId?: string;
+  message: string;
+  subject?: string;
+  html?: string;
+  attachments?: string[];
+};
+
+export type SendGhlMessageResponse = {
+  conversationId?: string;
+  messageId?: string;
+  msgId?: string;
+  success?: boolean;
+};
+
 // ─── HubSpot OAuth ───────────────────────────────────────────────────────────
 
 export type HubspotAuthUrlResponse = {

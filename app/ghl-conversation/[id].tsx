@@ -7,6 +7,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -18,7 +19,7 @@ import {
   UiSpacing,
   UiTypography,
 } from '@/constants/theme';
-import { getConversation, listConversationMessages, updateConversation } from '@/lib/api/ghl';
+import { getConversation, listConversationMessages, sendMessage, updateConversation } from '@/lib/api/ghl';
 import type { GhlConversationSummary, GhlMessageSummary } from '@/lib/api/types';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
@@ -63,6 +64,11 @@ export default function GhlConversationDetailScreen() {
   const [messages, setMessages] = useState<GhlMessageSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Send message state
+  const [inputText, setInputText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [isInternalComment, setIsInternalComment] = useState(false);
 
   const fetchDetails = useCallback(async () => {
     if (!id) return;
@@ -123,21 +129,84 @@ export default function GhlConversationDetailScreen() {
     }
   }
 
+  // ─── Send message handler ────────────────────────────────────────────────
+  async function handleSend() {
+    const text = inputText.trim();
+    if (!text || !id || sending) return;
+
+    setSending(true);
+    setInputText('');
+
+    const messageType = isInternalComment ? 'InternalComment' : 'SMS';
+
+    // Optimistic message append
+    const tempMsg: GhlMessageSummary = {
+      id: `temp-${Date.now()}`,
+      conversationId: id,
+      contactId: conversation?.contactId,
+      direction: 'outbound',
+      type: messageType,
+      body: text,
+      attachments: [],
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, tempMsg]);
+
+    try {
+      await sendMessage({
+        type: messageType,
+        conversationId: id,
+        contactId: conversation?.contactId,
+        message: text,
+      });
+      // Refetch messages to get true server state
+      fetchDetails();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send message');
+      // Remove optimistic message on error
+      setMessages((prev) => prev.filter((m) => m.id !== tempMsg.id));
+    } finally {
+      setSending(false);
+    }
+  }
+
   // ─── Render message bubble ───────────────────────────────────────────────
   function renderMessage({ item }: { item: GhlMessageSummary }) {
     const isOutbound = item.direction === 'outbound';
+    const isInternal = item.type === 'InternalComment' || item.type === 'TYPE_INTERNAL_COMMENT';
 
     return (
       <View style={[styles.messageWrapper, isOutbound ? styles.messageWrapperOutbound : styles.messageWrapperInbound]}>
         <View style={[
           styles.messageBubble,
-          isOutbound ? [styles.messageBubbleOutbound, { backgroundColor: colors.primary }] : [styles.messageBubbleInbound, { backgroundColor: colors.surface }]
+          isInternal
+            ? [styles.messageBubbleInternal, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }]
+            : isOutbound
+            ? [styles.messageBubbleOutbound, { backgroundColor: colors.primary }]
+            : [styles.messageBubbleInbound, { backgroundColor: colors.surface }]
         ]}>
-          <Text style={[styles.messageText, isOutbound ? styles.messageTextOutbound : { color: colors.textPrimary }]}>
+          {isInternal && (
+            <Text style={[styles.internalBadge, { color: '#B45309' }]}>Internal Comment</Text>
+          )}
+          <Text style={[
+            styles.messageText,
+            isInternal
+              ? { color: '#92400E' }
+              : isOutbound
+              ? styles.messageTextOutbound
+              : { color: colors.textPrimary }
+          ]}>
             {item.body || (item.attachments?.length ? '[Attachment]' : '')}
           </Text>
           {item.createdAt && (
-            <Text style={[styles.messageTime, isOutbound ? styles.messageTimeOutbound : { color: colors.textMuted }]}>
+            <Text style={[
+              styles.messageTime,
+              isInternal
+                ? { color: '#B45309' }
+                : isOutbound
+                ? styles.messageTimeOutbound
+                : { color: colors.textMuted }
+            ]}>
               {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </Text>
           )}
@@ -209,6 +278,59 @@ export default function GhlConversationDetailScreen() {
               </Text>
             }
           />
+
+          {/* Chat input bar */}
+          <View style={[styles.inputBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+            {/* Mode toggle button */}
+            <Pressable
+              onPress={() => setIsInternalComment(!isInternalComment)}
+              style={[
+                styles.modeToggle,
+                isInternalComment
+                  ? { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }
+                  : { backgroundColor: colors.background, borderColor: colors.border }
+              ]}
+            >
+              <MaterialIcons
+                name={isInternalComment ? 'lock' : 'send'}
+                size={16}
+                color={isInternalComment ? '#B45309' : colors.textMuted}
+              />
+              <Text style={[
+                styles.modeToggleText,
+                { color: isInternalComment ? '#B45309' : colors.textMuted }
+              ]}>
+                {isInternalComment ? 'Internal' : 'SMS'}
+              </Text>
+            </Pressable>
+
+            {/* Input field */}
+            <TextInput
+              style={[styles.textInput, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
+              placeholder={isInternalComment ? 'Type an internal note...' : 'Type a message...'}
+              placeholderTextColor={colors.textMuted}
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={2000}
+            />
+
+            {/* Send button */}
+            <Pressable
+              onPress={handleSend}
+              disabled={sending || !inputText.trim()}
+              style={[
+                styles.sendBtn,
+                { backgroundColor: inputText.trim() && !sending ? colors.primary : colors.border }
+              ]}
+            >
+              {sending ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <MaterialIcons name="arrow-upward" size={20} color="#FFF" />
+              )}
+            </Pressable>
+          </View>
         </View>
       )}
     </ScreenShell>
@@ -315,5 +437,55 @@ const styles = StyleSheet.create({
   retryBtnText: {
     color: '#FFF',
     fontWeight: '600',
+  },
+  inputBar: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    maxWidth: 720,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
+    width: '100%',
+  },
+  modeToggle: {
+    alignItems: 'center',
+    borderRadius: UiRadii.pill ?? 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  modeToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  textInput: {
+    borderRadius: UiRadii.control,
+    borderWidth: 1,
+    flex: 1,
+    fontSize: UiTypography.bodySmall.fontSize,
+    maxHeight: 100,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  sendBtn: {
+    alignItems: 'center',
+    borderRadius: 20,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  messageBubbleInternal: {
+    borderWidth: 1,
+  },
+  internalBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 2,
+    textTransform: 'uppercase',
   },
 });

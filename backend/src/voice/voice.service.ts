@@ -80,6 +80,7 @@ const SUPPORTED_INTENTS = [
   'list_conversations',
   'find_conversation',
   'read_conversation',
+  'send_message',
   'create_note',
   'create_task',
   'create_deal',
