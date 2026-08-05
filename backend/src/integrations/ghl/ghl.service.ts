@@ -40,6 +40,8 @@ const DEFAULT_SCOPES = [
   'conversations/message.write',
   'conversations/reports.readonly',
   'conversations/livechat.write',
+  'users.readonly',
+  'users.write',
 ].join(' ');
 const STATE_PURPOSE = 'ghl-oauth-state';
 const STATE_TTL = '10m';

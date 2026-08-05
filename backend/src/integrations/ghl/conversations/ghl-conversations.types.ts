@@ -61,3 +61,10 @@ export type GhlUserIdentity = {
   name?: string;
   email?: string;
 };
+
+export type GhlSendMessageResult = {
+  conversationId?: string;
+  messageId?: string;
+  msgId?: string;
+  success?: boolean;
+};

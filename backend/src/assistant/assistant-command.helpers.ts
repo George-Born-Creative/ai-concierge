@@ -1125,3 +1125,39 @@ export function extractConversationRead(
     contactName: entityString(entities, 'contactName', 'contact_name', 'query'),
   };
 }
+
+export function extractSendMessageDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  const recipient =
+    entityString(entities, 'recipient', 'contactName', 'contact_name', 'to', 'name') ||
+    buildNameFromEntities(entities) ||
+    entityString(entities, 'phone', 'contactPhone', 'contact_phone', 'email', 'contactEmail') ||
+    '';
+
+  const text =
+    entityString(entities, 'message', 'text', 'body', 'content', 'messageBody', 'message_body') ||
+    '';
+
+  const conversationId = entityString(entities, 'conversationId', 'conversation_id');
+  const contactId = entityString(entities, 'contactId', 'contact_id');
+
+  const rawType = entityString(entities, 'type', 'channel', 'messageType', 'message_type')?.toUpperCase();
+  let type: 'SMS' | 'Email' | 'InternalComment' | 'WhatsApp' | 'Live_Chat' | 'FB' | 'IG' | 'Custom' = 'SMS';
+  if (rawType?.includes('EMAIL')) type = 'Email';
+  else if (rawType?.includes('INTERNAL') || rawType?.includes('COMMENT') || rawType?.includes('NOTE')) type = 'InternalComment';
+  else if (rawType?.includes('WHATSAPP')) type = 'WhatsApp';
+  else if (rawType?.includes('LIVE') || rawType?.includes('CHAT')) type = 'Live_Chat';
+  else if (rawType?.includes('FB') || rawType?.includes('FACEBOOK')) type = 'FB';
+  else if (rawType?.includes('IG') || rawType?.includes('INSTAGRAM')) type = 'IG';
+
+  return {
+    recipient,
+    text,
+    conversationId,
+    contactId,
+    type,
+    subject: entityString(entities, 'subject', 'title'),
+  };
+}
+

@@ -147,7 +147,7 @@ async function executeWithHeuristics(command: string): Promise<AssistantCommandR
 
   return {
     response:
-      'I can handle contacts and calendars in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", or "book Sarah tomorrow at 2pm".',
+      'I can handle contacts, calendars, and conversations in GoHighLevel. Try "pull up my contacts", "show my conversations", "send a message to John saying hello", or "book Sarah tomorrow at 2pm".',
     status: 'error',
   };
 }
