@@ -491,8 +491,15 @@ export class AssistantCommandService {
         status: 'success',
       };
     } catch (err: any) {
-      this.logger.error(`sendMessageFromDetails failed for user ${userId}: ${err.message}`, err.stack);
-      return { response: `Failed to send message: ${err.message}`, status: 'error' };
+      const errMsg = err?.message || String(err);
+      this.logger.error(`sendMessageFromDetails failed for user ${userId}: ${errMsg}`, err.stack);
+      if (errMsg.includes('phone number') || errMsg.includes('CONVERSATIONS_MSG_NO_PHONE')) {
+        return {
+          response: `Could not send SMS: The contact "${details.recipient || 'recipient'}" does not have a phone number saved in GoHighLevel.`,
+          status: 'error',
+        };
+      }
+      return { response: `Failed to send message: ${errMsg}`, status: 'error' };
     }
   }
 

@@ -274,14 +274,23 @@ export class GhlConversationsService {
     if (dto.html) body.html = dto.html;
     if (dto.attachments?.length) body.attachments = dto.attachments;
 
-    const res = await this.ghlService.ghlRequest<GhlSendMessageResult>(
-      userId,
-      'POST',
-      '/conversations/messages',
-      body,
-    );
-
-    return res;
+    try {
+      const res = await this.ghlService.ghlRequest<GhlSendMessageResult>(
+        userId,
+        'POST',
+        '/conversations/messages',
+        body,
+      );
+      return res;
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('Missing phone number') || errMsg.includes('CONVERSATIONS_MSG_NO_PHONE')) {
+        throw new BadRequestException(
+          'Cannot send SMS: The contact has no phone number saved in GoHighLevel. Add a phone number or select Email / Internal Comment.',
+        );
+      }
+      throw err;
+    }
   }
 
   // ── Create conversation ──────────────────────────────────────────────────
