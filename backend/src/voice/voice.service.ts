@@ -6,6 +6,7 @@ import OpenAI, { APIError, toFile } from 'openai';
 
 import { OpenAIKeysService } from '../openai-keys/openai-keys.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { GrammarCorrectorService } from './grammar-corrector.service';
 
 // Whisper currently caps single uploads at 25 MB. We enforce client-side
 // before bothering OpenAI; the FileInterceptor also rejects above the same
@@ -108,6 +109,8 @@ export type VoiceIntentPayload = {
  */
 export type TranscribeResult = {
   transcript: string;
+  rawTranscript: string;
+  correctedTranscript: string;
 };
 
 const NORMALIZER_SYSTEM_PROMPT = `You interpret casual spoken or typed commands for a GoHighLevel CRM assistant. Users speak in everyday English — not rigid command templates.
@@ -290,6 +293,7 @@ export class VoiceService {
     private readonly keys: OpenAIKeysService,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly grammarCorrector: GrammarCorrectorService,
   ) {}
 
   // Audio file → transcript via OpenAI's STT endpoint. Uses the user's own
@@ -424,28 +428,34 @@ export class VoiceService {
     userId: string,
     rawText: string,
   ): Promise<TranscribeResult> {
-    const transcript = reconstructSpokenEmailsInText(rawText.trim());
+    const rawTranscript = reconstructSpokenEmailsInText(rawText.trim());
 
-    if (!transcript) {
+    if (!rawTranscript) {
       await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_empty' });
-      return { transcript: '' };
+      return { transcript: '', rawTranscript: '', correctedTranscript: '' };
     }
 
-    // Whisper / gpt-4o-mini-transcribe routinely hallucinate a short stock
-    // phrase ("you", "Thank you.", "Bye.", "Thanks for watching") when handed
-    // silence or background noise. Treat those as no-speech so the caller
-    // surfaces "voice not detected" instead of running a phantom command.
-    if (isLikelyHallucination(transcript)) {
+    if (isLikelyHallucination(rawTranscript)) {
       await this.audit(userId, 'voice.transcribe', 'success', {
         stage: 'whisper_noise',
-        transcript,
+        transcript: rawTranscript,
       });
-      return { transcript: '' };
+      return { transcript: '', rawTranscript, correctedTranscript: '' };
     }
 
-    await this.audit(userId, 'voice.transcribe', 'success', { stage: 'whisper_only' });
+    const correctedTranscript = await this.grammarCorrector.correctGrammar(rawTranscript, userId);
 
-    return { transcript };
+    await this.audit(userId, 'voice.transcribe', 'success', {
+      stage: 'whisper_and_grammar_correction',
+      rawTranscript,
+      correctedTranscript,
+    });
+
+    return {
+      transcript: correctedTranscript || rawTranscript,
+      rawTranscript,
+      correctedTranscript: correctedTranscript || rawTranscript,
+    };
   }
 
   async interpret(userId: string, text: string): Promise<VoiceIntentPayload> {
