@@ -787,6 +787,17 @@ function isLikelyHallucination(transcript: string): boolean {
   const normalized = normalizeForMatch(transcript);
   if (!normalized) return true;
   if (WHISPER_HALLUCINATIONS.has(normalized)) return true;
+  // Catch Whisper noise hallucinations where Whisper outputs canned AI refusal phrases on silence
+  if (
+    normalized.includes('cant assist') ||
+    normalized.includes('cannot assist') ||
+    normalized.includes('cant help with that') ||
+    normalized.includes('cannot help with that') ||
+    normalized.startsWith('im sorry') ||
+    normalized.startsWith('i am sorry')
+  ) {
+    return true;
+  }
   // On silence/noise the model routinely parrots our `prompt` back — either in
   // full ("english speech only crm voice commands …") or a leading fragment.
   // "crm voice commands" never appears in genuine user speech, so any echo of

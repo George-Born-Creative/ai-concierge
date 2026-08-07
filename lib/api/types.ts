@@ -525,6 +525,8 @@ export type VoiceIntent = {
  */
 export type TranscribeResponse = {
   transcript: string;
+  rawTranscript?: string;
+  correctedTranscript?: string;
 };
 
 // ─── Assistant conversations ─────────────────────────────────────────────────
@@ -563,6 +565,8 @@ export type AssistantMessage = {
   status: 'success' | 'error';
   source: 'text' | 'voice';
   transcript?: string;
+  rawTranscript?: string;
+  correctedTranscript?: string;
   intent?: VoiceIntent;
   voiceUri?: string;
   pending?: boolean;
@@ -581,6 +585,8 @@ export type RunAssistantCommandRequest = {
   text: string;
   source?: 'text' | 'voice';
   transcript?: string;
+  rawTranscript?: string;
+  correctedTranscript?: string;
   voiceUri?: string;
   intent?: VoiceIntent;
 };

@@ -360,10 +360,6 @@ function CommandBubble({
   const canCopyResponse = !entry.pending && Boolean(entry.response?.trim());
   const canEdit = Boolean(onEdit) && !entry.pending;
 
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(userText);
-  const [savingEdit, setSavingEdit] = useState(false);
-
   // Typewriter the assistant response, but only when it's a *fresh*
   // arrival — i.e. the bubble just transitioned from pending=true to
   // pending=false. Old responses (loaded from server history on chat
@@ -401,6 +397,11 @@ function CommandBubble({
     }
     wasTranscribingRef.current = isTranscribing;
   }, [entry.source, entry.transcript]);
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(userText);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [showRawSpeech, setShowRawSpeech] = useState(false);
 
   useEffect(() => {
     if (!editing) setDraft(userText);
@@ -494,6 +495,30 @@ function CommandBubble({
             </Text>
           )}
         </View>
+        {entry.rawTranscript &&
+          entry.rawTranscript.trim().toLowerCase() !== userText.trim().toLowerCase() && (
+            <View style={styles.rawSpeechContainer}>
+              <Pressable
+                onPress={() => setShowRawSpeech((prev) => !prev)}
+                hitSlop={6}
+                style={styles.rawSpeechToggle}>
+                <MaterialIcons
+                  name={showRawSpeech ? 'expand-less' : 'spellcheck'}
+                  size={14}
+                  color="rgba(255, 255, 255, 0.85)"
+                />
+                <Text style={styles.rawSpeechToggleText}>
+                  {showRawSpeech ? 'Hide raw speech' : 'Corrected (show raw)'}
+                </Text>
+              </Pressable>
+              {showRawSpeech && (
+                <View style={styles.rawSpeechBox}>
+                  <Text style={styles.rawSpeechLabel}>Original raw speech:</Text>
+                  <Text style={styles.rawSpeechText}>{entry.rawTranscript}</Text>
+                </View>
+              )}
+            </View>
+          )}
         {editing ? null : (
           <View style={styles.userMetaRow}>
             {canEdit && userText ? (
@@ -640,7 +665,10 @@ function voiceUserText(entry: AssistantHistoryEntry): string {
     return entry.command;
   }
 
-  const transcript = entry.transcript?.trim() || entry.command.trim();
+  const transcript =
+    entry.correctedTranscript?.trim() ||
+    entry.transcript?.trim() ||
+    entry.command.trim();
   if (transcript && transcript !== 'Voice message') {
     return transcript;
   }
@@ -981,5 +1009,39 @@ const styles = StyleSheet.create({
     fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
     lineHeight: UiTypography.label.lineHeight,
+  },
+  rawSpeechContainer: {
+    alignSelf: 'flex-end',
+    marginTop: UiSpacing.xxs,
+  },
+  rawSpeechToggle: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  rawSpeechToggleText: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  rawSpeechBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+    borderRadius: UiRadii.control,
+    marginTop: 4,
+    padding: UiSpacing.xs,
+  },
+  rawSpeechLabel: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 10,
+    fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  rawSpeechText: {
+    color: '#FFFFFF',
+    fontSize: UiTypography.caption.fontSize,
+    fontStyle: 'italic',
   },
 });

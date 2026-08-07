@@ -7,6 +7,7 @@ import { ConversationService } from '../conversation/conversation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VoiceService } from '../voice/voice.service';
 import { AssistantCommandService } from './assistant-command.service';
+import { looksLikeCapabilityQuestion } from './assistant-capabilities';
 import {
   isFollowUpAnswer,
   isPendingIntentValid,
@@ -355,6 +356,25 @@ export class AssistantService {
     const pendingTask = isPendingIntentValid(sessionContext.pendingIntent ?? null)
       ? sessionContext.pendingIntent ?? null
       : null;
+
+    if (looksLikeCapabilityQuestion(text)) {
+      return {
+        userId,
+        conversationId,
+        conversationTitle: conversation.title,
+        pendingMessageId: pending.id,
+        text,
+        source,
+        dto,
+        baseline: this.commands.describeCapabilities(),
+        intent: dto.intent,
+        ranActionableIntent: false,
+        historyTurns,
+        sessionContext,
+        mode: 'action',
+        pendingTask,
+      };
+    }
 
     // The user might be (a) answering a pending question, (b) asking a brand-new
     // CRM action, or (c) just chatting / asking a tangent question. We resolve

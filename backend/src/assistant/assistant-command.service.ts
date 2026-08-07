@@ -57,6 +57,7 @@ import type {
   AssistantSessionContext,
   VoiceIntentPayload
 } from './assistant.types';
+import { VOICE_ASSISTANT_CAPABILITIES_RESPONSE } from './assistant-capabilities';
 
 @Injectable()
 export class AssistantCommandService {
@@ -115,6 +116,14 @@ export class AssistantCommandService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
   ) {}
+
+  describeCapabilities(): AssistantCommandResult {
+    return {
+      response: VOICE_ASSISTANT_CAPABILITIES_RESPONSE,
+      status: 'success',
+      preservePendingIntent: true,
+    };
+  }
 
   async execute(
     userId: string,
