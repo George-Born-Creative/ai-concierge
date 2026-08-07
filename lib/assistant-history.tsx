@@ -43,6 +43,8 @@ export type AssistantHistoryEntry = {
   voiceUri?: string;
   pending?: boolean;
   transcript?: string;
+  rawTranscript?: string;
+  correctedTranscript?: string;
   intent?: VoiceIntent;
   /**
    * Live lifecycle phase for an in-flight (pending) command, driven by the
@@ -90,6 +92,8 @@ function mapMessage(message: AssistantMessage): AssistantHistoryEntry {
     voiceUri: message.voiceUri,
     pending: message.pending,
     transcript: message.transcript,
+    rawTranscript: message.rawTranscript,
+    correctedTranscript: message.correctedTranscript,
     intent: message.intent,
   };
 }
@@ -644,6 +648,8 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             return;
           }
           const transcript = transcribed.transcript?.trim() ?? '';
+          const rawTranscript = transcribed.rawTranscript?.trim() ?? transcript;
+          const correctedTranscript = transcribed.correctedTranscript?.trim() ?? transcript;
 
           if (!transcript) {
             // No real speech — silence/noise, a stock hallucination, or the
@@ -678,8 +684,10 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
                   m.id === optimisticId
                     ? {
                         ...m,
-                        command: transcript,
-                        transcript,
+                        command: correctedTranscript || transcript,
+                        transcript: correctedTranscript || transcript,
+                        rawTranscript,
+                        correctedTranscript,
                         response: 'Running your command…',
                       }
                     : m,
@@ -698,9 +706,11 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             convId,
             optimisticId,
             {
-              text: transcript,
+              text: correctedTranscript || transcript,
               source: 'voice',
-              transcript,
+              transcript: correctedTranscript || transcript,
+              rawTranscript,
+              correctedTranscript,
               voiceUri,
             },
             controller,

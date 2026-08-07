@@ -7,6 +7,7 @@ import { ConversationService } from '../conversation/conversation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VoiceService } from '../voice/voice.service';
 import { AssistantCommandService } from './assistant-command.service';
+import { looksLikeCapabilityQuestion } from './assistant-capabilities';
 import {
   isFollowUpAnswer,
   isPendingIntentValid,
@@ -51,6 +52,8 @@ export type AssistantMessageDto = {
   status: AssistantMessageStatus;
   source: AssistantMessageSource;
   transcript?: string;
+  rawTranscript?: string;
+  correctedTranscript?: string;
   intent?: unknown;
   voiceUri?: string;
   pending: boolean;
@@ -304,8 +307,10 @@ export class AssistantService {
     onPhase?: (phase: AssistantPhase) => void,
   ): Promise<PreparedCommand> {
     const conversation = await this.requireConversation(userId, conversationId);
-    const text = dto.text.trim();
     const source: AssistantMessageSource = dto.source === 'voice' ? 'voice' : 'text';
+    const rawTranscript = dto.rawTranscript ?? (source === 'voice' ? dto.transcript || dto.text : undefined);
+    const correctedTranscript = dto.correctedTranscript ?? (source === 'voice' ? dto.text : undefined);
+    const text = (correctedTranscript || dto.text).trim();
 
     const pending = await this.prisma.assistantMessage.create({
       data: {
@@ -314,7 +319,9 @@ export class AssistantService {
         response: 'Running your command…',
         status: AssistantMessageStatus.success,
         source,
-        transcript: dto.transcript,
+        transcript: dto.transcript ?? correctedTranscript ?? rawTranscript,
+        rawTranscript,
+        correctedTranscript,
         voiceUri: dto.voiceUri,
         pending: true,
       },
@@ -349,6 +356,25 @@ export class AssistantService {
     const pendingTask = isPendingIntentValid(sessionContext.pendingIntent ?? null)
       ? sessionContext.pendingIntent ?? null
       : null;
+
+    if (looksLikeCapabilityQuestion(text)) {
+      return {
+        userId,
+        conversationId,
+        conversationTitle: conversation.title,
+        pendingMessageId: pending.id,
+        text,
+        source,
+        dto,
+        baseline: this.commands.describeCapabilities(),
+        intent: dto.intent,
+        ranActionableIntent: false,
+        historyTurns,
+        sessionContext,
+        mode: 'action',
+        pendingTask,
+      };
+    }
 
     // The user might be (a) answering a pending question, (b) asking a brand-new
     // CRM action, or (c) just chatting / asking a tangent question. We resolve
@@ -734,6 +760,8 @@ export class AssistantService {
       status: AssistantMessageStatus;
       source: AssistantMessageSource;
       transcript: string | null;
+      rawTranscript?: string | null;
+      correctedTranscript?: string | null;
       intent: unknown;
       voiceUri: string | null;
       pending: boolean;
@@ -756,6 +784,8 @@ export class AssistantService {
     status: AssistantMessageStatus;
     source: AssistantMessageSource;
     transcript: string | null;
+    rawTranscript?: string | null;
+    correctedTranscript?: string | null;
     intent: unknown;
     voiceUri: string | null;
     pending: boolean;
@@ -768,6 +798,8 @@ export class AssistantService {
       status: message.status,
       source: message.source,
       transcript: message.transcript ?? undefined,
+      rawTranscript: message.rawTranscript ?? undefined,
+      correctedTranscript: message.correctedTranscript ?? undefined,
       intent: message.intent ?? undefined,
       voiceUri: message.voiceUri ?? undefined,
       pending: message.pending,

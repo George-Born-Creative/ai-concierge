@@ -20,7 +20,8 @@
     "prisma:studio": "prisma studio",
     "seed": "ts-node --project prisma/tsconfig.json prisma/seed.ts",
     "test:support-diagnostics": "npm run build && node --test test/support-diagnostics.test.js",
-    "test:twilio-verification": "npm run build && node --test test/twilio-verification.test.js"
+    "test:twilio-verification": "npm run build && node --test test/twilio-verification.test.js",
+    "test:assistant-capabilities": "npm run build && node --test test/assistant-capabilities.test.js"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^3.1.0",

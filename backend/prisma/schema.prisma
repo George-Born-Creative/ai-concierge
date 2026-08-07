@@ -266,7 +266,9 @@ model AssistantMessage {
   response       String                   @default("")
   status         AssistantMessageStatus   @default(success)
   source         AssistantMessageSource   @default(text)
-  transcript     String?
+  transcript          String?
+  rawTranscript       String?
+  correctedTranscript String?
   intent         Json?
   voiceUri       String?
   pending        Boolean                  @default(false)
