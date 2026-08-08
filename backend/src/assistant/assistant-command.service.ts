@@ -2,13 +2,11 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { CrmProvider } from '@prisma/client';
 
 import { CRM_LABELS, crmLabel, crmLabelList } from '../common/crm-labels';
-import type {
-  GhlAppointmentSummary,
-  GhlOpportunitySummary,
-  GhlPipelineSummary,
-} from '../integrations/ghl/ghl.service';
+import type { GhlAppointmentSummary } from '../integrations/ghl/appointments/appointments.type';
+import type { GhlOpportunitySummary } from '../integrations/ghl/opportunities/opportunities.type';
+import type { GhlPipelineSummary } from '../integrations/ghl/pipelines/pipelines.type';
 import { GhlService } from '../integrations/ghl/ghl.service';
-import { GhlConversationsService } from '../integrations/ghl/conversations/ghl-conversations.service';
+import { ConversationsService } from '../integrations/ghl/conversations/conversations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { HubspotCommandService } from './hubspot-command.service';
@@ -111,7 +109,7 @@ export class AssistantCommandService {
 
   constructor(
     private readonly ghl: GhlService,
-    private readonly ghlConversations: GhlConversationsService,
+    private readonly ghlConversations: ConversationsService,
     private readonly hubspot: HubspotCommandService,
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,

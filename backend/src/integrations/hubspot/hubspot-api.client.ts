@@ -30,7 +30,7 @@ export type HubspotRequestInit = {
  * Thin HTTP helper for `api.hubapi.com`. Resolves a fresh access token via
  * `HubspotService.getValidAccessToken`, signs the request, and maps HubSpot's
  * error shape to friendly Nest exceptions in the same style as `ghlRequest`
- * (see `backend/src/integrations/ghl/ghl.service.ts#throwGhlHttpError`).
+ * (see `backend/src/integrations/ghl/shared/ghl-api.service.ts#throwGhlHttpError`).
  *
  * Resource services (contacts/deals/companies) inject this and never talk to
  * `fetch` directly — keeping authorisation, retry, and error UX in one place.

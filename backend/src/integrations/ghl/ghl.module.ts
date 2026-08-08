@@ -3,17 +3,27 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 
 import { AuthModule } from '../../auth/auth.module';
-import { GhlController } from './ghl.controller';
+import { AppointmentsController } from './appointments/appointments.controller';
+import { AppointmentsService } from './appointments/appointments.service';
+import { CalendarsController } from './calendars/calendars.controller';
+import { CalendarsService } from './calendars/calendars.service';
+import { ContactsController } from './contacts/contacts.controller';
+import { ContactsService } from './contacts/contacts.service';
+import { ConversationsController } from './conversations/conversations.controller';
+import { ConversationsService } from './conversations/conversations.service';
+import { GhlService } from './ghl.service';
+import { OpportunitiesController } from './opportunities/opportunities.controller';
+import { OpportunitiesService } from './opportunities/opportunities.service';
+import { PipelinesController } from './pipelines/pipelines.controller';
+import { PipelinesService } from './pipelines/pipelines.service';
+import { GhlApiService } from './shared/ghl-api.service';
 import {
+  GhlIntegrationController,
   GhlOAuthCallbackController,
   GhlRootOAuthCallbackController,
-} from './ghl-oauth-callback.controller';
-import { GhlService } from './ghl.service';
-import { GhlWebhookController } from './ghl-webhook.controller';
-import { GhlConversationsService } from './conversations/ghl-conversations.service';
+} from './shared/ghl-oauth-callback.controller';
+import { GhlWebhookController } from './shared/ghl-webhook.controller';
 
-// Reuses the global JWT_SECRET to sign short-lived OAuth `state` tokens.
-// Imports AuthModule so JwtStrategy is available for JwtAuthGuard on routes.
 @Module({
   imports: [
     AuthModule,
@@ -21,20 +31,33 @@ import { GhlConversationsService } from './conversations/ghl-conversations.servi
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const secret = config.get<string>('JWT_SECRET');
-        if (!secret) {
-          throw new Error('JWT_SECRET is not set');
-        }
+        if (!secret) throw new Error('JWT_SECRET is not set');
         return { secret };
       },
     }),
   ],
   controllers: [
-    GhlController,
+    GhlIntegrationController,
+    ContactsController,
+    CalendarsController,
+    AppointmentsController,
+    OpportunitiesController,
+    PipelinesController,
+    ConversationsController,
     GhlRootOAuthCallbackController,
     GhlOAuthCallbackController,
     GhlWebhookController,
   ],
-  providers: [GhlService, GhlConversationsService],
-  exports: [GhlService, GhlConversationsService],
+  providers: [
+    GhlApiService,
+    ContactsService,
+    CalendarsService,
+    AppointmentsService,
+    OpportunitiesService,
+    PipelinesService,
+    ConversationsService,
+    GhlService,
+  ],
+  exports: [GhlService, ConversationsService],
 })
 export class GhlModule {}
