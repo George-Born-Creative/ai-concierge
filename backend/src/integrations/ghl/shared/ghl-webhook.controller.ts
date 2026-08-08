@@ -15,8 +15,8 @@ import { ConfigService } from '@nestjs/config';
 import { CrmProvider } from '@prisma/client';
 import type { Request } from 'express';
 
-import { PrismaService } from '../../prisma/prisma.service';
-import { RealtimeService } from '../../realtime/realtime.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { RealtimeService } from '../../../realtime/realtime.service';
 
 type GhlEvent = {
   type?: string;

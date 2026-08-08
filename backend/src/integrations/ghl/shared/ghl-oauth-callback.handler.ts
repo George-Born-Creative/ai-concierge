@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { Response } from 'express';
 
-import { GhlCallbackQueryDto } from './dto/callback.query.dto';
-import { GhlService } from './ghl.service';
+import { GhlCallbackQueryDto } from '../dto/callback.query.dto';
+import { GhlService } from '../ghl.service';
 import { buildDeepLink } from './oauth-redirect-page';
 
 const logger = new Logger('GhlOAuthCallback');

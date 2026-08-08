@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { GhlService } from '../ghl.service';
+import { GhlApiService } from '../shared/ghl-api.service';
 import { ListConversationMessagesQueryDto } from './dto/list-conversation-messages.query.dto';
 import { ListConversationsQueryDto } from './dto/list-conversations.query.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -12,7 +12,7 @@ import {
   GhlSendMessageResult,
   GhlUpdateConversationResult,
   GhlUserIdentity,
-} from './ghl-conversations.types';
+} from './conversations.type';
 
 // ── GHL raw response shapes ─────────────────────────────────────────────────
 
@@ -81,8 +81,8 @@ type GhlRawUsersSearchResponse = {
 // ── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
-export class GhlConversationsService {
-  private readonly logger = new Logger(GhlConversationsService.name);
+export class ConversationsService {
+  private readonly logger = new Logger(ConversationsService.name);
 
   /**
    * In-memory cache for resolved GHL user IDs.
@@ -94,7 +94,7 @@ export class GhlConversationsService {
   private static readonly USER_ID_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
   private static readonly USER_ID_FAIL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache for un-scoped/failed lookups
 
-  constructor(private readonly ghlService: GhlService) { }
+  constructor(private readonly ghlService: GhlApiService) { }
 
   // ── Search / List ───────────────────────────────────────────────────────
 
@@ -335,7 +335,7 @@ export class GhlConversationsService {
     try {
       const { locationId } = await this.ghlService.getValidAccessToken(userId);
       if (!locationId) {
-        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
+        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + ConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
         return null;
       }
 
@@ -348,7 +348,7 @@ export class GhlConversationsService {
       const users = raw.users ?? [];
       if (users.length === 0) {
         this.logger.warn(`No GHL users found for location ${locationId}`);
-        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
+        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + ConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
         return null;
       }
 
@@ -366,7 +366,7 @@ export class GhlConversationsService {
       }
 
       if (!matched?.id) {
-        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
+        this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + ConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
         return null;
       }
 
@@ -379,7 +379,7 @@ export class GhlConversationsService {
       // Cache the resolved ID
       this.ghlUserIdCache.set(userId, {
         identity,
-        expiresAt: Date.now() + GhlConversationsService.USER_ID_CACHE_TTL_MS,
+        expiresAt: Date.now() + ConversationsService.USER_ID_CACHE_TTL_MS,
       });
 
       return identity;
@@ -388,7 +388,7 @@ export class GhlConversationsService {
       this.logger.warn(
         `Failed to resolve GHL user ID for user ${userId}: ${(err as Error).message}`,
       );
-      this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + GhlConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
+      this.ghlUserIdCache.set(userId, { identity: null, expiresAt: Date.now() + ConversationsService.USER_ID_FAIL_CACHE_TTL_MS });
       return null;
     }
   }
