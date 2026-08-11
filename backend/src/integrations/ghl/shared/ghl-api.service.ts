@@ -15,7 +15,6 @@ import { decryptSecret, encryptSecret } from '../../../common/crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import type { GhlAppointmentSummary, GhlAppointmentsListResult } from '../appointments/appointments.type';
 import type { GhlCalendarSummary, GhlCalendarsListResult } from '../calendars/calendars.type';
-import type { GhlContactSummary, GhlContactsListResult } from '../contacts/contacts.type';
 import type {
   GhlOpportunitiesListResult,
   GhlOpportunityStatus,
@@ -32,6 +31,7 @@ const OAUTH_AUTHORIZE_URL = 'https://marketplace.gohighlevel.com/oauth/chooseloc
 const OAUTH_TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
 const GHL_API_BASE = 'https://services.leadconnectorhq.com';
 const GHL_API_VERSION = '2023-02-21';
+const GHL_CONTACTS_API_VERSION = '2021-07-28';
 /** Calendar / appointment routes require this version (contacts use GHL_API_VERSION). */
 const GHL_CALENDAR_API_VERSION = '2021-04-15';
 // Must match scopes enabled in Marketplace → Advanced Settings → Auth (e.g. Calendars section).
@@ -349,142 +349,6 @@ export class GhlApiService {
   }
 
   // ── Contacts (GHL CRM) ────────────────────────────────────────────────────────
-
-  async listContacts(
-    userId: string,
-    limit = 10,
-    query?: string,
-  ): Promise<GhlContactsListResult> {
-    const { locationId } = await this.getValidAccessToken(userId);
-    if (!locationId) {
-      throw new BadRequestException('GHL location is missing — reconnect GoHighLevel');
-    }
-
-    const params = new URLSearchParams({
-      locationId,
-      limit: String(limit),
-    });
-    if (query?.trim()) {
-      params.set('query', query.trim());
-    }
-
-    const raw = await this.ghlRequest<GhlRawListResponse>(
-      userId,
-      'GET',
-      `/contacts/?${params.toString()}`,
-    );
-
-    const contacts = (raw.contacts ?? [])
-      .map((contact) => this.toContactSummary(contact))
-      .sort((a, b) => this.contactSortKey(b) - this.contactSortKey(a));
-
-    return {
-      contacts,
-      meta: raw.meta
-        ? { total: raw.meta.total, startAfterId: raw.meta.startAfterId ?? null }
-        : undefined,
-    };
-  }
-
-  async createContact(
-    userId: string,
-    input: {
-      firstName?: string;
-      lastName?: string;
-      name?: string;
-      email?: string;
-      phone?: string;
-    },
-  ): Promise<GhlContactSummary> {
-    const { locationId } = await this.getValidAccessToken(userId);
-    if (!locationId) {
-      throw new BadRequestException('GHL location is missing — reconnect GoHighLevel');
-    }
-
-    const email = input.email?.trim();
-    const phone = input.phone?.trim();
-    const name = input.name?.trim();
-    const firstName = input.firstName?.trim();
-    const lastName = input.lastName?.trim();
-
-    if (!email && !phone) {
-      throw new BadRequestException('email or phone is required');
-    }
-    if (!name && !firstName) {
-      throw new BadRequestException('name or firstName is required');
-    }
-
-    const body: Record<string, string> = { locationId };
-    if (name) body.name = name;
-    if (firstName) body.firstName = firstName;
-    if (lastName) body.lastName = lastName;
-    if (email) body.email = email;
-    if (phone) body.phone = phone;
-
-    const raw = await this.ghlRequest<{ contact?: GhlRawContact }>(
-      userId,
-      'POST',
-      '/contacts/',
-      body,
-    );
-
-    const contact = raw.contact;
-    if (!contact?.id) {
-      throw new BadRequestException('GHL did not return the created contact');
-    }
-
-    await this.audit(userId, 'ghl.contact.create', 'success', { contactId: contact.id });
-    return this.toContactSummary(contact);
-  }
-
-  async deleteContact(userId: string, contactId: string): Promise<{ ok: true }> {
-    await this.ghlRequest(userId, 'DELETE', `/contacts/${contactId}`);
-    await this.audit(userId, 'ghl.contact.delete', 'success', { contactId });
-    return { ok: true };
-  }
-
-  async updateContact(
-    userId: string,
-    contactId: string,
-    input: {
-      firstName?: string;
-      lastName?: string;
-      name?: string;
-      email?: string;
-      phone?: string;
-    },
-  ): Promise<GhlContactSummary> {
-    if (!contactId?.trim()) {
-      throw new BadRequestException('contactId is required');
-    }
-    const body: Record<string, string> = {};
-    if (input.firstName?.trim()) body.firstName = input.firstName.trim();
-    if (input.lastName?.trim()) body.lastName = input.lastName.trim();
-    if (input.name?.trim()) body.name = input.name.trim();
-    if (input.email?.trim()) body.email = input.email.trim();
-    if (input.phone?.trim()) body.phone = input.phone.trim();
-    if (Object.keys(body).length === 0) {
-      throw new BadRequestException('Nothing to update — give me a field like phone, email, or name.');
-    }
-
-    const raw = await this.ghlRequest<{ contact?: GhlRawContact } & GhlRawContact>(
-      userId,
-      'PUT',
-      `/contacts/${contactId.trim()}`,
-      body,
-    );
-    const contact = raw.contact ?? raw;
-    if (!contact?.id) {
-      throw new BadRequestException('GHL did not return the updated contact');
-    }
-    await this.audit(userId, 'ghl.contact.update', 'success', {
-      contactId,
-      fields: Object.keys(body),
-    });
-    return this.toContactSummary(contact);
-  }
-
-  // ── Calendars (GHL) ───────────────────────────────────────────────────────────
 
   async listCalendars(userId: string): Promise<GhlCalendarsListResult> {
     const locationId = await this.requireLocationId(userId);
@@ -1163,7 +1027,9 @@ export class GhlApiService {
   }
 
   private ghlApiVersion(path: string): string {
-    return path.startsWith('/calendars') ? GHL_CALENDAR_API_VERSION : GHL_API_VERSION;
+    if (path.startsWith('/calendars')) return GHL_CALENDAR_API_VERSION;
+    if (path.startsWith('/contacts')) return GHL_CONTACTS_API_VERSION;
+    return GHL_API_VERSION;
   }
 
   private toCalendarSummary(calendar: GhlRawCalendar): GhlCalendarSummary {
@@ -1243,29 +1109,6 @@ export class GhlApiService {
     return (this.config.get<string>('GHL_SCOPES') || DEFAULT_SCOPES).split(' ').filter(Boolean);
   }
 
-  private toContactSummary(contact: GhlRawContact): GhlContactSummary {
-    const name =
-      contact.name ||
-      [contact.firstName, contact.lastName].filter(Boolean).join(' ') ||
-      contact.email ||
-      contact.phone ||
-      'Unknown';
-
-    return {
-      id: contact.id,
-      name,
-      phone: contact.phone,
-      email: contact.email,
-      dateAdded: contact.dateAdded,
-    };
-  }
-
-  private contactSortKey(contact: GhlContactSummary): number {
-    if (!contact.dateAdded) return 0;
-    const time = new Date(contact.dateAdded).getTime();
-    return Number.isNaN(time) ? 0 : time;
-  }
-
   private async requireLocationId(userId: string): Promise<string> {
     const { locationId } = await this.getValidAccessToken(userId);
     if (!locationId) {
@@ -1322,10 +1165,18 @@ export class GhlApiService {
       throw new BadRequestException('contact name or contactId is required');
     }
 
-    const matches = await this.listContacts(userId, 10, name);
+    const locationId = await this.requireLocationId(userId);
+    const matches = await this.ghlRequest<GhlRawListResponse>(
+      userId,
+      'POST',
+      '/contacts/search',
+      { locationId, page: 1, pageLimit: 10, query: name },
+    );
     const normalized = name.toLowerCase().replace(/[^\p{L}\p{N}@]+/gu, '');
-    const contact = matches.contacts.find((row) => {
-      const haystack = [row.name, row.phone, row.email]
+    const contact = (matches.contacts ?? []).find((row) => {
+      const displayName =
+        row.name || [row.firstName, row.lastName].filter(Boolean).join(' ');
+      const haystack = [displayName, row.phone, row.email]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -1334,11 +1185,12 @@ export class GhlApiService {
     });
 
     if (!contact) {
-      throw new BadRequestException(`No contact matching "${name}" — add them first or use their exact name`);
+      throw new BadRequestException(
+        `No contact matching "${name}" — add them first or use their exact name`,
+      );
     }
     return contact.id;
   }
-
   private resolveEventRange(startTime?: string, endTime?: string, days = 14) {
     const startMs = startTime ? Date.parse(startTime) : Date.now();
     if (Number.isNaN(startMs)) {
@@ -1848,7 +1700,7 @@ export class GhlApiService {
     return value;
   }
 
-  private async audit(
+  async audit(
     userId: string,
     action: string,
     status: 'success' | 'failure',

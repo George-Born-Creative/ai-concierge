@@ -155,19 +155,41 @@ export type GhlStatusResponse = {
   calendarScopesGranted?: boolean;
 };
 
+export type GhlContactCustomField = {
+  id?: string;
+  key?: string;
+  field_value: string | number | boolean | string[] | null;
+};
+
 export type GhlContactSummary = {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   phone?: string;
   email?: string;
+  companyName?: string;
+  address1?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  source?: string;
+  assignedTo?: string;
+  tags?: string[];
   dateAdded?: string;
+  dateUpdated?: string;
 };
 
 export type GhlContactsListResponse = {
   contacts: GhlContactSummary[];
   meta?: {
     total?: number;
+    currentPage?: number;
+    nextPage?: number | null;
+    pageLimit?: number;
     startAfterId?: string | null;
+    nextPageUrl?: string | null;
   };
 };
 
@@ -177,8 +199,31 @@ export type CreateGhlContactRequest = {
   name?: string;
   email?: string;
   phone?: string;
+  companyName?: string;
+  address1?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  website?: string;
+  timezone?: string;
+  source?: string;
+  assignedTo?: string;
+  tags?: string[];
+  customFields?: GhlContactCustomField[];
 };
 
+export type UpdateGhlContactRequest = {
+  [K in keyof CreateGhlContactRequest]?: CreateGhlContactRequest[K] | null;
+};
+
+export type SearchGhlContactsRequest = {
+  limit?: number;
+  page?: number;
+  query?: string;
+  filters?: Record<string, unknown>[];
+  sort?: { field: string; direction: 'asc' | 'desc' }[];
+};
 export type GhlOpportunitySummary = {
   id: string;
   name: string;
@@ -339,7 +384,6 @@ export type GhlConversationMessagesListResponse = {
 export type ListGhlConversationsParams = {
   limit?: number;
   query?: string;
-  startAfterId?: string;
   // New filter fields:
   status?: 'all' | 'read' | 'unread' | 'starred'; // GHL status filter
   assignedTo?: string; // GHL user ID or "unassigned"

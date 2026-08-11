@@ -12,4 +12,10 @@ export class ListContactsQueryDto {
   @IsOptional()
   @IsString()
   query?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
 }

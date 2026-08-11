@@ -844,14 +844,14 @@ export class AssistantCommandService {
   }
 
   private async listLatestContacts(userId: string): Promise<AssistantCommandResult> {
-    const result = await this.ghl.listContacts(userId, 10);
-    const summaries = result.contacts.filter((c) => c.name !== 'Unknown');
+    const result = await this.ghl.listAllContacts(userId);
+    const summaries = result.contacts;
     if (summaries.length === 0) {
       return { response: "You don't have any contacts in GoHighLevel yet.", status: 'success' };
     }
     return {
       response:
-        `Here are the contacts you've added most recently in GoHighLevel:\n${summaries
+        `Here are all ${summaries.length} contacts in GoHighLevel:\n${summaries
           .map((c) => this.formatContact(c))
           .join('\n')}\n\n` +
         "Want a closer look at someone? Just say their name and I'll pull up the details.",
@@ -896,7 +896,7 @@ export class AssistantCommandService {
     const parts = details.name.trim().split(/\s+/);
     const firstName = parts[0];
     const lastName = parts.length > 1 ? parts.slice(1).join(' ') : undefined;
-    const created = await this.ghl.createContact(userId, {
+    const created = await this.ghl.upsertContact(userId, {
       name: details.name,
       firstName,
       lastName,

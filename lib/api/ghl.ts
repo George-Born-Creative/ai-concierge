@@ -25,6 +25,8 @@ import type {
   ListGhlConversationMessagesParams,
   SendGhlMessageRequest,
   SendGhlMessageResponse,
+  SearchGhlContactsRequest,
+  UpdateGhlContactRequest,
 } from './types';
 
 // Returns the GHL OAuth URL the app should open in an in-app browser session.
@@ -53,14 +55,37 @@ export async function reconnect(returnUrl: string): Promise<GhlAuthUrlResponse> 
 
 export async function listContacts(params?: {
   limit?: number;
+  page?: number;
   query?: string;
 }): Promise<GhlContactsListResponse> {
   const q = new URLSearchParams();
   if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.page) q.set('page', String(params.page));
   if (params?.query) q.set('query', params.query);
   const suffix = q.toString();
   return apiRequest<GhlContactsListResponse>(
     suffix ? `/integrations/ghl/contacts?${suffix}` : '/integrations/ghl/contacts',
+  );
+}
+
+export async function listAllContacts(query?: string): Promise<GhlContactsListResponse> {
+  const suffix = query?.trim()
+    ? `?${new URLSearchParams({ query: query.trim() }).toString()}`
+    : '';
+  return apiRequest<GhlContactsListResponse>(`/integrations/ghl/contacts/all${suffix}`);
+}
+export async function searchContacts(
+  body: SearchGhlContactsRequest,
+): Promise<GhlContactsListResponse> {
+  return apiRequest<GhlContactsListResponse>('/integrations/ghl/contacts/search', {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function getContact(contactId: string): Promise<GhlContactSummary> {
+  return apiRequest<GhlContactSummary>(
+    `/integrations/ghl/contacts/${encodeURIComponent(contactId)}`,
   );
 }
 
@@ -71,12 +96,29 @@ export async function createContact(body: CreateGhlContactRequest): Promise<GhlC
   });
 }
 
-export async function deleteContact(contactId: string): Promise<{ ok: true }> {
-  return apiRequest<{ ok: true }>(`/integrations/ghl/contacts/${contactId}`, {
-    method: 'DELETE',
+export async function upsertContact(body: CreateGhlContactRequest): Promise<GhlContactSummary> {
+  return apiRequest<GhlContactSummary>('/integrations/ghl/contacts/upsert', {
+    method: 'POST',
+    body,
   });
 }
 
+export async function updateContact(
+  contactId: string,
+  body: UpdateGhlContactRequest,
+): Promise<GhlContactSummary> {
+  return apiRequest<GhlContactSummary>(
+    `/integrations/ghl/contacts/${encodeURIComponent(contactId)}`,
+    { method: 'PUT', body },
+  );
+}
+
+export async function deleteContact(contactId: string): Promise<{ ok: true }> {
+  return apiRequest<{ ok: true }>(
+    `/integrations/ghl/contacts/${encodeURIComponent(contactId)}`,
+    { method: 'DELETE' },
+  );
+}
 export async function listOpportunities(
   params?: ListGhlOpportunitiesParams,
 ): Promise<GhlOpportunitiesListResponse> {
@@ -177,7 +219,6 @@ export async function listConversations(
   const q = new URLSearchParams();
   if (params?.limit) q.set('limit', String(params.limit));
   if (params?.query) q.set('query', params.query);
-  if (params?.startAfterId) q.set('startAfterId', params.startAfterId);
   if (params?.status) q.set('status', params.status);
   if (params?.assignedTo) q.set('assignedTo', params.assignedTo);
   if (params?.followers) q.set('followers', params.followers);
