@@ -479,8 +479,8 @@ async function cancelAppointmentByQuery(query: string): Promise<AssistantCommand
 }
 
 async function listLatestContacts(): Promise<AssistantCommandResult> {
-  const result = await ghlApi.listContacts({ limit: 10 });
-  const summaries = result.contacts.filter((contact) => contact.name !== 'Unknown');
+  const result = await ghlApi.listAllContacts();
+  const summaries = result.contacts;
 
   if (summaries.length === 0) {
     return {
@@ -490,7 +490,7 @@ async function listLatestContacts(): Promise<AssistantCommandResult> {
   }
 
   return {
-    response: `Here's who you've got recently:\n${summaries.map(formatContact).join('\n')}`,
+    response: `Here are all ${summaries.length} contacts in GoHighLevel:\n${summaries.map(formatContact).join('\n')}`,
     status: 'success',
   };
 }
@@ -506,7 +506,7 @@ async function createContactFromDetails(
   }
 
   const { firstName, lastName } = splitName(details.name);
-  const created = await ghlApi.createContact({
+  const created = await ghlApi.upsertContact({
     name: details.name,
     firstName,
     lastName,

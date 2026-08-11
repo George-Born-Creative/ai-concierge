@@ -8,7 +8,7 @@ import { OpportunitiesService } from './opportunities/opportunities.service';
 import { PipelinesService } from './pipelines/pipelines.service';
 import { GhlApiService } from './shared/ghl-api.service';
 
-/** Backward-compatible façade for application services that span GHL domains. */
+/** Backward-compatible faï¿½ade for application services that span GHL domains. */
 @Injectable()
 export class GhlService {
   constructor(
@@ -33,7 +33,11 @@ export class GhlService {
   getDeepLinkScheme(...args: Parameters<GhlApiService['getDeepLinkScheme']>) { return this.api.getDeepLinkScheme(...args); }
 
   listContacts(...args: Parameters<ContactsService['listContacts']>) { return this.contacts.listContacts(...args); }
+  listAllContacts(...args: Parameters<ContactsService['listAllContacts']>) { return this.contacts.listAllContacts(...args); }
+  searchContacts(...args: Parameters<ContactsService['searchContacts']>) { return this.contacts.searchContacts(...args); }
+  getContact(...args: Parameters<ContactsService['getContact']>) { return this.contacts.getContact(...args); }
   createContact(...args: Parameters<ContactsService['createContact']>) { return this.contacts.createContact(...args); }
+  upsertContact(...args: Parameters<ContactsService['upsertContact']>) { return this.contacts.upsertContact(...args); }
   updateContact(...args: Parameters<ContactsService['updateContact']>) { return this.contacts.updateContact(...args); }
   deleteContact(...args: Parameters<ContactsService['deleteContact']>) { return this.contacts.deleteContact(...args); }
 
