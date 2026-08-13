@@ -12,9 +12,22 @@ import type {
   GhlCalendarsListResponse,
   GhlContactSummary,
   GhlContactsListResponse,
+  GhlOpportunitiesListResponse,
   GhlStatusResponse,
   ListGhlCalendarEventsParams,
+  ListGhlOpportunitiesParams,
   UpdateGhlCalendarRequest,
+  GhlConversationSummary,
+  GhlConversationsListResponse,
+  GhlConversationMessagesListResponse,
+  ListGhlConversationsParams,
+  UpdateGhlConversationRequest,
+  ListGhlConversationMessagesParams,
+  SendGhlMessageRequest,
+  SendGhlMessageResponse,
+  SearchGhlContactsRequest,
+  SearchGhlOpportunitiesRequest,
+  UpdateGhlContactRequest,
 } from './types';
 
 // Returns the GHL OAuth URL the app should open in an in-app browser session.
@@ -43,14 +56,37 @@ export async function reconnect(returnUrl: string): Promise<GhlAuthUrlResponse> 
 
 export async function listContacts(params?: {
   limit?: number;
+  page?: number;
   query?: string;
 }): Promise<GhlContactsListResponse> {
   const q = new URLSearchParams();
   if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.page) q.set('page', String(params.page));
   if (params?.query) q.set('query', params.query);
   const suffix = q.toString();
   return apiRequest<GhlContactsListResponse>(
     suffix ? `/integrations/ghl/contacts?${suffix}` : '/integrations/ghl/contacts',
+  );
+}
+
+export async function listAllContacts(query?: string): Promise<GhlContactsListResponse> {
+  const suffix = query?.trim()
+    ? `?${new URLSearchParams({ query: query.trim() }).toString()}`
+    : '';
+  return apiRequest<GhlContactsListResponse>(`/integrations/ghl/contacts/all${suffix}`);
+}
+export async function searchContacts(
+  body: SearchGhlContactsRequest,
+): Promise<GhlContactsListResponse> {
+  return apiRequest<GhlContactsListResponse>('/integrations/ghl/contacts/search', {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function getContact(contactId: string): Promise<GhlContactSummary> {
+  return apiRequest<GhlContactSummary>(
+    `/integrations/ghl/contacts/${encodeURIComponent(contactId)}`,
   );
 }
 
@@ -61,9 +97,56 @@ export async function createContact(body: CreateGhlContactRequest): Promise<GhlC
   });
 }
 
+export async function upsertContact(body: CreateGhlContactRequest): Promise<GhlContactSummary> {
+  return apiRequest<GhlContactSummary>('/integrations/ghl/contacts/upsert', {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function updateContact(
+  contactId: string,
+  body: UpdateGhlContactRequest,
+): Promise<GhlContactSummary> {
+  return apiRequest<GhlContactSummary>(
+    `/integrations/ghl/contacts/${encodeURIComponent(contactId)}`,
+    { method: 'PUT', body },
+  );
+}
+
 export async function deleteContact(contactId: string): Promise<{ ok: true }> {
-  return apiRequest<{ ok: true }>(`/integrations/ghl/contacts/${contactId}`, {
-    method: 'DELETE',
+  return apiRequest<{ ok: true }>(
+    `/integrations/ghl/contacts/${encodeURIComponent(contactId)}`,
+    { method: 'DELETE' },
+  );
+}
+export async function listOpportunities(
+  params?: ListGhlOpportunitiesParams,
+): Promise<GhlOpportunitiesListResponse> {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.query) q.set('query', params.query);
+  if (params?.pipelineId) q.set('pipelineId', params.pipelineId);
+  if (params?.pipelineStageId) q.set('pipelineStageId', params.pipelineStageId);
+  if (params?.contactId) q.set('contactId', params.contactId);
+  if (params?.assignedTo) q.set('assignedTo', params.assignedTo);
+  if (params?.order) q.set('order', params.order);
+  if (params?.page) q.set('page', String(params.page));
+  if (params?.status) q.set('status', params.status);
+  const suffix = q.toString();
+  return apiRequest<GhlOpportunitiesListResponse>(
+    suffix
+      ? `/integrations/ghl/opportunities?${suffix}`
+      : '/integrations/ghl/opportunities',
+  );
+}
+
+export async function searchOpportunities(
+  body: SearchGhlOpportunitiesRequest,
+): Promise<GhlOpportunitiesListResponse> {
+  return apiRequest<GhlOpportunitiesListResponse>('/integrations/ghl/opportunities/search', {
+    method: 'POST',
+    body,
   });
 }
 
@@ -142,5 +225,67 @@ export async function createAppointment(
 export async function cancelAppointment(eventId: string): Promise<{ ok: true }> {
   return apiRequest<{ ok: true }>(`/integrations/ghl/calendar-events/${eventId}`, {
     method: 'DELETE',
+  });
+}
+
+export async function listConversations(
+  params?: ListGhlConversationsParams,
+): Promise<GhlConversationsListResponse> {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.query) q.set('query', params.query);
+  if (params?.status) q.set('status', params.status);
+  if (params?.assignedTo) q.set('assignedTo', params.assignedTo);
+  if (params?.followers) q.set('followers', params.followers);
+  if (params?.lastMessageType) q.set('lastMessageType', params.lastMessageType);
+  if (params?.sortBy) q.set('sortBy', params.sortBy);
+  if (params?.sort) q.set('sort', params.sort);
+  const suffix = q.toString();
+  return apiRequest<GhlConversationsListResponse>(
+    suffix ? `/integrations/ghl/conversations?${suffix}` : '/integrations/ghl/conversations',
+  );
+}
+
+export async function getConversation(conversationId: string): Promise<GhlConversationSummary> {
+  return apiRequest<GhlConversationSummary>(`/integrations/ghl/conversations/${conversationId}`);
+}
+
+export async function listConversationMessages(
+  conversationId: string,
+  params?: ListGhlConversationMessagesParams,
+): Promise<GhlConversationMessagesListResponse> {
+  const q = new URLSearchParams();
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.lastMessageId) q.set('lastMessageId', params.lastMessageId);
+  const suffix = q.toString();
+  return apiRequest<GhlConversationMessagesListResponse>(
+    suffix
+      ? `/integrations/ghl/conversations/${conversationId}/messages?${suffix}`
+      : `/integrations/ghl/conversations/${conversationId}/messages`,
+  );
+}
+export async function getGhlUserId(): Promise<string | null> {
+  const res = await apiRequest<{ ghlUserId: string }>('/integrations/ghl/conversations/ghl-user-id');
+  return res?.ghlUserId ?? null;
+}
+
+export async function updateConversation(conversationId: string, body: UpdateGhlConversationRequest): Promise<GhlConversationSummary> {
+  return apiRequest<GhlConversationSummary>(`/integrations/ghl/conversations/${conversationId}`, {
+    method: 'PUT',
+    body,
+  });
+}
+
+export async function sendMessage(body: SendGhlMessageRequest): Promise<SendGhlMessageResponse> {
+  return apiRequest<SendGhlMessageResponse>('/integrations/ghl/conversations/messages', {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function createConversation(contactId: string): Promise<{ conversationId: string }> {
+  return apiRequest<{ conversationId: string }>('/integrations/ghl/conversations', {
+    method: 'POST',
+    body: { contactId },
   });
 }
