@@ -18,6 +18,14 @@ export class RunAssistantCommandDto {
   voiceUri?: string;
 
   @IsOptional()
+  @IsString()
+  rawTranscript?: string;
+
+  @IsOptional()
+  @IsString()
+  correctedTranscript?: string;
+
+  @IsOptional()
   @IsObject()
   intent?: {
     intent: string;

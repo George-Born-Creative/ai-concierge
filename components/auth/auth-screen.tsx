@@ -1,27 +1,51 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
+import { remindersApi } from '@/lib/api';
 import { getMe, signIn, signUp } from '@/lib/api/auth';
-import { getApiBaseUrl } from '@/lib/api/base-url';
 import { ApiError } from '@/lib/api/client';
+import { startOtpCooldown } from '@/lib/auth/otp-cooldown';
 import { routeForUser } from '@/lib/onboarding-route';
+import { registerPushToken } from '@/lib/push/register-push-token';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
+
+// Fire-and-forget: after a session is established, send the device's IANA tz
+// so the assistant can resolve reminder times correctly, and register the
+// Expo push token so reminders can fire. Failures are swallowed - the token
+// retries on next cold start, and timezone is cosmetic until first use.
+function attachDevicePreferences() {
+  try {
+    const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (detectedTz) {
+      void remindersApi.setTimezone(detectedTz).catch(() => undefined);
+    }
+  } catch {
+    // Intl can fail on very old runtimes; skip.
+  }
+  void registerPushToken();
+}
 
 const SESSION_CHECK_TIMEOUT_MS = 6_000;
 
@@ -32,6 +56,7 @@ type AuthScreenProps = {
 };
 
 export function AuthScreen({ mode }: AuthScreenProps) {
+  const { colors, resolvedTheme } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const isSignup = mode === 'signup';
@@ -41,7 +66,6 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
-  const { height: windowHeight } = useWindowDimensions();
   const redirected = useRef(false);
 
   useEffect(() => {
@@ -57,6 +81,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           const me = await withTimeout(getMe(), SESSION_CHECK_TIMEOUT_MS);
           if (cancelled || redirected.current) return;
           await setSession(token, me);
+          attachDevicePreferences();
           redirected.current = true;
           router.replace(routeForUser(me));
         } catch (err) {
@@ -99,6 +124,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         : await signIn({ email: email.trim(), password });
 
       await setSession(result.token, result.user);
+      if (isSignup && result.user.emailVerified === false) {
+        // The current signup response does not expose Twilio delivery status,
+        // so treat a successful signup as the start of the initial cooldown.
+        await startOtpCooldown('email-verification', result.user.email);
+      }
+      attachDevicePreferences();
 
       if (!isSignup) {
         show('Signed in successfully.', 'success');
@@ -125,31 +156,26 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
   if (checkingSession) {
     return (
-      <View style={styles.sessionCheck}>
-        <ActivityIndicator size="large" color="#1A73E8" />
-      </View>
+      <ScreenShell>
+        <View style={styles.sessionCheck}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <PageHeader />
+    <ScreenShell>
+      <PageHeader showBack onBack={() => router.replace('/signup')} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
         <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            { minHeight: windowHeight - 48 },
-          ]}
+          contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          {!isSignup ? (
-            <Pressable style={styles.backButton} onPress={() => router.replace('/signup')}>
-              <MaterialIcons name="arrow-back" size={22} color="#202124" />
-            </Pressable>
-          ) : null}
-
+          showsVerticalScrollIndicator={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never">
           <View style={styles.heroCard}>
             <View style={styles.heroTopRow}>
               <View style={styles.logoMark}>
@@ -160,7 +186,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               </View>
 
               <View style={styles.badge}>
-                <MaterialIcons name="auto-awesome" size={16} color="#1A73E8" />
+                <MaterialIcons name="auto-awesome" size={16} color={colors.primary} />
                 <Text style={styles.badgeText}>AI-Concierge</Text>
               </View>
             </View>
@@ -178,12 +204,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
             {isSignup ? (
               <View style={styles.inputShell}>
-                <MaterialIcons name="person-outline" size={22} color="#80868B" />
+                <MaterialIcons name="person-outline" size={22} color={colors.icon} />
                 <TextInput
                   value={name}
                   onChangeText={setName}
                   placeholder="Full name"
-                  placeholderTextColor="#9AA0A6"
+                  placeholderTextColor={colors.placeholder}
+                  keyboardAppearance={resolvedTheme}
                   style={styles.input}
                   autoCapitalize="words"
                   returnKeyType="next"
@@ -192,12 +219,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
             ) : null}
 
             <View style={styles.inputShell}>
-              <MaterialIcons name="alternate-email" size={21} color="#80868B" />
+              <MaterialIcons name="alternate-email" size={21} color={colors.icon} />
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Email address"
-                placeholderTextColor="#9AA0A6"
+                placeholderTextColor={colors.placeholder}
+                keyboardAppearance={resolvedTheme}
                 style={styles.input}
                 autoCapitalize="none"
                 keyboardType="email-address"
@@ -205,12 +233,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               />
             </View>
             <View style={styles.inputShell}>
-              <MaterialIcons name="lock-outline" size={21} color="#80868B" />
+              <MaterialIcons name="lock-outline" size={21} color={colors.icon} />
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Password"
-                placeholderTextColor="#9AA0A6"
+                placeholderTextColor={colors.placeholder}
+                keyboardAppearance={resolvedTheme}
                 style={styles.input}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
@@ -228,10 +257,19 @@ export function AuthScreen({ mode }: AuthScreenProps) {
                 <MaterialIcons
                   name={showPassword ? 'visibility-off' : 'visibility'}
                   size={22}
-                  color="#5F6368"
+                  color={colors.icon}
                 />
               </Pressable>
             </View>
+
+            {!isSignup ? (
+              <Pressable
+                style={styles.forgotButton}
+                hitSlop={8}
+                onPress={() => router.push('/forgot-password' as Href)}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+            ) : null}
 
             <Pressable
               style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
@@ -247,7 +285,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
                     : 'Sign in'}
               </Text>
               {!submitting ? (
-                <MaterialIcons name="arrow-forward" size={21} color="#FFFFFF" />
+                <MaterialIcons name="arrow-forward" size={21} color={colors.onPrimary} />
               ) : null}
             </Pressable>
 
@@ -259,13 +297,10 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               </Text>
             </Pressable>
 
-            {__DEV__ ? (
-              <Text style={styles.devApiHint}>API: {getApiBaseUrl() || '(auto)'}</Text>
-            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -288,13 +323,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 const styles = StyleSheet.create({
   sessionCheck: {
     alignItems: 'center',
-    backgroundColor: '#F6F9FF',
     flex: 1,
     justifyContent: 'center',
-  },
-  screen: {
-    flex: 1,
-    backgroundColor: '#F6F9FF',
   },
   keyboardView: {
     flex: 1,
@@ -303,28 +333,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 22,
-    paddingBottom: 120,
-  },
-  backButton: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 28,
-    width: 44,
+    paddingBottom: 64,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
   },
   heroCard: {
     backgroundColor: '#EDF4FF',
     borderColor: '#D7E6FF',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 22,
+    maxWidth: 520,
+    padding: UiSpacing.lg,
     width: '100%',
   },
   heroTopRow: {
@@ -334,9 +353,9 @@ const styles = StyleSheet.create({
   },
   logoMark: {
     alignItems: 'center',
-    height: 64,
+    height: 56,
     justifyContent: 'center',
-    width: 64,
+    width: 56,
   },
   logoDot: {
     borderRadius: 20,
@@ -344,67 +363,69 @@ const styles = StyleSheet.create({
   },
   blueDot: {
     backgroundColor: '#4285F4',
-    height: 38,
+    height: 34,
     left: 5,
-    width: 38,
+    width: 34,
   },
   redDot: {
     backgroundColor: '#EA4335',
-    height: 24,
-    right: 8,
-    top: 8,
-    width: 24,
+    height: 21,
+    right: 6,
+    top: 7,
+    width: 21,
   },
   yellowDot: {
     backgroundColor: '#FBBC04',
-    bottom: 8,
-    height: 22,
-    right: 12,
-    width: 22,
+    bottom: 7,
+    height: 19,
+    right: 10,
+    width: 19,
   },
   greenDot: {
     backgroundColor: '#34A853',
-    bottom: 14,
-    height: 16,
-    left: 16,
-    width: 16,
+    bottom: 12,
+    height: 14,
+    left: 14,
+    width: 14,
   },
   badge: {
     alignItems: 'center',
     backgroundColor: '#F1F6FF',
-    borderRadius: 999,
+    borderRadius: UiRadii.pill,
     flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: UiSpacing.xs,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.xs,
   },
   badgeText: {
     color: '#174EA6',
-    fontSize: 13,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
   },
   title: {
     color: '#202124',
-    fontSize: 34,
+    fontSize: UiTypography.display.fontSize,
     fontWeight: '600',
-    letterSpacing: -1,
-    lineHeight: 40,
-    marginTop: 26,
+    letterSpacing: -0.7,
+    lineHeight: UiTypography.display.lineHeight,
+    marginTop: UiSpacing.xl,
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 10,
-    maxWidth: 300,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
+    maxWidth: 360,
   },
   formCard: {
     backgroundColor: '#FFFFFF',
     borderColor: '#E6EDF8',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    marginTop: 16,
-    padding: 20,
+    marginTop: UiSpacing.md,
+    maxWidth: 520,
+    padding: UiSpacing.lg,
     width: '100%',
     shadowColor: '#174EA6',
     shadowOffset: { width: 0, height: 16 },
@@ -413,26 +434,28 @@ const styles = StyleSheet.create({
   },
   formTitle: {
     color: '#202124',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
-    marginBottom: 14,
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    marginBottom: UiSpacing.md,
   },
   inputShell: {
     alignItems: 'center',
     backgroundColor: '#F8FAFF',
     borderColor: '#E4EBF7',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-    minHeight: 54,
-    paddingHorizontal: 16,
+    gap: UiSpacing.sm,
+    marginBottom: UiSpacing.sm,
+    minHeight: UiControlHeights.input,
+    paddingHorizontal: UiSpacing.md,
   },
   input: {
     color: '#202124',
     flex: 1,
-    fontSize: 16,
+    fontSize: UiTypography.input.fontSize,
+    lineHeight: UiTypography.input.lineHeight,
   },
   eyeButton: {
     alignItems: 'center',
@@ -443,34 +466,43 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 10,
-    minHeight: 56,
+    marginTop: UiSpacing.sm,
+    minHeight: UiControlHeights.button,
   },
   primaryButtonDisabled: {
     opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
+  },
+  forgotButton: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minHeight: UiControlHeights.compactButton,
+  },
+  forgotText: {
+    color: '#1A73E8',
+    fontSize: UiTypography.bodySmall.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   switchButton: {
     alignItems: 'center',
-    marginTop: 18,
+    justifyContent: 'center',
+    marginTop: UiSpacing.sm,
+    minHeight: UiControlHeights.compactButton,
   },
   switchText: {
     color: '#1A73E8',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
-  },
-  devApiHint: {
-    color: '#9AA0A6',
-    fontSize: 11,
-    marginTop: 16,
-    textAlign: 'center',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
 });

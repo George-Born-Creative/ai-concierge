@@ -1,22 +1,34 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
+import {
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+  type ResolvedTheme,
+  type ThemeColors,
+} from '@/constants/theme';
+import { ghlApi, hubspotApi, openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
+import { getCrmLabel, getCrmLabelList } from '@/lib/crm/labels';
+import { clearPushTokenCache } from '@/lib/push/register-push-token';
 import { clearSession, getUser, refreshUser } from '@/lib/session';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 // ─── Static catalog ───────────────────────────────────────────────────────────
@@ -42,13 +54,18 @@ const assistantCapabilities = [
     title: 'Voice + text commands',
     description: 'Hold the mic or type — the assistant transcribes and acts on intent.',
   },
+  {
+    icon: 'chat' as const,
+    title: 'Conversations & Messages',
+    description: 'Read and manage your GHL conversations directly.',
+  },
 ];
 
 const upcomingFeatures = [
   {
     icon: 'auto-fix-high' as const,
     title: 'Workflows & automations',
-    description: 'Trigger GHL workflows ("send the welcome sequence to Maya") hands-free.',
+    description: 'Trigger CRM workflows ("send the welcome sequence to Maya") hands-free.',
   },
   {
     icon: 'forum' as const,
@@ -63,7 +80,7 @@ const upcomingFeatures = [
   {
     icon: 'hub' as const,
     title: 'Multi-CRM support',
-    description: 'Connect HubSpot alongside GoHighLevel and switch between them.',
+    description: `Connect ${getCrmLabelList(' and ')} and switch between them.`,
   },
 ];
 
@@ -80,6 +97,8 @@ type CrmStatus = {
 export function ProfileScreenContent() {
   const router = useRouter();
   const { show } = useToast();
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
 
   const [user, setUser] = useState<User | null>(() => getUser());
   const [crmStatus, setCrmStatus] = useState<CrmStatus | null>(null);
@@ -87,6 +106,7 @@ export function ProfileScreenContent() {
   const [openAIConnected, setOpenAIConnected] = useState<boolean | null>(null);
   const [loadingStatuses, setLoadingStatuses] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Refresh the user profile + integration statuses whenever the tab gains
   // focus, so a freshly-rotated key or reconnected CRM shows up immediately.
@@ -149,6 +169,12 @@ export function ProfileScreenContent() {
     }
   }, []);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadEverything();
+    setRefreshing(false);
+  }, [loadEverything]);
+
   useEffect(() => {
     void loadEverything();
   }, [loadEverything]);
@@ -163,6 +189,11 @@ export function ProfileScreenContent() {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
+      // Best-effort: tell the backend to drop the push token before we
+      // clear the JWT. After clearSession() the bearer is gone so we
+      // couldn't authenticate this call any more.
+      await remindersApi.setPushToken(null).catch(() => undefined);
+      await clearPushTokenCache();
       await signOut().catch(() => undefined);
     } finally {
       await clearSession();
@@ -174,52 +205,59 @@ export function ProfileScreenContent() {
   const initials = getInitials(user?.name, user?.email);
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'AI-Concierge';
   const planLabel = user?.plan ? formatPlanLabel(user.plan.name, user.plan.status) : null;
-  const crmLabel = crmStatus?.provider === 'hubspot' ? 'HubSpot' : 'GoHighLevel';
+  const crmLabel = getCrmLabel(crmStatus?.provider ?? null);
+  const planBadgeStyle = getTonePillStyle(
+    user?.plan ? planTone(user.plan.status) : 'muted',
+    colors,
+  );
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScreenShell edges={[]}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+        showsVerticalScrollIndicator={false}>
         {/* ── Profile card ──────────────────────────────────────────────────── */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
+        <LinearGradient
+          colors={resolvedTheme === 'dark' ? [colors.surfacePressed, colors.backgroundSecondary] : [colors.primaryMuted, colors.surfaceMuted]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.profileCard,
+            resolvedTheme === 'dark' ? styles.profileCardDark : undefined,
+          ]}>
+          <View style={styles.profileHeader}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+            <View style={styles.profileHeaderCopy}>
+              <Text style={[styles.name, { color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary }]} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {user?.email ? (
+                <Text style={[styles.subtitle, { color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary }]} numberOfLines={1}>
+                  {user.email}
+                </Text>
+              ) : null}
+              {planLabel ? (
+                <View
+                  style={[
+                    styles.planBadge,
+                    { backgroundColor: planBadgeStyle.bg, borderColor: planBadgeStyle.border },
+                  ]}>
+                  <View style={[styles.planDot, { backgroundColor: planBadgeStyle.fg }]} />
+                  <Text
+                    style={[styles.planBadgeText, { color: planBadgeStyle.fg }]}
+                    numberOfLines={1}>
+                    {planLabel}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
-          <Text style={styles.name} numberOfLines={1}>
-            {displayName}
-          </Text>
-          {user?.email ? (
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {user.email}
-            </Text>
-          ) : null}
-
-          {/* Status pills directly under the profile image. */}
-          <View style={styles.statusRow}>
-            {loadingStatuses && !crmStatus && openAIConnected == null ? (
-              <>
-                <Skeleton width={140} height={26} radius={999} />
-                <Skeleton width={120} height={26} radius={999} />
-                <Skeleton width={90} height={26} radius={999} />
-              </>
-            ) : (
-              <>
-                <StatusPill
-                  icon="hub"
-                  label={crmStatus?.connected ? `${crmLabel} · Connected` : `${crmLabel} · Not connected`}
-                  tone={crmStatus?.connected ? 'success' : 'muted'}
-                />
-                <StatusPill
-                  icon="vpn-key"
-                  label={openAIConnected ? 'OpenAI · Connected' : 'OpenAI · Not set'}
-                  tone={openAIConnected ? 'success' : 'muted'}
-                />
-                {planLabel ? (
-                  <StatusPill icon="workspace-premium" label={planLabel} tone="brand" />
-                ) : null}
-              </>
-            )}
-          </View>
-        </View>
+        </LinearGradient>
 
         {/* ── Connections ───────────────────────────────────────────────────── */}
         <View style={styles.section}>
@@ -238,10 +276,10 @@ export function ProfileScreenContent() {
                 title={crmLabel}
                 value={
                   crmStatus?.connected
-                    ? crmStatus.detail ?? 'Connected — contacts & calendars enabled'
-                    : 'Not connected — open Settings to connect'
+                    ? crmStatus.detail ?? 'Contacts & calendars enabled'
+                    : 'Open Settings to connect'
                 }
-                statusLabel={crmStatus?.connected ? 'Connected' : 'Off'}
+                statusLabel={crmLabel}
                 tone={crmStatus?.connected ? 'success' : 'muted'}
               />
 
@@ -255,7 +293,7 @@ export function ProfileScreenContent() {
                       : 'Stored securely'
                     : 'Add a key to enable transcription & intent parsing'
                 }
-                statusLabel={openAIConnected ? 'Connected' : 'Not set'}
+                statusLabel="OpenAI"
                 tone={openAIConnected ? 'success' : 'muted'}
               />
 
@@ -264,10 +302,10 @@ export function ProfileScreenContent() {
                 title="Subscription"
                 value={
                   user?.plan
-                    ? `${user.plan.name} (${humanizePlanStatus(user.plan.status)})`
+                    ? `${user.plan.name} plan is active`
                     : 'No active plan — pick one in Plans'
                 }
-                statusLabel={user?.plan ? humanizePlanStatus(user.plan.status) : 'None'}
+                statusLabel={user?.plan ? user.plan.name : 'No plan'}
                 tone={user?.plan ? planTone(user.plan.status) : 'muted'}
               />
             </>
@@ -276,38 +314,35 @@ export function ProfileScreenContent() {
 
         {/* ── Assistant scope ───────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>What the assistant can do</Text>
+          <Text style={styles.sectionTitle}>Assistant Capabilities</Text>
           {assistantCapabilities.map((cap) => (
-            <View key={cap.title} style={styles.capabilityRow}>
-              <View style={styles.capabilityIcon}>
-                <MaterialIcons name={cap.icon} size={22} color="#1A73E8" />
-              </View>
-              <View style={styles.capabilityCopy}>
-                <Text style={styles.capabilityTitle}>{cap.title}</Text>
-                <Text style={styles.capabilityText}>{cap.description}</Text>
-              </View>
-            </View>
+            <CollapsibleCapability
+              key={cap.title}
+              icon={cap.icon}
+              title={cap.title}
+              description={cap.description}
+            />
           ))}
         </View>
 
         {/* ── Upcoming features ─────────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Upcoming features</Text>
+            <Text style={[styles.sectionTitle, styles.sectionTitleInRow]}>
+              Upcoming features
+            </Text>
             <View style={styles.soonBadge}>
               <Text style={styles.soonBadgeText}>Coming soon</Text>
             </View>
           </View>
           {upcomingFeatures.map((feature) => (
-            <View key={feature.title} style={styles.upcomingRow}>
-              <View style={styles.upcomingIcon}>
-                <MaterialIcons name={feature.icon} size={22} color="#7C4DFF" />
-              </View>
-              <View style={styles.capabilityCopy}>
-                <Text style={styles.capabilityTitle}>{feature.title}</Text>
-                <Text style={styles.capabilityText}>{feature.description}</Text>
-              </View>
-            </View>
+            <CollapsibleCapability
+              key={feature.title}
+              icon={feature.icon}
+              title={feature.title}
+              description={feature.description}
+              tone="info"
+            />
           ))}
         </View>
 
@@ -318,7 +353,7 @@ export function ProfileScreenContent() {
             onPress={() => router.push('/settings')}
             disabled={isLoggingOut}>
             <View style={styles.actionIcon}>
-              <MaterialIcons name="settings" size={22} color="#1A73E8" />
+              <MaterialIcons name="settings" size={20} color={colors.primary} />
             </View>
             <View style={styles.actionCopy}>
               <Text style={styles.actionTitle}>Settings</Text>
@@ -326,7 +361,7 @@ export function ProfileScreenContent() {
                 Manage your CRM connection, OpenAI key, and provider
               </Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
+            <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
           </Pressable>
 
           <Pressable
@@ -339,9 +374,9 @@ export function ProfileScreenContent() {
             disabled={isLoggingOut}>
             <View style={[styles.actionIcon, styles.logoutIcon]}>
               {isLoggingOut ? (
-                <ActivityIndicator size="small" color="#EA4335" />
+                <ActivityIndicator size="small" color={colors.danger} />
               ) : (
-                <MaterialIcons name="logout" size={22} color="#EA4335" />
+                <MaterialIcons name="logout" size={20} color={colors.danger} />
               )}
             </View>
             <View style={styles.actionCopy}>
@@ -353,12 +388,12 @@ export function ProfileScreenContent() {
               </Text>
             </View>
             {!isLoggingOut ? (
-              <MaterialIcons name="chevron-right" size={24} color="#F6AEA9" />
+              <MaterialIcons name="chevron-right" size={22} color={colors.dangerBorder} />
             ) : null}
           </Pressable>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -366,25 +401,7 @@ export function ProfileScreenContent() {
 
 type Tone = 'success' | 'muted' | 'brand' | 'warning';
 
-function StatusPill({
-  icon,
-  label,
-  tone,
-}: {
-  icon: keyof typeof MaterialIcons.glyphMap;
-  label: string;
-  tone: Tone;
-}) {
-  const pillStyle = TONE_PILL_STYLES[tone];
-  return (
-    <View style={[styles.statusPill, { backgroundColor: pillStyle.bg, borderColor: pillStyle.border }]}>
-      <MaterialIcons name={icon} size={14} color={pillStyle.fg} />
-      <Text style={[styles.statusPillText, { color: pillStyle.fg }]} numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
-  );
-}
+
 
 function ConnectionRow({
   icon,
@@ -399,17 +416,20 @@ function ConnectionRow({
   statusLabel: string;
   tone: Tone;
 }) {
-  const pillStyle = TONE_PILL_STYLES[tone];
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
+  const pillStyle = getTonePillStyle(tone, colors);
   return (
     <View style={styles.connectionRow}>
       <View style={styles.connectionIcon}>
-        <MaterialIcons name={icon} size={22} color="#1A73E8" />
+        <MaterialIcons name={icon} size={20} color={colors.primary} />
       </View>
       <View style={styles.capabilityCopy}>
         <Text style={styles.capabilityTitle}>{title}</Text>
         <Text style={styles.capabilityText}>{value}</Text>
       </View>
-      <View style={[styles.connectionStatus, { backgroundColor: pillStyle.bg }]}>
+      <View style={[styles.connectionStatus, { backgroundColor: pillStyle.bg, flexDirection: 'row', alignItems: 'center', gap: UiSpacing.xxs }]}>
+        <MaterialIcons name={tone === 'success' ? 'check-circle' : 'cancel'} size={14} color={pillStyle.fg} />
         <Text style={[styles.connectionStatusText, { color: pillStyle.fg }]} numberOfLines={1}>
           {statusLabel}
         </Text>
@@ -419,6 +439,8 @@ function ConnectionRow({
 }
 
 function ConnectionRowSkeleton() {
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
   return (
     <View style={styles.connectionRow}>
       <View style={styles.connectionIcon}>
@@ -430,6 +452,46 @@ function ConnectionRowSkeleton() {
       </View>
       <Skeleton width={56} height={22} radius={999} />
     </View>
+  );
+}
+
+function CollapsibleCapability({
+  icon,
+  title,
+  description,
+  tone = 'primary',
+}: {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  title: string;
+  description: string;
+  tone?: 'primary' | 'info';
+}) {
+  const { colors, resolvedTheme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
+  const [open, setOpen] = useState(false);
+
+  const isInfo = tone === 'info';
+  const rowStyle = isInfo ? styles.upcomingRow : styles.capabilityRow;
+  const iconStyle = isInfo ? styles.upcomingIcon : styles.capabilityIcon;
+  const iconColor = isInfo ? colors.info : colors.primary;
+
+  return (
+    <Pressable style={rowStyle} onPress={() => setOpen(!open)}>
+      <View style={iconStyle}>
+        <MaterialIcons name={icon} size={20} color={iconColor} />
+      </View>
+      <View style={styles.capabilityCopy}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={styles.capabilityTitle}>{title}</Text>
+          <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={20} color={colors.iconMuted} />
+        </View>
+        {open && (
+          <Text style={[styles.capabilityText, { marginTop: UiSpacing.xs }]}>
+            {description}
+          </Text>
+        )}
+      </View>
+    </Pressable>
   );
 }
 
@@ -475,154 +537,200 @@ function formatPlanLabel(name: string, status: string): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const TONE_PILL_STYLES: Record<Tone, { bg: string; border: string; fg: string }> = {
-  success: { bg: '#E6F4EA', border: '#B7E1C0', fg: '#1E8E3E' },
-  muted: { bg: '#F1F3F4', border: '#E0E3E7', fg: '#5F6368' },
-  brand: { bg: '#E8F0FE', border: '#C6DAFC', fg: '#1A73E8' },
-  warning: { bg: '#FEF7E0', border: '#FCE8B2', fg: '#B06000' },
-};
+function getTonePillStyle(tone: Tone, colors: ThemeColors) {
+  if (tone === 'success') {
+    return {
+      bg: colors.successSurface,
+      border: colors.successBorder,
+      fg: colors.success,
+    };
+  }
+  if (tone === 'warning') {
+    return {
+      bg: colors.warningSurface,
+      border: colors.warningBorder,
+      fg: colors.warning,
+    };
+  }
+  if (tone === 'brand') {
+    return {
+      bg: colors.infoSurface,
+      border: colors.infoBorder,
+      fg: colors.info,
+    };
+  }
+  return {
+    bg: colors.surfaceMuted,
+    border: colors.border,
+    fg: colors.textSecondary,
+  };
+}
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
+const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
+  StyleSheet.create({
   content: {
-    paddingHorizontal: 12,
-    paddingBottom: 120,
-    paddingTop: 30,
+    alignSelf: 'center',
+    maxWidth: 720,
+    paddingBottom: 96,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   // ── Profile card ──
   profileCard: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderColor: colors.borderStrong,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 26,
+    elevation: 2,
+    padding: UiSpacing.xl,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+  },
+  profileCardDark: {
+    borderColor: colors.borderStrong,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.3,
+  },
+  profileHeader: {
+    alignItems: 'center',
+    flexDirection: 'column',
+    gap: UiSpacing.md,
+  },
+  profileHeaderCopy: {
+    alignItems: 'center',
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 42,
-    height: 84,
+    backgroundColor: colors.primaryMuted,
+    borderRadius: UiRadii.pill,
+    height: 64,
     justifyContent: 'center',
-    width: 84,
+    width: 64,
   },
   avatarText: {
-    color: '#1A73E8',
-    fontSize: 30,
-    fontWeight: '600',
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.primary,
+    fontSize: UiTypography.pageTitle.fontSize,
+    fontWeight: '700',
+    lineHeight: UiTypography.pageTitle.lineHeight,
   },
   name: {
-    color: '#202124',
-    fontSize: 26,
-    fontWeight: '600',
-    marginTop: 16,
-    textAlign: 'center',
+    fontSize: UiTypography.sectionHeading.fontSize,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    lineHeight: UiTypography.sectionHeading.lineHeight,
   },
   subtitle: {
-    color: '#5F6368',
-    fontSize: 14,
-    marginTop: 4,
+    fontSize: UiTypography.bodySmall.fontSize,
+    fontWeight: '500',
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
-  statusRow: {
+  planBadge: {
     alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-    marginTop: 18,
-    width: '100%',
-  },
-  statusPill: {
-    alignItems: 'center',
-    borderRadius: 999,
+    alignSelf: 'center',
+    borderRadius: UiRadii.pill,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: UiSpacing.xs,
+    marginTop: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
   },
-  statusPillText: {
-    fontSize: 12,
-    fontWeight: '600',
+  planDot: {
+    borderRadius: 4,
+    height: 7,
+    width: 7,
   },
+  planBadgeText: {
+    fontSize: UiTypography.label.fontSize,
+    fontWeight: '700',
+    lineHeight: UiTypography.label.lineHeight,
+  },
+
   // ── Sections ──
   section: {
-    marginTop: 26,
+    marginTop: UiSpacing.xl,
   },
   sectionHeaderRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
+    gap: UiSpacing.sm,
+    marginBottom: UiSpacing.md,
   },
   sectionTitle: {
-    color: '#202124',
-    fontSize: 20,
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
-    marginBottom: 12,
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    marginBottom: UiSpacing.md,
+  },
+  sectionTitleInRow: {
+    marginBottom: 0,
   },
   soonBadge: {
-    backgroundColor: '#EDE7FF',
-    borderRadius: 999,
-    marginBottom: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    backgroundColor: resolvedTheme === 'dark' ? colors.infoSurface : colors.surfaceSelected,
+    borderRadius: UiRadii.pill,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
   },
   soonBadgeText: {
-    color: '#5E35B1',
-    fontSize: 11,
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.primaryPressed,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '700',
     letterSpacing: 0.3,
+    lineHeight: UiTypography.caption.lineHeight,
     textTransform: 'uppercase',
   },
   // ── Connection rows ──
   connectionRow: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 10,
-    padding: 14,
+    gap: UiSpacing.md,
+    marginBottom: UiSpacing.sm,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   connectionIcon: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 20,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   connectionStatus: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: UiRadii.pill,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xs,
   },
   connectionStatusText: {
-    fontSize: 12,
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
   },
   // ── Capability rows ──
   capabilityRow: {
     alignItems: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 10,
-    padding: 14,
+    gap: UiSpacing.md,
+    marginBottom: UiSpacing.sm,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   capabilityIcon: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 20,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
@@ -631,82 +739,87 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   capabilityTitle: {
-    color: '#202124',
-    fontSize: 16,
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
+    fontSize: UiTypography.body.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.body.lineHeight,
   },
   capabilityText: {
-    color: '#5F6368',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 3,
+    color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   // ── Upcoming rows ──
   upcomingRow: {
     alignItems: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EDE7FF',
-    borderRadius: 14,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 10,
-    padding: 14,
+    gap: UiSpacing.md,
+    marginBottom: UiSpacing.sm,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   upcomingIcon: {
     alignItems: 'center',
-    backgroundColor: '#EDE7FF',
-    borderRadius: 20,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.surfaceSelected,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   // ── Actions ──
   actionsSection: {
-    gap: 12,
-    marginTop: 30,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.xxl,
   },
   actionButton: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
+    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 14,
-    padding: 16,
+    gap: UiSpacing.md,
+    minHeight: 64,
+    padding: UiSpacing.md,
   },
   logoutButton: {
-    borderColor: '#FAD2CF',
+    borderColor: colors.dangerBorder,
   },
   actionButtonDisabled: {
     opacity: 0.65,
   },
   actionIcon: {
     alignItems: 'center',
-    backgroundColor: '#E8F0FE',
-    borderRadius: 20,
+    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceMuted : colors.primaryMuted,
+    borderRadius: UiRadii.icon,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   logoutIcon: {
-    backgroundColor: '#FCE8E6',
+    backgroundColor: colors.dangerSurface,
   },
   actionCopy: {
     flex: 1,
   },
   actionTitle: {
-    color: '#202124',
-    fontSize: 16,
+    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
+    fontSize: UiTypography.body.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.body.lineHeight,
   },
   logoutTitle: {
-    color: '#EA4335',
+    color: colors.dangerText,
   },
   actionDescription: {
-    color: '#5F6368',
-    fontSize: 13,
-    marginTop: 3,
+    color: resolvedTheme === 'dark' ? '#E2E8F0' : colors.textSecondary,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
 });

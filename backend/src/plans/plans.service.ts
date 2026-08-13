@@ -16,7 +16,16 @@ export class PlansService {
       id: p.code,
       name: p.name,
       provider: p.provider.toLowerCase(),
-      price: `$${(p.monthlyPrice / 100).toFixed(0)}`,
+      // Stripe / web price (also used as the discounted "subscribe via web" price on iOS).
+      monthlyPrice: p.monthlyPrice,
+      monthlyPriceDisplay: formatPrice(p.monthlyPrice, p.currency),
+      // Apple IAP price set in App Store Connect; null when the plan isn't sold via Apple.
+      applePrice: p.applePrice,
+      applePriceDisplay:
+        p.applePrice != null ? formatPrice(p.applePrice, p.currency) : null,
+      appleProductId: p.appleProductId,
+      // Kept for backwards compatibility with any older clients reading `price`.
+      price: formatPrice(p.monthlyPrice, p.currency),
       currency: p.currency,
       features: p.features,
     }));
@@ -29,4 +38,11 @@ export class PlansService {
     }
     return plan;
   }
+}
+
+function formatPrice(amountCents: number, currency: string): string {
+  // Whole-dollar display today (no plan has fractional cents). When we add
+  // localised currencies, swap to Intl.NumberFormat per-currency.
+  const symbol = currency.toLowerCase() === 'usd' ? '$' : '';
+  return `${symbol}${(amountCents / 100).toFixed(0)}`;
 }

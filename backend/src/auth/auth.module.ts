@@ -3,9 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
+import { MailModule } from '../mail/mail.module';
+import { TwilioModule } from '../twilio/twilio.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailVerificationService } from './email-verification.service';
+import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -25,9 +29,16 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       },
     }),
     UsersModule,
+    MailModule,
+    TwilioModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    EmailVerificationService,
+    PasswordResetService,
+  ],
   exports: [AuthService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}

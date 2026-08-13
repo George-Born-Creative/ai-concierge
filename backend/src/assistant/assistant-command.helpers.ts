@@ -238,7 +238,7 @@ export function extractCreateDetails(
   return {
     name: entityString(entities, 'name') || buildNameFromEntities(entities) || '',
     phone: entityString(entities, 'phone'),
-    email: entityString(entities, 'email')?.toLowerCase(),
+    email: normalizeSpokenEmail(entityString(entities, 'email')),
   };
 }
 
@@ -257,8 +257,55 @@ export function extractContactUpdateDetails(
     newFirstName: entityString(entities, 'newFirstName', 'new_first_name'),
     newLastName: entityString(entities, 'newLastName', 'new_last_name'),
     newPhone: entityString(entities, 'newPhone', 'new_phone', 'phone'),
-    newEmail: entityString(entities, 'newEmail', 'new_email', 'email')?.toLowerCase(),
+    newEmail: normalizeSpokenEmail(
+      entityString(entities, 'newEmail', 'new_email', 'email'),
+    ),
   };
+}
+
+/**
+ * Defensive fallback for spoken emails that slip past the LLM normalizer.
+ * Whisper transcribes voice as "john at gmail dot com" / "test underscore
+ * one at example dot co dot uk"; the normalizer prompt asks the LLM to
+ * reconstruct these into `john@gmail.com` shape, but if it ever forgets we
+ * recover here so the assistant doesn't silently lose the email.
+ *
+ * Returns the cleaned email if it has the shape `<local>@<domain>.<tld>`;
+ * otherwise returns the lowercased original (which may not be a valid email
+ * — the caller is expected to validate before issuing the API call).
+ */
+export function normalizeSpokenEmail(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const lower = value.trim().toLowerCase();
+  if (!lower) return undefined;
+  // Already-valid email: do nothing beyond lowercase + trim.
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(lower)) return lower;
+  // Apply spoken-word substitutions only when the input doesn't already
+  // contain '@' — otherwise we risk garbling a real address that happens
+  // to embed the word "at" in the local part.
+  const looksSpoken = !lower.includes('@') && /\bat\b/.test(lower);
+  if (!looksSpoken) return lower;
+
+  // Tolerate punctuation around the keywords because Whisper happily inserts
+  // commas and periods at speech pauses ("john, at gmail. dot com").
+  const substituted = lower
+    .replace(/[\s,.]+at[\s,.]+/g, '@')
+    .replace(/[\s,.]+dot[\s,.]+/g, '.')
+    .replace(/[\s,.]+underscore[\s,.]+/g, '_')
+    .replace(/[\s,.]+(?:dash|hyphen)[\s,.]+/g, '-')
+    .replace(/[\s,.]+plus[\s,.]+/g, '+')
+    // Strip any residual stray punctuation / whitespace inside the result.
+    .replace(/[\s,]+/g, '')
+    // Trailing punctuation Whisper sometimes appends ("…dot com.")
+    .replace(/[.,]+$/, '');
+
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(substituted)) {
+    return substituted;
+  }
+  // Substitution didn't produce a syntactically valid email; surface the
+  // best-effort lowercased original so the caller can decide whether to
+  // re-prompt.
+  return lower;
 }
 
 const OPPORTUNITY_STATUSES = ['open', 'won', 'lost', 'abandoned'] as const;
@@ -417,6 +464,9 @@ export function mergeSessionIntoEntities(
   if (!entityString(merged, 'calendarName', 'calendar_name') && ctx.lastCalendarName) {
     merged.calendarName = ctx.lastCalendarName;
   }
+  if (!entityString(merged, 'appointmentId', 'appointment_id') && ctx.lastAppointmentId) {
+    merged.appointmentId = ctx.lastAppointmentId;
+  }
   if (!entityString(merged, 'opportunityId', 'opportunity_id') && ctx.lastOpportunityId) {
     merged.opportunityId = ctx.lastOpportunityId;
   }
@@ -434,6 +484,75 @@ export function mergeSessionIntoEntities(
     ctx.lastPipelineStageId
   ) {
     merged.pipelineStageId = ctx.lastPipelineStageId;
+  }
+  // Companies — only fill from session when the user didn't name a company
+  // themselves. Same wrong-target safety as contacts: an explicit name in the
+  // utterance ALWAYS wins over the session id.
+  if (
+    !entityString(merged, 'companyId', 'company_id') &&
+    !entityString(merged, 'companyName', 'company_name', 'companyDomain', 'company_domain') &&
+    ctx.lastCompanyId
+  ) {
+    merged.companyId = ctx.lastCompanyId;
+  }
+  if (
+    !entityString(merged, 'companyName', 'company_name') &&
+    !entityString(merged, 'companyDomain', 'company_domain') &&
+    ctx.lastCompanyName
+  ) {
+    merged.companyName = ctx.lastCompanyName;
+  }
+  // Tickets — same wrong-target safety: only fill from session when the user
+  // didn't name a ticket themselves.
+  if (
+    !entityString(merged, 'ticketId', 'ticket_id') &&
+    !entityString(merged, 'ticketSubject', 'ticket_subject') &&
+    ctx.lastTicketId
+  ) {
+    merged.ticketId = ctx.lastTicketId;
+  }
+  if (
+    !entityString(merged, 'ticketSubject', 'ticket_subject') &&
+    ctx.lastTicketSubject
+  ) {
+    merged.ticketSubject = ctx.lastTicketSubject;
+  }
+  // Products — same wrong-target safety: only fill from session when the user
+  // didn't name a product themselves.
+  if (
+    !entityString(merged, 'productId', 'product_id') &&
+    !entityString(merged, 'productName', 'product_name') &&
+    ctx.lastProductId
+  ) {
+    merged.productId = ctx.lastProductId;
+  }
+  if (
+    !entityString(merged, 'productName', 'product_name') &&
+    ctx.lastProductName
+  ) {
+    merged.productName = ctx.lastProductName;
+  }
+  // Orders — same wrong-target safety: only fill from session when the user
+  // didn't name an order themselves.
+  if (
+    !entityString(merged, 'orderId', 'order_id') &&
+    !entityString(merged, 'orderName', 'order_name') &&
+    ctx.lastOrderId
+  ) {
+    merged.orderId = ctx.lastOrderId;
+  }
+  if (
+    !entityString(merged, 'orderName', 'order_name') &&
+    ctx.lastOrderName
+  ) {
+    merged.orderName = ctx.lastOrderName;
+  }
+  // Conversations
+  if (
+    !entityString(merged, 'conversationId', 'conversation_id') &&
+    ctx.lastConversationId
+  ) {
+    merged.conversationId = ctx.lastConversationId;
   }
   return merged;
 }
@@ -456,6 +575,11 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'list_appointments',
     'create_appointment',
     'cancel_appointment',
+    'reschedule_appointment',
+    'update_appointment_status',
+    'add_appointment_note',
+    'block_calendar_time',
+    'calendar_admin',
     'list_pipelines',
     'list_opportunities',
     'find_opportunity',
@@ -463,6 +587,585 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'update_opportunity',
     'update_opportunity_status',
     'delete_opportunity',
+    'list_companies',
+    'find_company',
+    'create_company',
+    'update_company',
+    'delete_company',
+    'attach_contact_to_company',
+    'detach_contact_from_company',
+    'attach_deal_to_company',
+    'detach_deal_from_company',
+    'list_tickets',
+    'find_ticket',
+    'create_ticket',
+    'update_ticket',
+    'delete_ticket',
+    'attach_ticket_to_contact',
+    'detach_ticket_from_contact',
+    'attach_ticket_to_company',
+    'detach_ticket_from_company',
+    'attach_ticket_to_deal',
+    'detach_ticket_from_deal',
+    'list_products',
+    'find_product',
+    'create_product',
+    'update_product',
+    'delete_product',
+    'list_orders',
+    'find_order',
+    'create_order',
+    'update_order',
+    'delete_order',
+    'attach_order_to_contact',
+    'detach_order_from_contact',
+    'attach_order_to_company',
+    'detach_order_from_company',
+    'attach_order_to_deal',
+    'detach_order_from_deal',
+    'list_conversations',
+    'find_conversation',
+    'read_conversation',
   ]);
   return supported.has(intent.intent);
 }
+
+// ── HubSpot companies extractors ────────────────────────────────────────────
+//
+// All five helpers accept the raw LLM entities bag and produce a typed shape
+// the HubspotCommandService can consume. They tolerate snake_case from the
+// LLM, fall back to generic keys like `name` / `query`, and never throw on
+// missing fields — the executor handles "missing required field" copy.
+
+export type CompanyQuery = {
+  id?: string;
+  name?: string;
+  domain?: string;
+};
+
+export function extractCompanyQuery(
+  entities: Record<string, string | number | boolean | null>,
+): CompanyQuery {
+  return {
+    id: entityString(entities, 'companyId', 'company_id'),
+    name:
+      entityString(entities, 'companyName', 'company_name') ||
+      entityString(entities, 'query', 'name'),
+    domain: entityString(entities, 'companyDomain', 'company_domain', 'domain', 'website'),
+  };
+}
+
+export function extractCompanyCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    name:
+      entityString(entities, 'companyName', 'company_name') ||
+      entityString(entities, 'name') ||
+      '',
+    domain: entityString(entities, 'companyDomain', 'company_domain', 'domain'),
+    phone: entityString(entities, 'companyPhone', 'company_phone', 'phone'),
+    industry: entityString(entities, 'companyIndustry', 'company_industry', 'industry'),
+    city: entityString(entities, 'companyCity', 'company_city', 'city'),
+    state: entityString(entities, 'companyState', 'company_state', 'state'),
+    country: entityString(entities, 'companyCountry', 'company_country', 'country'),
+    numberOfEmployees: entityNumber(
+      entities,
+      'companyEmployees',
+      'company_employees',
+      'numberOfEmployees',
+      'number_of_employees',
+      'employees',
+    ),
+    description: entityString(
+      entities,
+      'companyDescription',
+      'company_description',
+      'description',
+    ),
+    website: entityString(entities, 'companyWebsite', 'company_website', 'website'),
+  };
+}
+
+export function extractCompanyUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: how do we identify which company to update?
+  const query: CompanyQuery = {
+    id: entityString(entities, 'companyId', 'company_id'),
+    // For update, "companyName" without "newCompanyName" means SELECTOR not
+    // value — same convention as updateContact's `query` vs `newName`.
+    name: entityString(entities, 'companyName', 'company_name', 'query'),
+    domain: entityString(entities, 'companyDomain', 'company_domain'),
+  };
+
+  return {
+    query,
+    newName: entityString(entities, 'newCompanyName', 'new_company_name', 'newName'),
+    domain: entityString(entities, 'newCompanyDomain', 'new_company_domain'),
+    phone: entityString(entities, 'newCompanyPhone', 'new_company_phone', 'companyPhone', 'phone'),
+    industry: entityString(
+      entities,
+      'newCompanyIndustry',
+      'new_company_industry',
+      'companyIndustry',
+      'industry',
+    ),
+    city: entityString(entities, 'newCompanyCity', 'new_company_city', 'companyCity', 'city'),
+    state: entityString(entities, 'newCompanyState', 'new_company_state', 'companyState', 'state'),
+    country: entityString(
+      entities,
+      'newCompanyCountry',
+      'new_company_country',
+      'companyCountry',
+      'country',
+    ),
+    numberOfEmployees: entityNumber(
+      entities,
+      'newCompanyEmployees',
+      'new_company_employees',
+      'companyEmployees',
+      'numberOfEmployees',
+      'employees',
+    ),
+    description: entityString(
+      entities,
+      'newCompanyDescription',
+      'new_company_description',
+      'companyDescription',
+      'description',
+    ),
+    website: entityString(
+      entities,
+      'newCompanyWebsite',
+      'new_company_website',
+      'companyWebsite',
+      'website',
+    ),
+  };
+}
+
+export function extractCompanyContactAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    company: extractCompanyQuery(entities),
+    contact: {
+      id: entityString(entities, 'contactId', 'contact_id'),
+      query:
+        entityString(entities, 'contactName', 'contact_name') ||
+        buildNameFromEntities(entities) ||
+        entityString(entities, 'contactEmail', 'contact_email', 'email') ||
+        entityString(entities, 'contactPhone', 'contact_phone', 'phone') ||
+        '',
+    },
+  };
+}
+
+export function extractCompanyDealAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    company: extractCompanyQuery(entities),
+    deal: {
+      id: entityString(entities, 'dealId', 'deal_id', 'opportunityId', 'opportunity_id'),
+      name:
+        entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
+        '',
+    },
+  };
+}
+
+// ── HubSpot tickets extractors ──────────────────────────────────────────────
+//
+// Same conventions as the companies extractors: tolerate snake_case, fall back
+// to generic keys like `subject` / `query`, never throw on missing fields.
+
+export type TicketQuery = {
+  id?: string;
+  subject?: string;
+};
+
+export function extractTicketQuery(
+  entities: Record<string, string | number | boolean | null>,
+): TicketQuery {
+  return {
+    id: entityString(entities, 'ticketId', 'ticket_id'),
+    subject:
+      entityString(entities, 'ticketSubject', 'ticket_subject') ||
+      entityString(entities, 'query', 'subject', 'name'),
+  };
+}
+
+export function extractTicketCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    subject:
+      entityString(entities, 'ticketSubject', 'ticket_subject') ||
+      entityString(entities, 'subject', 'name', 'title') ||
+      '',
+    content: entityString(
+      entities,
+      'ticketContent',
+      'ticket_content',
+      'content',
+      'description',
+      'body',
+    ),
+    priority: entityString(entities, 'ticketPriority', 'ticket_priority', 'priority'),
+    pipeline: entityString(entities, 'ticketPipeline', 'ticket_pipeline', 'pipeline'),
+    stage: entityString(entities, 'ticketStage', 'ticket_stage', 'stage'),
+  };
+}
+
+export function extractTicketUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: how do we identify which ticket to update? A bare "ticketSubject"
+  // (without "newTicketSubject") means SELECTOR, not the new value — same
+  // convention as updateCompany's `query` vs `newName`.
+  const query: TicketQuery = {
+    id: entityString(entities, 'ticketId', 'ticket_id'),
+    subject: entityString(entities, 'ticketSubject', 'ticket_subject', 'query'),
+  };
+
+  return {
+    query,
+    subject: entityString(entities, 'newTicketSubject', 'new_ticket_subject', 'newSubject'),
+    content: entityString(
+      entities,
+      'newTicketContent',
+      'new_ticket_content',
+      'ticketContent',
+      'content',
+      'description',
+    ),
+    priority: entityString(
+      entities,
+      'newTicketPriority',
+      'new_ticket_priority',
+      'ticketPriority',
+      'priority',
+    ),
+    pipeline: entityString(entities, 'newTicketPipeline', 'ticketPipeline', 'pipeline'),
+    stage: entityString(
+      entities,
+      'newTicketStage',
+      'new_ticket_stage',
+      'ticketStage',
+      'stage',
+    ),
+  };
+}
+
+export function extractTicketContactAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    ticket: extractTicketQuery(entities),
+    contact: {
+      id: entityString(entities, 'contactId', 'contact_id'),
+      query:
+        entityString(entities, 'contactName', 'contact_name') ||
+        buildNameFromEntities(entities) ||
+        entityString(entities, 'contactEmail', 'contact_email', 'email') ||
+        entityString(entities, 'contactPhone', 'contact_phone', 'phone') ||
+        '',
+    },
+  };
+}
+
+export function extractTicketCompanyAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    ticket: extractTicketQuery(entities),
+    company: extractCompanyQuery(entities),
+  };
+}
+
+export function extractTicketDealAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    ticket: extractTicketQuery(entities),
+    deal: {
+      id: entityString(entities, 'dealId', 'deal_id', 'opportunityId', 'opportunity_id'),
+      name:
+        entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
+        '',
+    },
+  };
+}
+
+// ── HubSpot products extractors ─────────────────────────────────────────────
+//
+// Products are a HubSpot library object (CRUD + search, no associations). The
+// helpers tolerate snake_case from the LLM, fall back to generic keys like
+// `name` / `query` / `sku`, and never throw on missing fields.
+
+export type ProductQuery = {
+  id?: string;
+  name?: string;
+};
+
+export function extractProductQuery(
+  entities: Record<string, string | number | boolean | null>,
+): ProductQuery {
+  return {
+    id: entityString(entities, 'productId', 'product_id'),
+    name:
+      entityString(entities, 'productName', 'product_name') ||
+      entityString(entities, 'query', 'name', 'sku'),
+  };
+}
+
+export function extractProductCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    name:
+      entityString(entities, 'productName', 'product_name') ||
+      entityString(entities, 'name', 'title') ||
+      '',
+    price: entityNumber(entities, 'productPrice', 'product_price', 'price', 'amount'),
+    sku: entityString(entities, 'productSku', 'product_sku', 'sku'),
+    description: entityString(
+      entities,
+      'productDescription',
+      'product_description',
+      'description',
+      'body',
+    ),
+    cost: entityNumber(entities, 'productCost', 'product_cost', 'cost'),
+  };
+}
+
+export function extractProductUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: a bare "productName" (without "newProductName") identifies WHICH
+  // product to update, not the new value — same convention as updateTicket.
+  const query: ProductQuery = {
+    id: entityString(entities, 'productId', 'product_id'),
+    name: entityString(entities, 'productName', 'product_name', 'query'),
+  };
+
+  return {
+    query,
+    name: entityString(entities, 'newProductName', 'new_product_name', 'newName'),
+    price: entityNumber(
+      entities,
+      'newProductPrice',
+      'new_product_price',
+      'newPrice',
+      'price',
+      'amount',
+    ),
+    sku: entityString(entities, 'newProductSku', 'new_product_sku', 'productSku', 'sku'),
+    description: entityString(
+      entities,
+      'newProductDescription',
+      'new_product_description',
+      'productDescription',
+      'description',
+    ),
+    cost: entityNumber(entities, 'newProductCost', 'new_product_cost', 'productCost', 'cost'),
+  };
+}
+
+// ── HubSpot orders extractors ───────────────────────────────────────────────
+//
+// Orders mirror tickets (CRUD + search + Contact/Company/Deal associations) but
+// carry commerce fields (total price, currency, fulfillment status) and use
+// order pipelines/stages. Same conventions: tolerate snake_case, fall back to
+// generic keys like `name` / `query`, never throw on missing fields.
+
+export type OrderQuery = {
+  id?: string;
+  name?: string;
+};
+
+export function extractOrderQuery(
+  entities: Record<string, string | number | boolean | null>,
+): OrderQuery {
+  return {
+    id: entityString(entities, 'orderId', 'order_id'),
+    name:
+      entityString(entities, 'orderName', 'order_name') ||
+      entityString(entities, 'query', 'name'),
+  };
+}
+
+export function extractOrderCreateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    name:
+      entityString(entities, 'orderName', 'order_name') ||
+      entityString(entities, 'name', 'title') ||
+      '',
+    pipeline: entityString(entities, 'orderPipeline', 'order_pipeline', 'pipeline'),
+    stage: entityString(entities, 'orderStage', 'order_stage', 'stage'),
+    totalPrice: entityNumber(
+      entities,
+      'orderTotalPrice',
+      'order_total_price',
+      'totalPrice',
+      'total_price',
+      'total',
+      'amount',
+      'price',
+    ),
+    currency: entityString(entities, 'orderCurrency', 'order_currency', 'currency'),
+    status: entityString(
+      entities,
+      'orderStatus',
+      'order_status',
+      'fulfillmentStatus',
+      'fulfillment_status',
+      'status',
+    ),
+    ownerId: entityString(entities, 'ownerId', 'owner_id', 'orderOwnerId'),
+  };
+}
+
+export function extractOrderUpdateDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  // Selector: a bare "orderName" (without "newOrderName") identifies WHICH
+  // order to update, not the new value — same convention as updateTicket.
+  const query: OrderQuery = {
+    id: entityString(entities, 'orderId', 'order_id'),
+    name: entityString(entities, 'orderName', 'order_name', 'query'),
+  };
+
+  return {
+    query,
+    name: entityString(entities, 'newOrderName', 'new_order_name', 'newName'),
+    pipeline: entityString(entities, 'newOrderPipeline', 'orderPipeline', 'pipeline'),
+    stage: entityString(entities, 'newOrderStage', 'new_order_stage', 'orderStage', 'stage'),
+    totalPrice: entityNumber(
+      entities,
+      'newOrderTotalPrice',
+      'new_order_total_price',
+      'newTotalPrice',
+      'totalPrice',
+      'total_price',
+      'total',
+      'amount',
+    ),
+    currency: entityString(
+      entities,
+      'newOrderCurrency',
+      'new_order_currency',
+      'orderCurrency',
+      'currency',
+    ),
+    status: entityString(
+      entities,
+      'newOrderStatus',
+      'new_order_status',
+      'orderStatus',
+      'fulfillmentStatus',
+      'status',
+    ),
+    ownerId: entityString(entities, 'newOwnerId', 'ownerId', 'owner_id'),
+  };
+}
+
+export function extractOrderContactAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    order: extractOrderQuery(entities),
+    contact: {
+      id: entityString(entities, 'contactId', 'contact_id'),
+      query:
+        entityString(entities, 'contactName', 'contact_name') ||
+        buildNameFromEntities(entities) ||
+        entityString(entities, 'contactEmail', 'contact_email', 'email') ||
+        entityString(entities, 'contactPhone', 'contact_phone', 'phone') ||
+        '',
+    },
+  };
+}
+
+export function extractOrderCompanyAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    order: extractOrderQuery(entities),
+    company: extractCompanyQuery(entities),
+  };
+}
+
+export function extractOrderDealAssociation(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    order: extractOrderQuery(entities),
+    deal: {
+      id: entityString(entities, 'dealId', 'deal_id', 'opportunityId', 'opportunity_id'),
+      name:
+        entityString(entities, 'dealName', 'deal_name', 'opportunityName', 'opportunity_name') ||
+        '',
+    },
+  };
+}
+
+export function extractConversationQuery(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    query: entityString(entities, 'query', 'contactName', 'contact_name'),
+    unreadOnly: entities['unreadOnly'] === true || entities['unread_only'] === true || false,
+    limit: typeof entities['limit'] === 'number' ? entities['limit'] : 20,
+  };
+}
+
+export function extractConversationRead(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    id: entityString(entities, 'conversationId', 'conversation_id'),
+    contactName: entityString(entities, 'contactName', 'contact_name', 'query'),
+  };
+}
+
+export function extractSendMessageDetails(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  const recipient =
+    entityString(entities, 'recipient', 'contactName', 'contact_name', 'to', 'name') ||
+    buildNameFromEntities(entities) ||
+    entityString(entities, 'phone', 'contactPhone', 'contact_phone', 'email', 'contactEmail') ||
+    '';
+
+  const text =
+    entityString(entities, 'message', 'text', 'body', 'content', 'messageBody', 'message_body') ||
+    '';
+
+  const conversationId = entityString(entities, 'conversationId', 'conversation_id');
+  const contactId = entityString(entities, 'contactId', 'contact_id');
+
+  const rawType = entityString(entities, 'type', 'channel', 'messageType', 'message_type')?.toUpperCase();
+  let type: 'SMS' | 'Email' | 'InternalComment' | 'WhatsApp' | 'Live_Chat' | 'FB' | 'IG' | 'Custom' = 'SMS';
+  if (rawType?.includes('EMAIL')) type = 'Email';
+  else if (rawType?.includes('INTERNAL') || rawType?.includes('COMMENT') || rawType?.includes('NOTE')) type = 'InternalComment';
+  else if (rawType?.includes('WHATSAPP')) type = 'WhatsApp';
+  else if (rawType?.includes('LIVE') || rawType?.includes('CHAT')) type = 'Live_Chat';
+  else if (rawType?.includes('FB') || rawType?.includes('FACEBOOK')) type = 'FB';
+  else if (rawType?.includes('IG') || rawType?.includes('INSTAGRAM')) type = 'IG';
+
+  return {
+    recipient,
+    text,
+    conversationId,
+    contactId,
+    type,
+    subject: entityString(entities, 'subject', 'title'),
+  };
+}
+

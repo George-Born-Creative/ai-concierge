@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View, type ViewStyle } from 'react-native';
 
+import { useAppTheme } from '@/lib/theme/theme-provider';
+
 type SkeletonProps = {
   width?: number | `${number}%`;
   height?: number;
@@ -13,6 +15,7 @@ type SkeletonProps = {
  * pulsing opacity — cheap, no extra libs, looks the same on iOS / Android / web.
  */
 export function Skeleton({ width = '100%', height = 14, radius = 8, style }: SkeletonProps) {
+  const { colors } = useAppTheme();
   const opacity = useRef(new Animated.Value(0.35)).current;
 
   useEffect(() => {
@@ -40,7 +43,13 @@ export function Skeleton({ width = '100%', height = 14, radius = 8, style }: Ske
     <Animated.View
       style={[
         styles.base,
-        { width, height, borderRadius: radius, opacity },
+        {
+          width,
+          height,
+          borderRadius: radius,
+          opacity,
+          backgroundColor: colors.skeletonBase,
+        },
         style as ViewStyle,
       ]}
     />
@@ -78,7 +87,6 @@ export function SkeletonLines({
 
 const styles = StyleSheet.create({
   base: {
-    backgroundColor: '#E4E8EE',
     overflow: 'hidden',
   },
 });

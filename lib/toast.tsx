@@ -2,6 +2,9 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import type { ThemeColors } from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
@@ -28,44 +31,48 @@ export function useToast() {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const VARIANT_CONFIG: Record<
-  ToastVariant,
-  { bg: string; border: string; icon: string; iconColor: string; textColor: string }
-> = {
-  success: {
-    bg: '#F0FAF3',
-    border: '#B7E4C7',
-    icon: 'check-circle',
-    iconColor: '#1E8449',
-    textColor: '#1A5C33',
-  },
-  error: {
-    bg: '#FFF0F0',
-    border: '#FFBCBC',
-    icon: 'error-outline',
-    iconColor: '#C0392B',
-    textColor: '#7B241C',
-  },
-  info: {
-    bg: '#EDF4FF',
-    border: '#BDD7FF',
+function getVariantConfig(variant: ToastVariant, colors: ThemeColors) {
+  if (variant === 'success') {
+    return {
+      bg: colors.successSurface,
+      border: colors.successBorder,
+      icon: 'check-circle',
+      iconColor: colors.success,
+      textColor: colors.success,
+    };
+  }
+  if (variant === 'error') {
+    return {
+      bg: colors.dangerSurface,
+      border: colors.dangerBorder,
+      icon: 'error-outline',
+      iconColor: colors.danger,
+      textColor: colors.dangerText,
+    };
+  }
+  if (variant === 'warning') {
+    return {
+      bg: colors.warningSurface,
+      border: colors.warningBorder,
+      icon: 'warning-amber',
+      iconColor: colors.warning,
+      textColor: colors.warningText,
+    };
+  }
+  return {
+    bg: colors.infoSurface,
+    border: colors.infoBorder,
     icon: 'info-outline',
-    iconColor: '#1A73E8',
-    textColor: '#174EA6',
-  },
-  warning: {
-    bg: '#FFFBEC',
-    border: '#FFE082',
-    icon: 'warning-amber',
-    iconColor: '#B7860B',
-    textColor: '#7D5A00',
-  },
-};
+    iconColor: colors.info,
+    textColor: colors.infoText,
+  };
+}
 
 // ─── Single Toast Item ────────────────────────────────────────────────────────
 
 function ToastItem({ entry, onDismiss }: { entry: ToastEntry; onDismiss: () => void }) {
-  const config = VARIANT_CONFIG[entry.variant];
+  const { colors } = useAppTheme();
+  const config = getVariantConfig(entry.variant, colors);
   const translateY = useRef(new Animated.Value(-80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const dismissedRef = useRef(false);
@@ -127,7 +134,11 @@ function ToastItem({ entry, onDismiss }: { entry: ToastEntry; onDismiss: () => v
       <View
         style={[
           styles.toastInner,
-          { backgroundColor: config.bg, borderColor: config.border },
+          {
+            backgroundColor: config.bg,
+            borderColor: config.border,
+            shadowColor: colors.shadow,
+          },
         ]}>
         <MaterialIcons name={config.icon as never} size={20} color={config.iconColor} />
         <Text style={[styles.toastText, { color: config.textColor }]}>{entry.message}</Text>
@@ -189,7 +200,6 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,

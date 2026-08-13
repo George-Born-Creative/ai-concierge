@@ -1,0 +1,73 @@
+{
+  "identifier" : "AIConcierge-StoreKit-Config",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "ai-concierge-pro",
+      "localizations" : [
+        {
+          "description" : "AI Concierge Pro plans",
+          "displayName" : "AI Concierge Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "AI Concierge Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "29.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "ghl-pro-monthly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Voice AI that drives your GoHighLevel CRM.",
+              "displayName" : "GoHighLevel Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.daveget.aiconcierge.ghl_pro_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "GoHighLevel Pro Monthly",
+          "subscriptionGroupID" : "ai-concierge-pro",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "29.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "hubspot-pro-monthly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Voice AI that drives your HubSpot CRM.",
+              "displayName" : "HubSpot Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.daveget.aiconcierge.hubspot_pro_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "HubSpot Pro Monthly",
+          "subscriptionGroupID" : "ai-concierge-pro",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

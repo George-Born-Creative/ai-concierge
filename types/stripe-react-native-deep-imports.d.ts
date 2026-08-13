@@ -19,6 +19,35 @@ declare module '@stripe/stripe-react-native/lib/commonjs/hooks/useStripe' {
   };
 
   type InitPaymentSheetParams = {
+    appearance?: {
+      colors?: {
+        primary?: string;
+        background?: string;
+        componentBackground?: string;
+        componentBorder?: string;
+        componentDivider?: string;
+        primaryText?: string;
+        secondaryText?: string;
+        componentText?: string;
+        placeholderText?: string;
+        icon?: string;
+        error?: string;
+      };
+      shapes?: {
+        borderRadius?: number;
+        borderWidth?: number;
+      };
+      primaryButton?: {
+        colors?: {
+          background?: string;
+          text?: string;
+          border?: string;
+        };
+        shapes?: {
+          borderRadius?: number;
+        };
+      };
+    };
     customerEphemeralKeySecret?: string;
     customerId?: string;
     merchantDisplayName: string;

@@ -4,12 +4,21 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Plan, SubscriptionStatus } from '@prisma/client';
+import { PaymentProvider, Plan, Subscription, SubscriptionStatus } from '@prisma/client';
 import Stripe from 'stripe';
 
 import { PlansService } from '../plans/plans.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { STRIPE_API_VERSION, StripeProvider } from './stripe.provider';
+
+// Returned by cancelActiveSubscription. For Stripe subs we actually cancel and
+// flip the row to CANCELED. For Apple subs we can't cancel server-side (App
+// Store owns the lifecycle) so we send the mobile app a deep link to the iOS
+// subscriptions page instead.
+type CancelSubscriptionResult = {
+  canceled: boolean;
+  manageUrl?: string;
+};
 
 type PaymentSheetParams = {
   paymentIntent: string;
@@ -17,6 +26,11 @@ type PaymentSheetParams = {
   customer: string;
   publishableKey: string;
 };
+
+// Surfaced to the mobile app when it tries to cancel an Apple sub. Apple
+// universal link — iOS routes it straight to the Manage Subscriptions sheet,
+// no Safari hop.
+const APPLE_MANAGE_SUBSCRIPTIONS_URL = 'itms-apps://apps.apple.com/account/subscriptions';
 
 @Injectable()
 export class BillingService {
@@ -122,11 +136,25 @@ export class BillingService {
     return { status: mapStripeStatus(stripeSub.status) };
   }
 
-  async cancelActiveSubscription(userId: string): Promise<{ canceled: boolean }> {
+  // Stripe subs cancel here; Apple subs return a deep link instead because
+  // App Store owns the lifecycle. We can flip the local row eagerly for
+  // Stripe (the webhook will reconcile anyway) but never for Apple — Apple
+  // will only release the entitlement at the end of the billing period and
+  // its EXPIRED notification is what actually transitions the row.
+  async cancelActiveSubscription(userId: string): Promise<CancelSubscriptionResult> {
     const sub = await this.prisma.subscription.findUnique({ where: { userId } });
-    if (!sub || !sub.stripeSubscriptionId) {
+    if (!sub) {
       return { canceled: false };
     }
+
+    if (sub.paymentProvider === PaymentProvider.APPLE) {
+      return { canceled: false, manageUrl: APPLE_MANAGE_SUBSCRIPTIONS_URL };
+    }
+
+    if (!sub.stripeSubscriptionId) {
+      return { canceled: false };
+    }
+
     await this.cancelStripeSubscription(this.stripeProvider.client, sub.stripeSubscriptionId);
     await this.prisma.subscription.update({
       where: { userId },
@@ -134,6 +162,21 @@ export class BillingService {
     });
     await this.disableIntegrationsForUser(userId);
     return { canceled: true };
+  }
+
+  // Used by AppleBillingService when a user who already had a Stripe sub
+  // (e.g. on ghl-pro) buys a different CRM plan via Apple IAP. We can't keep
+  // both rows around — Subscription.userId is unique — and we need to flip
+  // the CRM integration off so we don't keep talking to the old CRM.
+  async cancelStripeAndDisableIntegrations(
+    userId: string,
+    subscription: Subscription,
+  ): Promise<void> {
+    await this.cancelStripeSubscription(
+      this.stripeProvider.client,
+      subscription.stripeSubscriptionId,
+    );
+    await this.disableIntegrationsForUser(userId);
   }
 
   // ── Webhook handlers ────────────────────────────────────────────────────────
@@ -209,7 +252,10 @@ export class BillingService {
     }
   }
 
-  private async disableIntegrationsForUser(userId: string) {
+  // Exposed (not private) so AppleBillingService can call it from the
+  // notifications path — REFUND / REVOKE / EXPIRED all need the same CRM
+  // teardown behaviour as a Stripe cancel.
+  async disableIntegrationsForUser(userId: string) {
     await this.prisma.integrationConnection.updateMany({
       where: { userId, enabled: true },
       data: { enabled: false },

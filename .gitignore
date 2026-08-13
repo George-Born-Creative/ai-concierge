@@ -43,4 +43,12 @@ app-example
 /ios
 /android
 node_modules
+
+# HubSpot CLI workspace (contains hubspot.config.yml with personal access key).
+# Leading slash anchors to repo root so we don't accidentally ignore the
+# backend HubSpot module at backend/src/integrations/hubspot/.
+/hubspot/
+
+# Cursor workspace state (plans, rules, etc.) — local-only, never committed.
+.cursor/
 /plan

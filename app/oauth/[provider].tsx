@@ -1,8 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { ScreenShell } from '@/components/screen';
 import { buildConnectRouteParams, type OAuthProvider } from '@/lib/oauth';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 /**
  * Deep-link landing route (registered in app.json Android intent filter).
@@ -12,6 +14,7 @@ import { buildConnectRouteParams, type OAuthProvider } from '@/lib/oauth';
  */
 export default function OAuthReturnRoute() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const { provider, status, reason } = useLocalSearchParams<{
     provider?: string;
     status?: string;
@@ -29,14 +32,18 @@ export default function OAuthReturnRoute() {
   }, [provider, reason, router, status]);
 
   return (
-    <View
-      style={{
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#F8FAFF',
-      }}>
-      <ActivityIndicator size="large" color="#1A73E8" />
-    </View>
+    <ScreenShell>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    </ScreenShell>
   );
 }
+
+const styles = StyleSheet.create({
+  center: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
+});

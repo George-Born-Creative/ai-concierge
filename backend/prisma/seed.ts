@@ -13,13 +13,34 @@ async function main() {
     );
   }
 
+  // `monthlyPrice` is the Stripe / card price (used for the in-app Stripe
+  // PaymentSheet on both platforms) and MUST match the amount on the Stripe
+  // price object referenced by `stripePriceId` — it's display-only here.
+  // `applePrice` is the Apple IAP price set in App Store Connect — higher to
+  // absorb Apple's fee, which is what makes the Stripe option a discount. The
+  // payment-method sheet computes "Save X%" from the gap between the two, so
+  // keep `applePrice` >= `monthlyPrice` (and equal to the App Store Connect
+  // price). Tune all four with the client via env; defaults below give a
+  // visible ~17% Stripe discount ($29 card vs $34.99 Apple).
+  const ghlMonthlyPrice = Number(process.env.PLAN_GHL_MONTHLY_PRICE ?? 2900);
+  const ghlApplePrice = Number(process.env.PLAN_GHL_APPLE_PRICE ?? 3499);
+  const hubspotMonthlyPrice = Number(process.env.PLAN_HUBSPOT_MONTHLY_PRICE ?? 2900);
+  const hubspotApplePrice = Number(process.env.PLAN_HUBSPOT_APPLE_PRICE ?? 3499);
+
+  const ghlAppleProductId =
+    process.env.APPLE_PRODUCT_GHL ?? 'com.daveget.aiconcierge.ghl_pro_monthly';
+  const hubspotAppleProductId =
+    process.env.APPLE_PRODUCT_HUBSPOT ?? 'com.daveget.aiconcierge.hubspot_pro_monthly';
+
   await prisma.plan.upsert({
     where: { code: 'ghl-pro' },
     update: {
       name: 'GoHighLevel plan',
       provider: CrmProvider.GHL,
       stripePriceId: ghlPrice,
-      monthlyPrice: 2900,
+      monthlyPrice: ghlMonthlyPrice,
+      applePrice: ghlApplePrice,
+      appleProductId: ghlAppleProductId,
       features: [
         'Voice AI tied to your GoHighLevel CRM',
         'Lead capture into GHL contacts',
@@ -33,7 +54,9 @@ async function main() {
       name: 'GoHighLevel plan',
       provider: CrmProvider.GHL,
       stripePriceId: ghlPrice,
-      monthlyPrice: 2900,
+      monthlyPrice: ghlMonthlyPrice,
+      applePrice: ghlApplePrice,
+      appleProductId: ghlAppleProductId,
       features: [
         'Voice AI tied to your GoHighLevel CRM',
         'Lead capture into GHL contacts',
@@ -49,7 +72,9 @@ async function main() {
       name: 'HubSpot plan',
       provider: CrmProvider.HUBSPOT,
       stripePriceId: hubspotPrice,
-      monthlyPrice: 2900,
+      monthlyPrice: hubspotMonthlyPrice,
+      applePrice: hubspotApplePrice,
+      appleProductId: hubspotAppleProductId,
       features: [
         'Voice AI tied to your HubSpot CRM',
         'Lead capture into HubSpot contacts',
@@ -63,7 +88,9 @@ async function main() {
       name: 'HubSpot plan',
       provider: CrmProvider.HUBSPOT,
       stripePriceId: hubspotPrice,
-      monthlyPrice: 2900,
+      monthlyPrice: hubspotMonthlyPrice,
+      applePrice: hubspotApplePrice,
+      appleProductId: hubspotAppleProductId,
       features: [
         'Voice AI tied to your HubSpot CRM',
         'Lead capture into HubSpot contacts',

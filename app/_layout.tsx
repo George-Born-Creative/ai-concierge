@@ -1,20 +1,32 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import '@/lib/theme/runtime-styles';
+
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+} from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import * as SystemUI from 'expo-system-ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppSplashScreen } from '@/components/splash/app-splash-screen';
 import { StripeWrapper } from '@/components/stripe-wrapper';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AssistantHistoryProvider } from '@/lib/assistant-history';
 import { isBootstrapReady, subscribeBootstrap } from '@/lib/bootstrap-signal';
+import { useNotificationTapHandler } from '@/lib/push/notification-handler';
+import { initRealtime } from '@/lib/realtime/socket';
+import {
+  AppThemeProvider,
+  useAppTheme,
+} from '@/lib/theme/theme-provider';
 import { ToastProvider } from '@/lib/toast';
 
-// Keep the OS splash visible until the JS splash overlay is mounted, then we
-// take over from JS so the dots logo can be shown instead of a static PNG.
+// Keep the OS splash visible until the themed JS splash overlay is ready.
 void SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
@@ -22,26 +34,69 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [bootReady, setBootReady] = useState(() => isBootstrapReady());
-  const [showOverlay, setShowOverlay] = useState(() => !isBootstrapReady());
-  const overlayOpacity = useRef(new Animated.Value(1)).current;
+  return (
+    <SafeAreaProvider>
+      <AppThemeProvider>
+        <RootLayoutContent />
+      </AppThemeProvider>
+    </SafeAreaProvider>
+  );
+}
 
-  // Listen for the bootstrap signal from `app/index.tsx`.
+function RootLayoutContent() {
+  const { colors, isHydrated, resolvedTheme } = useAppTheme();
+  const [bootReady, setBootReady] = useState(() => isBootstrapReady());
+  const [showOverlay, setShowOverlay] = useState(true);
+  const overlayOpacity = useRef(new Animated.Value(1)).current;
+  const ready = bootReady && isHydrated;
+
+  const navigationTheme = useMemo(() => {
+    const base = resolvedTheme === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      dark: resolvedTheme === 'dark',
+      colors: {
+        ...base.colors,
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.textPrimary,
+        border: colors.border,
+        notification: colors.danger,
+      },
+    };
+  }, [colors, resolvedTheme]);
+
+  // Mount the global push-notification tap handler. No-op on web.
+  useNotificationTapHandler();
+
   useEffect(() => {
     const unsubscribe = subscribeBootstrap(() => setBootReady(true));
     return unsubscribe;
   }, []);
 
-  // As soon as the JS overlay paints, hide the native splash. This avoids the
-  // double-flash you'd otherwise see (native logo → JS dots → app).
-  useEffect(() => {
-    void SplashScreen.hideAsync().catch(() => undefined);
-  }, []);
+  useEffect(() => initRealtime(), []);
 
-  // Fade the JS overlay out once bootstrap is done, then unmount it.
+  // Keep Android system/overscroll surfaces synchronized with the theme.
   useEffect(() => {
-    if (!bootReady) return;
+    void SystemUI.setBackgroundColorAsync(colors.background).catch(
+      () => undefined,
+    );
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.backgroundColor = colors.background;
+      document.documentElement.style.colorScheme = resolvedTheme;
+      document.body.style.backgroundColor = colors.background;
+    }
+  }, [colors.background, resolvedTheme]);
+
+  // Do not reveal the native splash until the saved preference is known.
+  useEffect(() => {
+    if (!isHydrated) return;
+    void SplashScreen.hideAsync().catch(() => undefined);
+  }, [isHydrated]);
+
+  useEffect(() => {
+    if (!ready) return;
     const animation = Animated.timing(overlayOpacity, {
       toValue: 0,
       duration: 260,
@@ -51,48 +106,49 @@ export default function RootLayout() {
       if (finished) setShowOverlay(false);
     });
     return () => animation.stop();
-  }, [bootReady, overlayOpacity]);
+  }, [overlayOpacity, ready]);
 
   return (
     <AssistantHistoryProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={navigationTheme}>
         <ToastProvider>
           <StripeWrapper>
-            <Stack initialRouteName="index">
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)/signup" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)/signin" options={{ headerShown: false }} />
-              <Stack.Screen name="(onboarding)/plan" options={{ headerShown: false }} />
-              <Stack.Screen name="(onboarding)/connect" options={{ headerShown: false }} />
-              <Stack.Screen name="oauth/[provider]" options={{ headerShown: false }} />
-              <Stack.Screen name="(onboarding)/openai-key" options={{ headerShown: false }} />
-              <Stack.Screen name="(chat)/chat" options={{ headerShown: false }} />
-              <Stack.Screen name="settings" options={{ headerShown: false }} />
-              <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
-              <Stack.Screen name="chats" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Voice Concierge' }} />
+            <Stack
+              initialRouteName="index"
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.background },
+              }}>
+              <Stack.Screen
+                name="modal"
+                options={{ presentation: 'modal', title: 'Voice Concierge' }}
+              />
             </Stack>
-            <StatusBar style="dark" />
+            <StatusBar
+              backgroundColor={colors.background}
+              style={resolvedTheme === 'dark' ? 'light' : 'dark'}
+            />
           </StripeWrapper>
         </ToastProvider>
       </ThemeProvider>
 
-      {showOverlay && (
+      {showOverlay ? (
         <Animated.View
-          pointerEvents={bootReady ? 'none' : 'auto'}
-          style={[StyleSheet.absoluteFill, styles.overlay, { opacity: overlayOpacity }]}>
+          pointerEvents={ready ? 'none' : 'auto'}
+          style={[
+            StyleSheet.absoluteFill,
+            styles.overlay,
+            { opacity: overlayOpacity },
+          ]}>
           <AppSplashScreen />
         </Animated.View>
-      )}
+      ) : null}
     </AssistantHistoryProvider>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    // Sits above the navigation stack so the dots cover whatever screen is
-    // mounting underneath while session hydration runs.
     zIndex: 1000,
   },
 });

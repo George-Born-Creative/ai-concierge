@@ -5,14 +5,23 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { ghlApi, hubspotApi } from '@/lib/api';
+import { CRM_LABELS } from '@/lib/crm/labels';
 import { useCrmOAuth, type CrmOAuthApi, type OAuthProvider } from '@/lib/oauth';
 import { useToast } from '@/lib/toast';
 
@@ -27,7 +36,7 @@ type IntegrationCard = {
 const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
   ghl: {
     id: 'ghl',
-    name: 'GoHighLevel',
+    name: CRM_LABELS.ghl,
     description:
       'Sync contacts, opportunities, notes, tasks, and trigger workflows from voice commands.',
     icon: 'hub',
@@ -35,7 +44,7 @@ const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
   },
   hubspot: {
     id: 'hubspot',
-    name: 'HubSpot',
+    name: CRM_LABELS.hubspot,
     description: 'Create contacts and deals, add notes, and manage your pipeline from voice.',
     icon: 'cloud',
     api: hubspotApi,
@@ -43,6 +52,7 @@ const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
 };
 
 export function ConnectIntegrationScreen() {
+  const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
   const { provider, oauthStatus, oauthReason } = useLocalSearchParams<{
@@ -88,14 +98,15 @@ export function ConnectIntegrationScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.backButton} onPress={() => router.replace('/plan')}>
-          <MaterialIcons name="arrow-back" size={22} color="#202124" />
-        </Pressable>
-
+    <ScreenShell>
+      <PageHeader title={`Connect ${integration.name}`} showBack onBack={() => router.replace('/plan')} />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never">
         <View style={styles.headerIcon}>
-          <MaterialIcons name="lan" size={34} color="#1A73E8" />
+          <MaterialIcons name="lan" size={28} color={colors.primary} />
         </View>
         <Text style={styles.title}>Connect {integration.name}</Text>
         <Text style={styles.subtitle}>
@@ -105,12 +116,12 @@ export function ConnectIntegrationScreen() {
 
         {loadingStatus ? (
           <View style={styles.statusRow}>
-            <ActivityIndicator size="small" color="#1A73E8" />
+            <ActivityIndicator size="small" color={colors.primary} />
             <Text style={styles.statusText}>Checking connection…</Text>
           </View>
         ) : connected ? (
           <View style={styles.connectedBanner}>
-            <MaterialIcons name="check-circle" size={22} color="#137333" />
+            <MaterialIcons name="check-circle" size={22} color={colors.success} />
             <View style={styles.connectedCopy}>
               <Text style={styles.connectedTitle}>Connected</Text>
               <Text style={styles.connectedSubtitle}>
@@ -122,7 +133,7 @@ export function ConnectIntegrationScreen() {
 
         <View style={styles.integrationCard}>
           <View style={styles.integrationIcon}>
-            <MaterialIcons name={integration.icon} size={26} color="#1A73E8" />
+            <MaterialIcons name={integration.icon} size={26} color={colors.primary} />
           </View>
           <View style={styles.integrationCopy}>
             <Text style={styles.integrationTitle}>{integration.name}</Text>
@@ -132,7 +143,7 @@ export function ConnectIntegrationScreen() {
 
         {connected ? (
           <Pressable style={styles.primaryButton} onPress={continueToOpenAIKey}>
-            <MaterialIcons name="arrow-forward" size={22} color="#FFFFFF" />
+            <MaterialIcons name="arrow-forward" size={22} color={colors.onPrimary} />
             <Text style={styles.primaryButtonText}>Continue to OpenAI key</Text>
           </Pressable>
         ) : (
@@ -141,10 +152,10 @@ export function ConnectIntegrationScreen() {
             onPress={startOAuthConnect}
             disabled={submitting}>
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <>
-                <MaterialIcons name="link" size={22} color="#FFFFFF" />
+                <MaterialIcons name="link" size={22} color={colors.onPrimary} />
                 <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
               </>
             )}
@@ -152,148 +163,141 @@ export function ConnectIntegrationScreen() {
         )}
 
         <Text style={styles.helperText}>
-          After you approve in GoHighLevel, you will see a success page in the browser, then return
-          here via aiconcierge://oauth/{integration.id}?status=ok. You can disconnect later from
-          Profile.
+          After you approve in {integration.name}, you will see a success page in the browser, then
+          return here via aiconcierge://oauth/{integration.id}?status=ok. You can disconnect later
+          from Profile.
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   content: {
-    paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 42,
-  },
-  backButton: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
-    borderRadius: 14,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: 'center',
-    marginBottom: 22,
-    width: 44,
+    alignSelf: 'center',
+    maxWidth: 640,
+    paddingBottom: UiSpacing.xxxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.xl,
+    width: '100%',
   },
   headerIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 32,
-    height: 64,
+    borderRadius: UiRadii.icon,
+    height: 52,
     justifyContent: 'center',
-    width: 64,
+    width: 52,
   },
   title: {
     color: '#202124',
-    fontSize: 34,
+    fontSize: UiTypography.display.fontSize,
     fontWeight: '600',
-    letterSpacing: -1,
-    marginTop: 22,
+    letterSpacing: -0.7,
+    lineHeight: UiTypography.display.lineHeight,
+    marginTop: UiSpacing.lg,
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 10,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
   },
   statusRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
   },
   statusText: {
     color: '#5F6368',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   connectedBanner: {
     alignItems: 'flex-start',
     backgroundColor: '#E6F4EA',
     borderColor: '#CEEAD6',
-    borderRadius: 12,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-    padding: 14,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
+    padding: UiSpacing.md,
   },
   connectedCopy: {
     flex: 1,
   },
   connectedTitle: {
     color: '#137333',
-    fontSize: 16,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   connectedSubtitle: {
     color: '#137333',
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 4,
+    marginTop: UiSpacing.xxs,
   },
   integrationCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 14,
-    marginTop: 28,
-    padding: 16,
+    gap: UiSpacing.md,
+    marginTop: UiSpacing.xl,
+    padding: UiSpacing.md,
   },
   integrationIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 14,
-    height: 52,
+    borderRadius: UiRadii.icon,
+    height: 44,
     justifyContent: 'center',
-    width: 52,
+    width: 44,
   },
   integrationCopy: {
     flex: 1,
   },
   integrationTitle: {
     color: '#202124',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   integrationDescription: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xxs,
   },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
+    gap: UiSpacing.sm,
     justifyContent: 'center',
-    marginTop: 22,
-    minHeight: 58,
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
   },
   primaryButtonDisabled: {
     opacity: 0.65,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   helperText: {
     color: '#5F6368',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 18,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: 18,
+    marginTop: UiSpacing.md,
     textAlign: 'center',
   },
 });

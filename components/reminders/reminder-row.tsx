@@ -1,0 +1,161 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
+import type { Reminder } from '@/lib/api/types';
+import { useAppTheme } from '@/lib/theme/theme-provider';
+
+type Props = {
+  reminder: Reminder;
+  // Highlighted state used when the user opens the screen via a push tap
+  // (the `focus` route param matches this row's id).
+  focused?: boolean;
+  onPress(): void;
+  onMore(): void;
+};
+
+export function ReminderRow({ reminder, focused, onPress, onMore }: Props) {
+  const { colors } = useAppTheme();
+  const due = useMemo(() => new Date(reminder.dueAt), [reminder.dueAt]);
+  const { relative, absolute } = useMemo(() => formatDueTime(due), [due]);
+  const isOverdue =
+    reminder.status === 'SCHEDULED' && due.getTime() < Date.now();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.row, focused && styles.rowFocused]}
+      accessibilityRole="button"
+      accessibilityLabel={`Reminder: ${reminder.title}, ${relative}`}
+    >
+      <View style={styles.left}>
+        <Text style={styles.title} numberOfLines={1}>
+          {reminder.title}
+        </Text>
+        <View style={styles.metaRow}>
+          <Text style={[styles.due, isOverdue && styles.dueOverdue]}>
+            {relative}
+          </Text>
+          <Text style={styles.dueAbsolute}>{absolute}</Text>
+          {reminder.remindOffsetMinutes > 0 ? (
+            <View style={styles.offsetChip}>
+              <MaterialIcons
+                name="notifications-active"
+                size={11}
+                color={colors.icon}
+              />
+              <Text style={styles.offsetChipText}>
+                {formatOffset(reminder.remindOffsetMinutes)}
+              </Text>
+            </View>
+          ) : null}
+          {reminder.linkLabel ? (
+            <View style={styles.linkChip}>
+              <MaterialIcons name="link" size={12} color={colors.primary} />
+              <Text style={styles.linkChipText} numberOfLines={1}>
+                {reminder.linkLabel}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+      <Pressable
+        hitSlop={12}
+        onPress={onMore}
+        style={styles.moreButton}
+        accessibilityRole="button"
+        accessibilityLabel="More actions"
+      >
+        <MaterialIcons name="more-vert" size={22} color={colors.icon} />
+      </Pressable>
+    </Pressable>
+  );
+}
+
+function formatDueTime(due: Date): { relative: string; absolute: string } {
+  const diffMs = due.getTime() - Date.now();
+  const absMin = Math.round(Math.abs(diffMs) / 60_000);
+  const past = diffMs < 0;
+
+  let relative: string;
+  if (absMin < 1) {
+    relative = past ? 'just now' : 'in a moment';
+  } else if (absMin < 60) {
+    relative = past ? `${absMin}m ago` : `in ${absMin}m`;
+  } else if (absMin < 24 * 60) {
+    const hours = Math.round(absMin / 60);
+    relative = past ? `${hours}h ago` : `in ${hours}h`;
+  } else {
+    const days = Math.round(absMin / (60 * 24));
+    relative = past ? `${days}d ago` : `in ${days}d`;
+  }
+
+  const absolute = due.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return { relative, absolute };
+}
+
+function formatOffset(minutes: number): string {
+  if (minutes % 60 === 0) {
+    const h = minutes / 60;
+    return `${h}h before`;
+  }
+  return `${minutes}m before`;
+}
+
+const styles = StyleSheet.create({
+  row: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    minHeight: 64,
+    paddingHorizontal: UiSpacing.lg,
+    paddingVertical: UiSpacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5EAF5',
+    backgroundColor: 'white',
+  },
+  rowFocused: { backgroundColor: '#EEF3FF' },
+  left: { flex: 1, paddingRight: UiSpacing.md },
+  title: {
+    color: '#0F172A',
+    fontSize: UiTypography.bodySmall.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginBottom: UiSpacing.xxs,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: UiSpacing.sm,
+    flexWrap: 'wrap',
+  },
+  due: { fontSize: UiTypography.label.fontSize, color: '#1F49E0', fontWeight: '500', lineHeight: UiTypography.label.lineHeight },
+  dueOverdue: { color: '#B91C1C' },
+  dueAbsolute: { fontSize: UiTypography.caption.fontSize, color: '#5B6B82', lineHeight: UiTypography.caption.lineHeight },
+  linkChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: UiSpacing.xxs,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xxs,
+    backgroundColor: '#EEF3FF',
+    borderRadius: UiRadii.pill,
+  },
+  linkChipText: { fontSize: UiTypography.caption.fontSize, color: '#1F49E0', lineHeight: UiTypography.caption.lineHeight, maxWidth: 120 },
+  offsetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: UiSpacing.xxs,
+    paddingHorizontal: UiSpacing.xs,
+    paddingVertical: UiSpacing.xxs,
+    backgroundColor: '#F1F5F9',
+    borderRadius: UiRadii.pill,
+  },
+  offsetChipText: { fontSize: UiTypography.caption.fontSize, color: '#5B6B82', fontWeight: '500', lineHeight: UiTypography.caption.lineHeight },
+  moreButton: { padding: UiSpacing.xxs },
+});

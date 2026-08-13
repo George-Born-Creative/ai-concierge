@@ -1,7 +1,11 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
-import { Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { HEADER_ACTION, HEADER_ROW } from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 // Reusable sticky page header. Lives outside the screen's ScrollView so it
 // stays anchored to the top while content scrolls underneath. Used by the
@@ -23,10 +27,10 @@ type PageHeaderProps = {
   right?: ReactNode;
 };
 
-const STATUS_BAR_HEIGHT = Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0;
-
 export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   function handleBack() {
     if (onBack) {
@@ -41,7 +45,15 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
   }
 
   return (
-    <View style={styles.headerWrapper}>
+    <View
+      style={[
+        styles.headerWrapper,
+        {
+          backgroundColor: colors.headerBackground,
+          borderBottomColor: colors.border,
+          paddingTop: insets.top,
+        },
+      ]}>
       <View style={styles.header}>
         <View style={styles.leftGroup}>
           {showBack ? (
@@ -49,13 +61,19 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
               accessibilityLabel="Go back"
               hitSlop={10}
               onPress={handleBack}
-              style={styles.backButton}>
-              <MaterialIcons name="arrow-back" size={22} color="#202124" />
+              style={styles.actionButton}>
+              <MaterialIcons
+                name="arrow-back"
+                size={24}
+                color={colors.textPrimary}
+              />
             </Pressable>
           ) : null}
 
           {title ? (
-            <Text style={styles.title} numberOfLines={1}>
+            <Text
+              style={[styles.title, { color: colors.textPrimary }]}
+              numberOfLines={1}>
               {title}
             </Text>
           ) : (
@@ -66,7 +84,7 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
                 <View style={[styles.logoDot, styles.yellowDot]} />
                 <View style={[styles.logoDot, styles.greenDot]} />
               </View>
-              <Text style={styles.brandName}>AI-Concierge</Text>
+              <Text style={[styles.brandName, { color: colors.textPrimary }]}>AI-Concierge</Text>
             </View>
           )}
         </View>
@@ -77,38 +95,30 @@ export function PageHeader({ title, showBack, onBack, right }: PageHeaderProps) 
   );
 }
 
-// Header height (excluding the status-bar padding). "Medium-height rectangle"
-// as requested.
-const HEADER_HEIGHT = 60;
-
 const styles = StyleSheet.create({
   headerWrapper: {
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E8EAED',
     borderBottomWidth: 1,
-    paddingTop: STATUS_BAR_HEIGHT,
   },
   header: {
     alignItems: 'center',
     flexDirection: 'row',
-    height: HEADER_HEIGHT,
+    height: HEADER_ROW,
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
   },
   leftGroup: {
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
-  backButton: {
+  actionButton: {
     alignItems: 'center',
-    height: 36,
+    height: HEADER_ACTION,
     justifyContent: 'center',
-    width: 36,
+    width: HEADER_ACTION,
   },
   title: {
-    color: '#202124',
     flexShrink: 1,
     fontSize: 18,
     fontWeight: '600',
@@ -120,7 +130,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   brandName: {
-    color: '#202124',
     fontSize: 17,
     fontWeight: '600',
     letterSpacing: -0.2,

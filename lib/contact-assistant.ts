@@ -147,7 +147,7 @@ async function executeWithHeuristics(command: string): Promise<AssistantCommandR
 
   return {
     response:
-      'I can handle contacts and calendars in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", or "book Sarah tomorrow at 2pm".',
+      'I can handle contacts, calendars, and conversations in GoHighLevel. Try "pull up my contacts", "show my conversations", "send a message to John saying hello", or "book Sarah tomorrow at 2pm".',
     status: 'error',
   };
 }
@@ -479,8 +479,8 @@ async function cancelAppointmentByQuery(query: string): Promise<AssistantCommand
 }
 
 async function listLatestContacts(): Promise<AssistantCommandResult> {
-  const result = await ghlApi.listContacts({ limit: 10 });
-  const summaries = result.contacts.filter((contact) => contact.name !== 'Unknown');
+  const result = await ghlApi.listAllContacts();
+  const summaries = result.contacts;
 
   if (summaries.length === 0) {
     return {
@@ -490,7 +490,7 @@ async function listLatestContacts(): Promise<AssistantCommandResult> {
   }
 
   return {
-    response: `Here's who you've got recently:\n${summaries.map(formatContact).join('\n')}`,
+    response: `Here are all ${summaries.length} contacts in GoHighLevel:\n${summaries.map(formatContact).join('\n')}`,
     status: 'success',
   };
 }
@@ -506,7 +506,7 @@ async function createContactFromDetails(
   }
 
   const { firstName, lastName } = splitName(details.name);
-  const created = await ghlApi.createContact({
+  const created = await ghlApi.upsertContact({
     name: details.name,
     firstName,
     lastName,

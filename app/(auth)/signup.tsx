@@ -1,5 +1,5 @@
-import { AuthScreen } from '@/components/auth/auth-screen';
+import { AuthLanding } from '@/components/auth/auth-landing';
 
 export default function SignupScreen() {
-  return <AuthScreen mode="signup" />;
+  return <AuthLanding />;
 }

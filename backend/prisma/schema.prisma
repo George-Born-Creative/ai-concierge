@@ -21,12 +21,68 @@ enum SubscriptionStatus {
   UNPAID
 }
 
+// Which payment processor owns a subscription. STRIPE covers the existing
+// PaymentSheet (Android) and Stripe Checkout (iOS web link-out) flows; APPLE
+// covers iOS in-app subscriptions purchased via StoreKit 2.
+enum PaymentProvider {
+  STRIPE
+  APPLE
+}
+
+enum ReminderStatus {
+  SCHEDULED
+  SNOOZED
+  DELIVERED
+  DISMISSED
+  FAILED
+  CANCELED
+}
+
+enum ReminderLinkType {
+  CONTACT
+  COMPANY
+  DEAL
+  APPOINTMENT
+}
+
+enum SupportRequestCategory {
+  ACCOUNT
+  BILLING
+  CRM_GHL
+  CRM_HUBSPOT
+  OPENAI_ASSISTANT
+  VOICE
+  REMINDERS_NOTIFICATIONS
+  CONNECTIVITY
+  PRIVACY_SECURITY
+  FEEDBACK
+  OTHER
+}
+
+enum SupportDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
   name             String
-  passwordHash     String
+  // Nullable: Google-only accounts have no password. Email/password accounts
+  // always set it. A Google user can later "set a password" via profile edit.
+  passwordHash     String?
+  // Google's stable account id (`sub` from the verified ID token). Set when the
+  // user signs in with Google; lets us match returning Google users directly.
+  googleId         String?  @unique
+  // Optional avatar URL pulled from the Google profile (`picture`).
+  avatarUrl        String?
+  // Email/password signups start false and flip true once the emailed code is
+  // confirmed. Google sign-ins are created already true (Google verifies email).
+  emailVerified    Boolean  @default(false)
   stripeCustomerId String?  @unique
+  expoPushToken    String?
+  timezone         String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -35,36 +91,91 @@ model User {
   openaiKey               OpenAIKey?
   auditLogs               AuditLog[]
   assistantConversations  AssistantConversation[]
+  reminders               Reminder[]
+  emailVerifications      EmailVerification[]
+  passwordResets          PasswordReset[]
+  supportRequests         SupportRequest[]
+}
+
+// Short-lived 6-digit codes emailed during signup. Only the argon2 hash of the
+// code is stored. Codes expire (expiresAt), are single-use (consumedAt), and
+// `attempts` is incremented on each wrong guess so the verifier can lock out
+// brute-force attempts.
+model EmailVerification {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// Short-lived 6-digit codes emailed for password resets. Mirrors
+// EmailVerification (argon2-hashed, single-use, expiring, attempt-limited) but
+// has its own lifecycle: consuming a code sets the user's new passwordHash
+// rather than flipping emailVerified.
+model PasswordReset {
+  id         String    @id @default(cuid())
+  userId     String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 // Per client spec: one subscription = one CRM integration.
+//
+// `monthlyPrice` is the Stripe / web price (used for Android PaymentSheet and
+// the iOS Stripe-via-web Checkout option). `applePrice` is the Apple IAP
+// price set in App Store Connect — usually higher to absorb Apple's 30%
+// commission. Null `applePrice` means the plan isn't sold via Apple IAP.
 model Plan {
-  id            String      @id @default(cuid())
-  code          String      @unique
-  name          String
-  provider      CrmProvider
-  stripePriceId String      @unique
-  monthlyPrice  Int
-  currency      String      @default("usd")
-  features      String[]
-  isActive      Boolean     @default(true)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  code            String      @unique
+  name            String
+  provider        CrmProvider
+  stripePriceId   String      @unique
+  monthlyPrice    Int
+  applePrice      Int?
+  appleProductId  String?     @unique
+  currency        String      @default("usd")
+  features        String[]
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   subscriptions Subscription[]
 }
 
 // userId is unique so a user has at most one subscription at a time.
 // When the plan changes we update the existing row in place.
+//
+// `paymentProvider` discriminates which set of billing identifiers is live:
+//   STRIPE → stripeSubscriptionId is set, Apple fields null
+//   APPLE  → appleOriginalTransactionId is set, stripeSubscriptionId may
+//            still be present from a prior Stripe sub but isn't authoritative
 model Subscription {
-  id                   String             @id @default(cuid())
-  userId               String             @unique
-  planId               String
-  stripeSubscriptionId String?            @unique
-  status               SubscriptionStatus @default(INCOMPLETE)
-  currentPeriodEnd     DateTime?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  id                          String             @id @default(cuid())
+  userId                      String             @unique
+  planId                      String
+  paymentProvider             PaymentProvider    @default(STRIPE)
+  stripeSubscriptionId        String?            @unique
+  appleOriginalTransactionId  String?            @unique
+  appleEnvironment            String?
+  status                      SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodEnd            DateTime?
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
@@ -155,7 +266,9 @@ model AssistantMessage {
   response       String                   @default("")
   status         AssistantMessageStatus   @default(success)
   source         AssistantMessageSource   @default(text)
-  transcript     String?
+  transcript          String?
+  rawTranscript       String?
+  correctedTranscript String?
   intent         Json?
   voiceUri       String?
   pending        Boolean                  @default(false)
@@ -164,4 +277,71 @@ model AssistantMessage {
   conversation AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+// Scheduled reminder created by the user (manual UI or AI assistant). The cron
+// worker dispatches due rows via Expo push. Optional link* fields snapshot a
+// CRM entity so the notification can deep-link to it; the snapshot doesn't
+// stay in sync with CRM renames.
+model Reminder {
+  id                  String                  @id @default(cuid())
+  userId              String
+  title               String
+  notes               String?
+  // The event/target time the user cares about (what they picked, or the
+  // appointment start). Displayed and sorted on.
+  dueAt               DateTime
+  // How many minutes before dueAt to fire. Default 15; 0 means "at the event".
+  remindOffsetMinutes Int                     @default(15)
+  // The actual time the notification fires = clamp(dueAt - offset). This is what
+  // the dispatch cron and on-device local notifications schedule against.
+  notifyAt            DateTime
+  status              ReminderStatus          @default(SCHEDULED)
+  snoozedUntil        DateTime?
+  linkType            ReminderLinkType?
+  linkProvider        CrmProvider?
+  linkExternalId      String?
+  linkLabel           String?
+  attempts            Int                     @default(0)
+  lastError           String?
+  deliveredAt         DateTime?
+  source              AssistantMessageSource  @default(text)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dueAt])
+  @@index([status, notifyAt])
+}
+
+// Durable support intake. This records receipt and email-delivery state; it is
+// intentionally not a full help-desk workflow or case-resolution system.
+model SupportRequest {
+  id                        String                @id @default(cuid())
+  caseReference             String                @unique
+  clientRequestId           String
+  userId                    String
+  category                  SupportRequestCategory
+  subject                   String
+  description               String
+  diagnostics               Json?
+  deliveryStatus            SupportDeliveryStatus @default(PENDING)
+  deliveryAttempts          Int                   @default(0)
+  lastDeliveryError         String?
+  nextDeliveryAttemptAt     DateTime?
+  deliveredAt               DateTime?
+  confirmationAttempts      Int                   @default(0)
+  lastConfirmationError     String?
+  nextConfirmationAttemptAt DateTime?
+  confirmationSentAt        DateTime?
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientRequestId])
+  @@index([userId, createdAt])
+  @@index([deliveryStatus, nextDeliveryAttemptAt])
+  @@index([confirmationSentAt, nextConfirmationAttemptAt])
 }

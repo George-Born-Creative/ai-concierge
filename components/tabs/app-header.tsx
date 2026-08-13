@@ -1,44 +1,68 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { HEADER_ACTION, HEADER_ROW } from '@/constants/theme';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 export function AppHeader() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   return (
-    <View style={styles.header}>
-      <View style={styles.brand}>
-        <View style={styles.logoMark}>
-          <View style={[styles.logoDot, styles.blueDot]} />
-          <View style={[styles.logoDot, styles.redDot]} />
-          <View style={[styles.logoDot, styles.yellowDot]} />
-          <View style={[styles.logoDot, styles.greenDot]} />
+    <View
+      style={[
+        styles.headerWrapper,
+        {
+          backgroundColor: colors.headerBackground,
+          borderBottomColor: colors.border,
+          paddingTop: insets.top,
+        },
+      ]}>
+      <View style={styles.header}>
+        <View style={styles.brand}>
+          <View style={styles.logoMark}>
+            <View style={[styles.logoDot, styles.blueDot]} />
+            <View style={[styles.logoDot, styles.redDot]} />
+            <View style={[styles.logoDot, styles.yellowDot]} />
+            <View style={[styles.logoDot, styles.greenDot]} />
+          </View>
+          <View>
+            <Text style={[styles.appName, { color: colors.textPrimary }]}>AI-Concierge</Text>
+            <Text style={[styles.appTagline, { color: colors.textSecondary }]}>Voice assistant</Text>
+          </View>
         </View>
-        <View>
-          <Text style={styles.appName}>AI-Concierge</Text>
-          <Text style={styles.appTagline}>Voice assistant</Text>
-        </View>
-      </View>
 
-      <Pressable style={styles.homeButton} onPress={() => router.push('/')}>
-        <MaterialIcons name="home" size={22} color="#1A73E8" />
-        <Text style={styles.homeButtonText}>Home</Text>
-      </Pressable>
+        <Pressable
+          accessibilityLabel="History"
+          hitSlop={10}
+          style={styles.actionButton}
+          onPress={() => router.push('/history')}>
+          <MaterialIcons name="history" size={24} color={colors.primary} />
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  headerWrapper: {
+    borderBottomWidth: 1,
+  },
   header: {
     alignItems: 'center',
-    backgroundColor: '#F8FAFF',
-    borderBottomColor: '#E8EAED',
-    borderBottomWidth: 1,
     flexDirection: 'row',
+    height: HEADER_ROW,
     justifyContent: 'space-between',
-    paddingBottom: 18,
     paddingHorizontal: 12,
-    paddingTop: 38,
+  },
+  actionButton: {
+    alignItems: 'center',
+    height: HEADER_ACTION,
+    justifyContent: 'center',
+    width: HEADER_ACTION,
   },
   brand: {
     alignItems: 'center',
@@ -83,31 +107,13 @@ const styles = StyleSheet.create({
     width: 12,
   },
   appName: {
-    color: '#202124',
     fontSize: 20,
     fontWeight: '600',
     letterSpacing: -0.3,
   },
   appTagline: {
-    color: '#5F6368',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
-  },
-  homeButton: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8F0FE',
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-  },
-  homeButtonText: {
-    color: '#1A73E8',
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

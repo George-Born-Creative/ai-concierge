@@ -1,0 +1,8 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- AI-Concierge dot mark. Reconstructed from the inline logo in -->
+  <!-- components/auth/auth-screen.tsx (blue / red / yellow / green dots). -->
+  <circle cx="24" cy="32" r="19" fill="#4285F4"/>
+  <circle cx="44" cy="20" r="12" fill="#EA4335"/>
+  <circle cx="41" cy="45" r="11" fill="#FBBC04"/>
+  <circle cx="24" cy="42" r="8" fill="#34A853"/>
+</svg>

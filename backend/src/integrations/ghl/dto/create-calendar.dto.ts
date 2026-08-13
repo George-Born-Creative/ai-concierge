@@ -1,20 +1,9 @@
-import { IsBoolean, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsString, MinLength } from 'class-validator';
+import { CalendarV3PayloadDto } from './calendar-v3.dto';
 
-export class CreateGhlCalendarDto {
+export class CreateGhlCalendarDto extends CalendarV3PayloadDto {
   @IsString()
   @MinLength(1)
-  name!: string;
+  declare name: string;
 
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  /** Additional GHL calendar fields (slotDuration, eventType, teamMembers, etc.). */
-  @IsOptional()
-  @IsObject()
-  options?: Record<string, unknown>;
 }

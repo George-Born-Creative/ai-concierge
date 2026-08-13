@@ -8,20 +8,33 @@ import {
     useRef,
     useState,
 } from 'react';
+import { Alert } from 'react-native';
 
 import { assistantApi, voiceApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import type {
   AssistantConversationBucketKey,
   AssistantMessage,
+  AssistantPhase,
+  RunAssistantCommandRequest,
   VoiceIntent,
 } from '@/lib/api/types';
+import { subscribeRealtimeEvent } from '@/lib/realtime/socket';
 import { getToken, subscribeSession } from '@/lib/session';
 
 export type AssistantCommandStatus = 'success' | 'error';
 
 export type AssistantHistoryEntry = {
+  /**
+   * Stable React key for the row. For locally-created entries this is the
+   * optimistic id (e.g. "pending-voice-1750000000"); the server's persisted
+   * message id is stored separately on `serverMessageId` so list keys stay
+   * stable across the optimistic→server swap (otherwise the bubble remounts
+   * and the typewriter animation never fires).
+   */
   id: string;
+  /** Server-assigned message id once the command has been persisted. */
+  serverMessageId?: string;
   command: string;
   response: string;
   status: AssistantCommandStatus;
@@ -30,7 +43,15 @@ export type AssistantHistoryEntry = {
   voiceUri?: string;
   pending?: boolean;
   transcript?: string;
+  rawTranscript?: string;
+  correctedTranscript?: string;
   intent?: VoiceIntent;
+  /**
+   * Live lifecycle phase for an in-flight (pending) command, driven by the
+   * SSE `phase` events. Surfaced as a status line in the pending bubble and
+   * irrelevant once the reply starts streaming / settles.
+   */
+  phase?: AssistantPhase;
 };
 
 export type AssistantChat = {
@@ -62,6 +83,7 @@ type AssistantState = {
 function mapMessage(message: AssistantMessage): AssistantHistoryEntry {
   return {
     id: message.id,
+    serverMessageId: message.id,
     command: message.command,
     response: message.response,
     status: message.status,
@@ -70,6 +92,8 @@ function mapMessage(message: AssistantMessage): AssistantHistoryEntry {
     voiceUri: message.voiceUri,
     pending: message.pending,
     transcript: message.transcript,
+    rawTranscript: message.rawTranscript,
+    correctedTranscript: message.correctedTranscript,
     intent: message.intent,
   };
 }
@@ -127,10 +151,15 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     activeChatId: null,
     loading: true,
   });
-  // Optimistic message ids that the user cancelled. We can't abort the
-  // server-side write cleanly, but we can drop the eventual response so the UI
-  // doesn't suddenly fill in the answer after the user said "stop".
+  // Optimistic message ids that the user cancelled. The matching SSE
+  // stream is also aborted via `pendingControllersRef`; this set is the
+  // belt-and-braces guard that drops a late-arriving `done` frame in
+  // case it raced past the close signal.
   const cancelledIdsRef = useRef<Set<string>>(new Set());
+  // AbortController per in-flight SSE stream, keyed by optimistic id.
+  // Used by `cancelPendingMessages` to tear the stream down cleanly so
+  // we stop billing the user's OpenAI key the instant they hit "stop".
+  const pendingControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   const refreshChats = useCallback(async () => {
     const token = getToken();
@@ -285,7 +314,11 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
     setState((s) => {
       const chats = s.chats.map((chat) => {
         if (chat.id !== chatId) return chat;
-        const messages = chat.messages.filter((m) => m.id !== messageId);
+        // Match on either id: callers may pass the optimistic React-key id
+        // (entry.id) or the persisted server id (entry.serverMessageId).
+        const messages = chat.messages.filter(
+          (m) => m.id !== messageId && m.serverMessageId !== messageId,
+        );
         return {
           ...chat,
           messages,
@@ -316,7 +349,8 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         cancelledIdsRef.current.delete(optimisticId);
         return null;
       }
-      const entry = mapMessage(message);
+      const serverEntry = mapMessage(message);
+      let appliedEntry = serverEntry;
       setState((s) => {
         const chats = [...s.chats];
         const idx = chats.findIndex((c) => c.id === chatId);
@@ -324,32 +358,42 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           chats.push({
             id: chatId,
             title: null,
-            createdAt: entry.createdAt,
-            updatedAt: entry.createdAt,
-            messages: [entry],
+            createdAt: serverEntry.createdAt,
+            updatedAt: serverEntry.createdAt,
+            messages: [serverEntry],
           });
           return { ...s, chats, activeChatId: chatId, loading: false };
         }
 
         const chat = chats[idx];
         const existingIdx = chat.messages.findIndex(
-          (m) => m.id === entry.id || (optimisticId && m.id === optimisticId),
+          (m) => m.id === serverEntry.id || (optimisticId && m.id === optimisticId),
         );
         const messages = [...chat.messages];
         if (existingIdx >= 0) {
-          messages[existingIdx] = entry;
+          // Preserve the existing row's React key so the bubble doesn't
+          // remount when the optimistic id is replaced by the server id;
+          // remounting silently breaks the assistant typewriter animation
+          // because wasPendingRef re-initializes to its current value.
+          const existing = messages[existingIdx];
+          appliedEntry = {
+            ...serverEntry,
+            id: existing.id,
+            serverMessageId: serverEntry.id,
+          };
+          messages[existingIdx] = appliedEntry;
         } else {
-          messages.push(entry);
+          messages.push(serverEntry);
         }
 
         chats[idx] = {
           ...chat,
           messages,
-          updatedAt: entry.createdAt,
+          updatedAt: serverEntry.createdAt,
         };
         return { ...s, chats, activeChatId: chatId, loading: false };
       });
-      return entry;
+      return appliedEntry;
     },
     [],
   );
@@ -377,6 +421,85 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       return { ...s, chats, activeChatId: chatId, loading: false };
     });
   }, []);
+
+  /**
+   * Consume one SSE command stream into the optimistic bubble. Tokens
+   * are appended in place — the existing TypewriterText catches up to
+   * the growing target string, which is exactly what the streaming
+   * polish was designed to feed it. The `done` event swaps the
+   * optimistic id for the persisted server id without remounting the
+   * bubble, preserving the typewriter's internal state.
+   */
+  const consumeCommandStream = useCallback(
+    async (
+      chatId: string,
+      optimisticId: string,
+      body: RunAssistantCommandRequest,
+      controller: AbortController,
+      fallback: AssistantHistoryEntry,
+    ): Promise<AssistantHistoryEntry> => {
+      let accumulated = '';
+      let appliedEntry: AssistantHistoryEntry | null = null;
+
+      try {
+        for await (const evt of assistantApi.runCommandStream(chatId, body, controller.signal)) {
+          // Belt-and-braces: a token may have queued before our abort
+          // signal reached the server. Drop anything past cancellation.
+          if (cancelledIdsRef.current.has(optimisticId)) break;
+
+          if (evt.type === 'phase') {
+            // Surface the backend lifecycle phase as a live status line on
+            // the pending bubble (understanding → working → writing).
+            const phase = evt.phase;
+            setState((s) => ({
+              ...s,
+              chats: s.chats.map((chat) =>
+                chat.id !== chatId
+                  ? chat
+                  : {
+                      ...chat,
+                      messages: chat.messages.map((m) =>
+                        m.id === optimisticId ? { ...m, phase } : m,
+                      ),
+                    },
+              ),
+            }));
+          } else if (evt.type === 'token') {
+            accumulated += evt.delta;
+            const snapshot = accumulated;
+            setState((s) => ({
+              ...s,
+              chats: s.chats.map((chat) =>
+                chat.id !== chatId
+                  ? chat
+                  : {
+                      ...chat,
+                      messages: chat.messages.map((m) =>
+                        m.id === optimisticId ? { ...m, response: snapshot } : m,
+                      ),
+                    },
+              ),
+            }));
+          } else if (evt.type === 'done') {
+            // applyServerMessage preserves the optimistic React key (so
+            // the bubble doesn't remount) and lands the canonical
+            // persisted text — which should match `accumulated` for
+            // streamed responses, so the TypewriterText sees a no-op.
+            appliedEntry = applyServerMessage(chatId, evt.message, optimisticId);
+          }
+        }
+      } finally {
+        pendingControllersRef.current.delete(optimisticId);
+      }
+
+      if (cancelledIdsRef.current.has(optimisticId)) {
+        cancelledIdsRef.current.delete(optimisticId);
+        return { ...fallback, response: 'Cancelled.', status: 'error' as const, pending: false };
+      }
+      return appliedEntry ?? fallback;
+    },
+    [applyServerMessage],
+  );
 
   const runCommand = useCallback(
     async (
@@ -406,23 +529,17 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         appendOptimistic(chatId, optimistic);
       }
 
+      const controller = new AbortController();
+      pendingControllersRef.current.set(optimisticId, controller);
+
       try {
-        const result = await assistantApi.runCommand(chatId, { text: command, source });
-        if (cancelledIdsRef.current.has(optimisticId)) {
-          cancelledIdsRef.current.delete(optimisticId);
-          return { ...optimistic, response: 'Cancelled.', status: 'error' as const, pending: false };
-        }
-        setState((s) => {
-          const chats = s.chats.map((chat) => {
-            if (chat.id !== chatId) return chat;
-            const messages = chat.messages
-              .filter((m) => m.id !== optimisticId)
-              .concat(mapMessage(result));
-            return { ...chat, messages, updatedAt: result.createdAt };
-          });
-          return { ...s, chats, activeChatId: chatId };
-        });
-        return mapMessage(result);
+        return await consumeCommandStream(
+          chatId,
+          optimisticId,
+          { text: command, source },
+          controller,
+          optimistic,
+        );
       } catch (err) {
         if (cancelledIdsRef.current.has(optimisticId)) {
           cancelledIdsRef.current.delete(optimisticId);
@@ -449,7 +566,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         return { ...optimistic, response, status: 'error' as const, pending: false };
       }
     },
-    [appendOptimistic, ensureConversationId],
+    [appendOptimistic, consumeCommandStream, ensureConversationId],
   );
 
   const addVoiceMessage = useCallback(
@@ -496,15 +613,19 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
           }),
         }));
 
-        try {
-          const transcribed = await voiceApi.transcribe(voiceUri);
-          if (cancelledIdsRef.current.has(optimisticId)) {
-            cancelledIdsRef.current.delete(optimisticId);
-            return;
-          }
-          const transcript = transcribed.transcript?.trim() ?? '';
-
-          if (!transcript) {
+        // Stream the transcript in as Whisper produces it: the backend relays
+        // partial deltas over the socket keyed by requestId, and we paint them
+        // onto the user bubble live. Purely cosmetic — the HTTP response below
+        // is still the source of truth (and the no-speech guard runs on it).
+        const requestId = `voice-${optimisticId}`;
+        let partialTranscript = '';
+        const unsubscribeDeltas = subscribeRealtimeEvent<{ requestId: string; delta: string }>(
+          'voice.transcribe.delta',
+          (payload) => {
+            if (payload.requestId !== requestId) return;
+            partialTranscript += payload.delta;
+            const live = partialTranscript.trim();
+            if (!live || cancelledIdsRef.current.has(optimisticId)) return;
             setState((s) => ({
               ...s,
               chats: s.chats.map((chat) => {
@@ -512,19 +633,43 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
                 return {
                   ...chat,
                   messages: chat.messages.map((m) =>
-                    m.id === optimisticId
-                      ? {
-                          ...m,
-                          command: '(no speech detected)',
-                          response: 'No speech detected. Try speaking closer to the microphone.',
-                          pending: false,
-                          status: 'error' as const,
-                        }
-                      : m,
+                    m.id === optimisticId ? { ...m, transcript: live } : m,
                   ),
                 };
               }),
             }));
+          },
+        );
+
+        try {
+          const transcribed = await voiceApi.transcribe(voiceUri, requestId);
+          if (cancelledIdsRef.current.has(optimisticId)) {
+            cancelledIdsRef.current.delete(optimisticId);
+            return;
+          }
+          const transcript = transcribed.transcript?.trim() ?? '';
+          const rawTranscript = transcribed.rawTranscript?.trim() ?? transcript;
+          const correctedTranscript = transcribed.correctedTranscript?.trim() ?? transcript;
+
+          if (!transcript) {
+            // No real speech — silence/noise, a stock hallucination, or the
+            // model echoing our priming prompt. Drop the optimistic bubble and
+            // tell the user via a popup instead of leaving a phantom command.
+            setState((s) => ({
+              ...s,
+              chats: s.chats.map((chat) =>
+                chat.id !== convId
+                  ? chat
+                  : {
+                      ...chat,
+                      messages: chat.messages.filter((m) => m.id !== optimisticId),
+                    },
+              ),
+            }));
+            Alert.alert(
+              "Didn't catch that",
+              "We didn't detect any speech. Please try again and speak clearly in English.",
+            );
             return;
           }
 
@@ -539,8 +684,10 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
                   m.id === optimisticId
                     ? {
                         ...m,
-                        command: transcript,
-                        transcript,
+                        command: correctedTranscript || transcript,
+                        transcript: correctedTranscript || transcript,
+                        rawTranscript,
+                        correctedTranscript,
                         response: 'Running your command…',
                       }
                     : m,
@@ -549,18 +696,26 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
             }),
           }));
 
-          const result = await assistantApi.runCommand(convId, {
-            text: transcript,
-            source: 'voice',
-            transcript,
-            voiceUri,
-            intent: transcribed.intent,
-          });
-          if (cancelledIdsRef.current.has(optimisticId)) {
-            cancelledIdsRef.current.delete(optimisticId);
-            return;
-          }
-          applyServerMessage(convId, result, optimisticId);
+          // No `intent` field — the backend's /commands handler will run the
+          // normalizer with full conversation history + session context, which
+          // catches pronoun-resolution and follow-ups (e.g. "yes", "make it
+          // 2pm") that a history-blind transcribe-time call would miss.
+          const controller = new AbortController();
+          pendingControllersRef.current.set(optimisticId, controller);
+          await consumeCommandStream(
+            convId,
+            optimisticId,
+            {
+              text: correctedTranscript || transcript,
+              source: 'voice',
+              transcript: correctedTranscript || transcript,
+              rawTranscript,
+              correctedTranscript,
+              voiceUri,
+            },
+            controller,
+            entry,
+          );
         } catch (err) {
           if (cancelledIdsRef.current.has(optimisticId)) {
             cancelledIdsRef.current.delete(optimisticId);
@@ -587,15 +742,18 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
               };
             }),
           }));
+        } finally {
+          unsubscribeDeltas();
         }
       })();
 
       return entry;
     },
-    [appendOptimistic, applyServerMessage, ensureConversationId],
+    [appendOptimistic, consumeCommandStream, ensureConversationId],
   );
 
   const cancelPendingMessages = useCallback((chatId: string) => {
+    const idsToAbort: string[] = [];
     setState((s) => {
       let touched = false;
       const chats = s.chats.map((chat) => {
@@ -603,6 +761,7 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
         const messages = chat.messages.map((m) => {
           if (!m.pending) return m;
           cancelledIdsRef.current.add(m.id);
+          idsToAbort.push(m.id);
           touched = true;
           return {
             ...m,
@@ -615,6 +774,17 @@ export function AssistantHistoryProvider({ children }: PropsWithChildren) {
       });
       return touched ? { ...s, chats } : s;
     });
+    // Abort the SSE streams so we stop billing the user's OpenAI key
+    // immediately. The streaming consumer's signal handler tears down
+    // the connection and exits cleanly; the cancelledIdsRef guard
+    // ensures any in-flight `done` event is still ignored.
+    for (const id of idsToAbort) {
+      const controller = pendingControllersRef.current.get(id);
+      if (controller) {
+        controller.abort();
+        pendingControllersRef.current.delete(id);
+      }
+    }
   }, []);
 
   const value = useMemo<AssistantHistoryContextValue>(

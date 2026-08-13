@@ -32,12 +32,20 @@ export class UsersService {
       id: user.id,
       name: user.name,
       email: user.email,
+      emailVerified: user.emailVerified,
+      timezone: user.timezone,
+      hasPushToken: Boolean(user.expoPushToken),
       plan: user.subscription?.plan
         ? {
             id: user.subscription.plan.code,
             name: user.subscription.plan.name,
             provider: user.subscription.plan.provider.toLowerCase(),
             status: user.subscription.status.toLowerCase(),
+            // Discriminator the mobile app uses to branch the "manage
+            // subscription" UI: Apple subs need a deep link to App Store
+            // Settings, Stripe subs use the cancel endpoint.
+            paymentProvider: user.subscription.paymentProvider.toLowerCase(),
+            appleProductId: user.subscription.plan.appleProductId,
           }
         : null,
       provider: user.subscription?.plan.provider.toLowerCase() ?? null,
@@ -45,6 +53,22 @@ export class UsersService {
       hasOpenAIKey: Boolean(user.openaiKey),
       openAIKeyLast4: user.openaiKey?.last4 ?? null,
     };
+  }
+
+  async updatePushToken(userId: string, token: string | null) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { expoPushToken: token },
+    });
+    return { ok: true, hasPushToken: token !== null };
+  }
+
+  async updateTimezone(userId: string, timezone: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { timezone },
+    });
+    return { ok: true, timezone };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -83,19 +107,24 @@ export class UsersService {
     }
 
     if (hasPasswordChange) {
-      if (!currentPassword) {
-        throw new BadRequestException('Current password is required to set a new one');
+      if (user.passwordHash) {
+        // Existing password → require and verify the current one before change.
+        if (!currentPassword) {
+          throw new BadRequestException('Current password is required to set a new one');
+        }
+        const valid = await argon2.verify(user.passwordHash, currentPassword);
+        if (!valid) {
+          throw new UnauthorizedException('Current password is incorrect');
+        }
+        const sameAsOld = await argon2
+          .verify(user.passwordHash, newPassword)
+          .catch(() => false);
+        if (sameAsOld) {
+          throw new BadRequestException('New password must be different from the current one');
+        }
       }
-      const valid = await argon2.verify(user.passwordHash, currentPassword);
-      if (!valid) {
-        throw new UnauthorizedException('Current password is incorrect');
-      }
-      const sameAsOld = await argon2
-        .verify(user.passwordHash, newPassword)
-        .catch(() => false);
-      if (sameAsOld) {
-        throw new BadRequestException('New password must be different from the current one');
-      }
+      // No existing password (Google-only account) → this is a first-time
+      // "set password", so no current password is required.
       data.passwordHash = await argon2.hash(newPassword);
     }
 

@@ -23,32 +23,36 @@ export class HubspotController {
   // Caller must be authenticated AND have an active HubSpot subscription.
   @Get('auth-url')
   @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
-  authUrl(@CurrentUser() user: AuthenticatedUser) {
-    return this.hubspot.buildAuthUrl(user.id);
+  authUrl(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('returnUrl') returnUrl?: string,
+  ) {
+    return this.hubspot.buildAuthUrl(user.id, returnUrl);
   }
 
   // PUBLIC: HubSpot redirects the browser here with ?code=...&state=...
   // We exchange the code, introspect for the portal id, store encrypted
-  // tokens, then return an HTML page that deep-links into the mobile app
-  // via the `aiconcierge://` scheme.
+  // tokens, then 302 into the mobile app via the deep-link baked into state.
   @Get('callback')
   async callback(@Query() query: HubspotCallbackQueryDto, @Res() res: Response) {
-    const scheme = this.hubspot.getDeepLinkScheme();
+    const returnBase = query.state
+      ? this.hubspot.resolveReturnUrl(query.state)
+      : `${this.hubspot.getDeepLinkScheme()}://oauth/hubspot`;
 
     if (query.error) {
-      return this.sendDeepLink(res, scheme, 'error', query.error);
+      return this.sendDeepLink(res, returnBase, 'error', query.error_description ?? query.error);
     }
 
     if (!query.code || !query.state) {
-      return this.sendDeepLink(res, scheme, 'error', 'missing_code_or_state');
+      return this.sendDeepLink(res, returnBase, 'error', 'missing_code_or_state');
     }
 
     try {
-      await this.hubspot.handleCallback(query.code, query.state);
-      return this.sendDeepLink(res, scheme, 'ok');
+      const { returnUrl } = await this.hubspot.handleCallback(query.code, query.state);
+      return this.sendDeepLink(res, returnUrl, 'ok');
     } catch (err) {
       const reason = (err as Error).message || 'token_exchange';
-      return this.sendDeepLink(res, scheme, 'error', reason);
+      return this.sendDeepLink(res, returnBase, 'error', reason);
     }
   }
 
@@ -65,10 +69,32 @@ export class HubspotController {
     return this.hubspot.disconnect(user.id);
   }
 
-  private sendDeepLink(res: Response, scheme: string, status: 'ok' | 'error', reason?: string) {
+  @Post('reconnect')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  reconnect(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('returnUrl') returnUrl?: string,
+  ) {
+    return this.hubspot.reconnect(user.id, returnUrl);
+  }
+
+  private sendDeepLink(
+    res: Response,
+    returnBase: string,
+    status: 'ok' | 'error',
+    reason?: string,
+  ) {
+    // If `returnBase` already carries query params (e.g. it came from an
+    // earlier step that appended status), don't double-encode — just trust it.
+    const hasStatus = returnBase.includes('status=');
+    if (hasStatus) {
+      res.redirect(302, returnBase);
+      return;
+    }
     const params = new URLSearchParams({ status });
     if (reason) params.set('reason', reason);
-    const deepLink = `${scheme}://oauth/hubspot?${params.toString()}`;
-    res.redirect(302, deepLink);
+    const sep = returnBase.includes('?') ? '&' : '?';
+    res.redirect(302, `${returnBase}${sep}${params.toString()}`);
   }
 }

@@ -7,7 +7,10 @@ import { getMe } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { markBootstrapReady } from '@/lib/bootstrap-signal';
 import { routeForUser } from '@/lib/onboarding-route';
+import { registerPushToken } from '@/lib/push/register-push-token';
+import { getCacheItem } from '@/lib/cache';
 import { clearSession, getToken, getUser, hydrateSession, setSession } from '@/lib/session';
+import { APP_BG } from '@/constants/theme';
 
 // Root entry: decides where the user should land based on the saved JWT and
 // how far they got through onboarding. The full funnel is:
@@ -39,9 +42,19 @@ export default function RootIndex() {
         const token = getToken();
 
         if (!token) {
-          go('/signup');
+          const hasSeenIntro = await getCacheItem('has_seen_intro');
+          if (hasSeenIntro === 'true') {
+            go('/signup');
+          } else {
+            go('/intro' as any);
+          }
           return;
         }
+
+        // Returning users skip the auth screens, so re-register the push token
+        // on every cold start to keep the backend's token fresh (and ensure the
+        // notification channel/handler are set up). Fire-and-forget.
+        void registerPushToken();
 
         try {
           const me = await withTimeout(getMe(), ME_TIMEOUT_MS);
@@ -107,7 +120,7 @@ const styles = StyleSheet.create({
   container: {
     // The JS dots-splash overlay covers this view while bootstrap runs. We
     // still match the splash background so the very first paint blends in.
-    backgroundColor: '#F8FAFF',
+    backgroundColor: APP_BG,
     flex: 1,
   },
 });

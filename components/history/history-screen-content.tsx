@@ -1,16 +1,34 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { PageHeader } from '@/components/page-header';
+import { ScreenShell } from '@/components/screen';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { AssistantChat, useAssistantHistory } from '@/lib/assistant-history';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 export function HistoryScreenContent() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const { chats, clearAllChats, createChat, deleteChat, openChat } = useAssistantHistory();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 500);
+  }, []);
 
   const sortedChats = [...chats].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
+
 
   async function startNewChat() {
     const id = await createChat();
@@ -34,27 +52,31 @@ export function HistoryScreenContent() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.kicker}>History</Text>
-            <Text style={styles.title}>Your chats</Text>
-          </View>
+    <ScreenShell edges={['bottom']}>
+      <PageHeader
+        title="History"
+        showBack
+        right={
           <View style={styles.historyCount}>
             <Text style={styles.historyCountText}>{chats.length}</Text>
           </View>
-        </View>
+        }
+      />
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+        showsVerticalScrollIndicator={false}>
         <Text style={styles.subtitle}>
           Each block is one conversation. Open a chat to see all messages, or start a new one.
         </Text>
         <Pressable style={styles.newChatButton} onPress={startNewChat}>
-          <MaterialIcons name="add-comment" size={22} color="#FFFFFF" />
+          <MaterialIcons name="add-comment" size={20} color={colors.onPrimary} />
           <Text style={styles.newChatButtonText}>New chat</Text>
         </Pressable>
-      </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Conversations</Text>
           <Pressable disabled={chats.length === 0} onPress={clearAllChats}>
@@ -66,7 +88,7 @@ export function HistoryScreenContent() {
 
         {chats.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MaterialIcons name="forum" size={34} color="#1A73E8" />
+            <MaterialIcons name="forum" size={30} color={colors.primary} />
             <Text style={styles.emptyTitle}>No chats yet</Text>
             <Text style={styles.emptyText}>
               Start a new chat to talk with the assistant. All messages in that session stay inside
@@ -78,44 +100,37 @@ export function HistoryScreenContent() {
           </View>
         ) : (
           sortedChats.map((chat) => (
-            <View key={chat.id} style={styles.chatBlock}>
-              <Pressable
-                style={styles.chatBlockPressable}
-                onPress={() => openConversation(chat)}
-                accessibilityRole="button"
-                accessibilityLabel={`Open chat from ${formatTimestamp(chat.updatedAt)}`}>
-                <View style={styles.chatBlockIcon}>
-                  <MaterialIcons name="chat-bubble-outline" size={26} color="#1A73E8" />
-                </View>
-                <View style={styles.chatBlockBody}>
-                  <View style={styles.chatBlockTop}>
-                    <Text style={styles.chatBlockTitle} numberOfLines={1}>
-                      {chat.title?.trim() || 'Contact chat'}
-                    </Text>
-                    <View style={styles.messagePill}>
-                      <Text style={styles.messagePillText}>
-                        {chat.messageCount ?? chat.messages.length} messages
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.chatBlockPreview} numberOfLines={2}>
-                    {previewText(chat)}
-                  </Text>
-                  <Text style={styles.timestamp}>Updated {formatTimestamp(chat.updatedAt)}</Text>
-                </View>
-                <MaterialIcons name="chevron-right" size={24} color="#9AA0A6" />
-              </Pressable>
-              <Pressable
-                style={styles.deleteChatButton}
-                onPress={() => confirmDeleteChat(chat)}
-                accessibilityLabel="Delete conversation">
-                <MaterialIcons name="delete-outline" size={22} color="#D93025" />
-              </Pressable>
-            </View>
+            <Pressable
+              key={chat.id}
+              style={({ pressed }) => [
+                styles.chatBlock,
+                pressed && styles.chatBlockPressed,
+              ]}
+              onPress={() => openConversation(chat)}
+              onLongPress={() => confirmDeleteChat(chat)}
+              delayLongPress={400}
+              accessibilityRole="button"
+              accessibilityLabel={`${previewText(chat)}. Updated ${formatTimestamp(chat.updatedAt)}. ${formatMessageCount(chat)}.`}
+              accessibilityHint="Opens the conversation. Long press to delete it.">
+              <View style={styles.chatBlockIcon}>
+                <MaterialIcons name="chat-bubble-outline" size={20} color={colors.primary} />
+              </View>
+              <Text style={styles.chatBlockPreview} numberOfLines={2}>
+                {previewText(chat)}
+              </Text>
+              <View style={styles.chatBlockMeta}>
+                <Text style={styles.timestamp} numberOfLines={1}>
+                  {formatTimestamp(chat.updatedAt)}
+                </Text>
+                <Text style={styles.messageCount} numberOfLines={1}>
+                  {formatMessageCount(chat)}
+                </Text>
+              </View>
+            </Pressable>
           ))
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -125,6 +140,11 @@ function previewText(chat: AssistantChat) {
   }
   const last = chat.messages[chat.messages.length - 1];
   return last.command;
+}
+
+function formatMessageCount(chat: AssistantChat) {
+  const count = chat.messageCount ?? chat.messages.length;
+  return `${count} ${count === 1 ? 'message' : 'messages'}`;
 }
 
 function formatTimestamp(value: string) {
@@ -137,97 +157,69 @@ function formatTimestamp(value: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   content: {
-    paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 36,
-  },
-  header: {
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E8EAED',
-    borderBottomWidth: 1,
-    paddingBottom: 18,
-    paddingHorizontal: 12,
-    paddingTop: 28,
-  },
-  headerRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 16,
-    justifyContent: 'space-between',
-  },
-  headerCopy: {
-    flex: 1,
+    alignSelf: 'center',
+    maxWidth: 720,
+    paddingBottom: UiSpacing.xxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   historyCount: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: UiRadii.pill,
+    height: 28,
     justifyContent: 'center',
-    width: 44,
+    minWidth: 28,
+    paddingHorizontal: UiSpacing.sm,
   },
   historyCountText: {
     color: '#1A73E8',
-    fontSize: 18,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
-  },
-  kicker: {
-    color: '#1A73E8',
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1.1,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: '#202124',
-    fontSize: 28,
-    fontWeight: '600',
-    letterSpacing: -0.8,
-    lineHeight: 34,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   subtitle: {
     color: '#5F6368',
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 10,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   newChatButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
     backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.md,
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.lg,
   },
   newChatButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   sectionHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: UiSpacing.md,
+    marginTop: UiSpacing.xxl,
   },
   sectionTitle: {
     color: '#202124',
-    fontSize: 20,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   sectionAction: {
     color: '#1A73E8',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   disabledAction: {
     color: '#BDC1C6',
@@ -236,102 +228,87 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 26,
+    padding: UiSpacing.xl,
   },
   emptyTitle: {
     color: '#202124',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
-    marginTop: 12,
+    lineHeight: UiTypography.cardHeading.lineHeight,
+    marginTop: UiSpacing.md,
   },
   emptyText: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 6,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.xs,
+    maxWidth: 360,
     textAlign: 'center',
   },
   emptyCta: {
-    marginTop: 18,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
     backgroundColor: '#E8F0FE',
-    borderRadius: 12,
+    borderRadius: UiRadii.control,
+    justifyContent: 'center',
+    marginTop: UiSpacing.lg,
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.xl,
   },
   emptyCtaText: {
     color: '#174EA6',
-    fontSize: 15,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   chatBlock: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     flexDirection: 'row',
-    marginBottom: 12,
-    overflow: 'hidden',
+    gap: UiSpacing.md,
+    marginBottom: UiSpacing.sm,
+    minHeight: 72,
+    padding: UiSpacing.md,
   },
-  chatBlockPressable: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 14,
-    padding: 16,
-  },
-  deleteChatButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 14,
+  chatBlockPressed: {
+    backgroundColor: '#F6F8FB',
   },
   chatBlockIcon: {
     alignItems: 'center',
     backgroundColor: '#EDF4FF',
-    borderRadius: 14,
-    height: 52,
+    borderRadius: UiRadii.icon,
+    height: 40,
     justifyContent: 'center',
-    width: 52,
-  },
-  chatBlockBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  chatBlockTop: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-  },
-  chatBlockTitle: {
-    color: '#202124',
-    fontSize: 17,
-    fontWeight: '600',
-    flex: 1,
-  },
-  messagePill: {
-    backgroundColor: '#F1F3F4',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  messagePillText: {
-    color: '#5F6368',
-    fontSize: 12,
-    fontWeight: '600',
+    width: 40,
   },
   chatBlockPreview: {
-    color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 8,
+    color: '#202124',
+    flex: 1,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    minWidth: 0,
+  },
+  chatBlockMeta: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    minHeight: 40,
+    minWidth: 104,
   },
   timestamp: {
     color: '#80868B',
-    fontSize: 12,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
-    marginTop: 8,
+    lineHeight: UiTypography.caption.lineHeight,
+    textAlign: 'right',
+  },
+  messageCount: {
+    color: '#5F6368',
+    fontSize: UiTypography.caption.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.caption.lineHeight,
+    textAlign: 'right',
   },
 });

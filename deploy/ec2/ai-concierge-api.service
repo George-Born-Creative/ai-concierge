@@ -1,0 +1,25 @@
+[Unit]
+Description=AI-Concierge NestJS API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ai-concierge
+Group=ai-concierge
+WorkingDirectory=/srv/ai-concierge/backend
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/ai-concierge/backend.env
+ExecStart=/usr/bin/env node dist/main.js
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

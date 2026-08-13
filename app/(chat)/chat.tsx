@@ -1,9 +1,11 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,20 +15,35 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AIConciergeVoiceRecorder } from '@/components/ai-concierge-voice-recorder';
 import {
   ChatVoiceActivity,
   ChatVoiceWaveOverlay,
 } from '@/components/chat/chat-voice-wave-overlay';
+import { MarkdownMessage } from '@/components/chat/markdown-message';
+import { TypewriterText } from '@/components/chat/typewriter-text';
+import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
+import {
+  APP_BG,
+  BORDER,
+  HEADER_ACTION,
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import { AssistantHistoryEntry, useAssistantHistory } from '@/lib/assistant-history';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 import { useToast } from '@/lib/toast';
 
 export default function ChatScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { show } = useToast();
+  const { colors, resolvedTheme } = useAppTheme();
   const params = useLocalSearchParams<{
     command?: string;
     source?: AssistantHistoryEntry['source'];
@@ -45,7 +62,9 @@ export default function ChatScreen() {
     runCommand,
   } = useAssistantHistory();
   const [input, setInput] = useState('');
+  const [inputHeight, setInputHeight] = useState<number>(UiControlHeights.chatInput);
   const [isRunning, setIsRunning] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [voiceActivity, setVoiceActivity] = useState<ChatVoiceActivity>('idle');
   const hasPendingMessage = isRunning || activeMessages.some((m) => m.pending);
   const commandHandledKey = useRef<string | null>(null);
@@ -67,6 +86,7 @@ export default function ChatScreen() {
       }
 
       setInput('');
+      setInputHeight(UiControlHeights.chatInput);
       setIsRunning(true);
 
       try {
@@ -127,6 +147,18 @@ export default function ChatScreen() {
     }
   }, [activeMessages, isRunning, scrollToBottom]);
 
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
   async function handleVoiceRecorded(voiceUri: string) {
     let convId = paramOne(params.conversationId) ?? activeChatId;
     if (!convId) {
@@ -139,14 +171,14 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <ScreenShell edges={['top']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
-        keyboardVerticalOffset={0}>
+        keyboardVerticalOffset={Platform.OS === 'android' ? UiSpacing.lg : 0}>
         <View style={styles.header}>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={24} color="#202124" />
+            <MaterialIcons name="arrow-back" size={22} color={colors.textPrimary} />
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>AI Concierge</Text>
@@ -193,7 +225,25 @@ export default function ChatScreen() {
                 }}
                 onDelete={
                   activeChatId
-                    ? () => confirmDeleteMessage(activeChatId, entry.id, deleteMessage)
+                    ? () =>
+                        confirmDeleteMessage(
+                          activeChatId,
+                          entry.serverMessageId ?? entry.id,
+                          deleteMessage,
+                        )
+                    : undefined
+                }
+                onEdit={
+                  activeChatId && !isRunning
+                    ? async (newText) => {
+                        // Delete the original turn (server + local) first so the
+                        // edited request lands in its place — old assistant
+                        // response is gone, new one streams in fresh. Always
+                        // hit the backend with the persisted message id, not
+                        // the optimistic React-key id.
+                        await deleteMessage(activeChatId, entry.serverMessageId ?? entry.id);
+                        await submitCommand(newText, 'text');
+                      }
                     : undefined
                 }
               />
@@ -203,7 +253,19 @@ export default function ChatScreen() {
 
         <ChatVoiceWaveOverlay activity={voiceActivity} />
 
-        <View style={styles.composer}>
+        <View
+          style={[
+            styles.composer,
+            {
+              paddingBottom: keyboardVisible
+                ? UiSpacing.lg
+                : Math.max(insets.bottom, UiSpacing.sm),
+            },
+          ]}>
+          {/* Press-to-record mic backed by expo-av. Records an audio
+              file, uploads it to the backend for Whisper STT + LLM,
+              and the response streams back through the typewriter in
+              CommandBubble. */}
           <AIConciergeVoiceRecorder
             variant="composer"
             disabled={isRunning}
@@ -214,10 +276,24 @@ export default function ChatScreen() {
           <TextInput
             value={input}
             onChangeText={setInput}
+            onContentSizeChange={({ nativeEvent }) => {
+              const nextHeight = Math.min(
+                UiControlHeights.longTextarea,
+                Math.max(
+                  UiControlHeights.chatInput,
+                  Math.ceil(nativeEvent.contentSize.height),
+                ),
+              );
+              setInputHeight(nextHeight);
+            }}
             placeholder="Say or type a command"
-            placeholderTextColor="#80868B"
-            style={styles.input}
+            placeholderTextColor={colors.placeholder}
+            keyboardAppearance={resolvedTheme}
+            multiline
+            scrollEnabled={inputHeight >= UiControlHeights.longTextarea}
+            style={[styles.input, { height: inputHeight }]}
             returnKeyType="send"
+            submitBehavior="submit"
             onSubmitEditing={() => submitCommand(input)}
           />
           {hasPendingMessage ? (
@@ -229,19 +305,19 @@ export default function ChatScreen() {
                 setIsRunning(false);
               }}
               accessibilityLabel="Stop processing">
-              <MaterialIcons name="stop" size={22} color="#FFFFFF" />
+              <MaterialIcons name="stop" size={20} color={colors.onPrimary} />
             </Pressable>
           ) : (
             <Pressable
               style={[styles.sendButton, !input.trim() && styles.disabledButton]}
               onPress={() => submitCommand(input)}
               disabled={!input.trim()}>
-              <MaterialIcons name="send" size={22} color="#FFFFFF" />
+              <MaterialIcons name="send" size={20} color={colors.onPrimary} />
             </Pressable>
           )}
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -271,54 +347,231 @@ function CommandBubble({
   entry,
   onDelete,
   onCopy,
+  onEdit,
 }: {
   entry: AssistantHistoryEntry;
   onDelete?: () => void;
   onCopy?: (text: string) => void;
+  onEdit?: (newText: string) => Promise<void> | void;
 }) {
+  const { colors, resolvedTheme } = useAppTheme();
   const userText = voiceUserText(entry);
   const timeLabel = formatMessageTime(entry.createdAt);
   const canCopyResponse = !entry.pending && Boolean(entry.response?.trim());
+  const canEdit = Boolean(onEdit) && !entry.pending;
+
+  // Typewriter the assistant response, but only when it's a *fresh*
+  // arrival — i.e. the bubble just transitioned from pending=true to
+  // pending=false. Old responses (loaded from server history on chat
+  // reopen) render as plain text immediately, no re-animation.
+  //
+  // While animating, the response is rendered through TypewriterText
+  // (not selectable, no text actions). The moment the reveal finishes
+  // (onSettled), we swap back to a plain selectable Text node so
+  // copy / long-press still work like before.
+  const [animateResponse, setAnimateResponse] = useState(false);
+  const wasPendingRef = useRef(entry.pending);
+  useEffect(() => {
+    const justSettled =
+      wasPendingRef.current === true && entry.pending === false;
+    if (justSettled && entry.response) {
+      setAnimateResponse(true);
+    }
+    wasPendingRef.current = entry.pending;
+  }, [entry.pending, entry.response]);
+
+  // Same idea for the user bubble on voice messages: while transcribing,
+  // the bubble shows the "Transcribing your voice…" placeholder; the
+  // moment Whisper returns and `entry.transcript` is populated, animate
+  // it in character-by-character so the user sees their words being
+  // typed out instead of popping in instantly.
+  const [animateUserVoice, setAnimateUserVoice] = useState(false);
+  const wasTranscribingRef = useRef(
+    entry.source === 'voice' && !entry.transcript,
+  );
+  useEffect(() => {
+    if (entry.source !== 'voice') return;
+    const isTranscribing = !entry.transcript;
+    if (wasTranscribingRef.current && !isTranscribing) {
+      setAnimateUserVoice(true);
+    }
+    wasTranscribingRef.current = isTranscribing;
+  }, [entry.source, entry.transcript]);
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(userText);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [showRawSpeech, setShowRawSpeech] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(userText);
+  }, [editing, userText]);
+
+  async function handleSaveEdit() {
+    const next = draft.trim();
+    const original = userText.trim();
+    if (!onEdit) return;
+    if (!next || next === original) {
+      setEditing(false);
+      setDraft(userText);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      // Parent deletes this entry + re-runs the command, so the component
+      // unmounts before we can clear editing — but reset in case of error.
+      await onEdit(next);
+    } finally {
+      setSavingEdit(false);
+      setEditing(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditing(false);
+    setDraft(userText);
+  }
 
   return (
     <Pressable
       style={styles.commandGroup}
       onLongPress={onDelete}
       delayLongPress={400}
-      disabled={!onDelete || entry.pending}>
+      disabled={!onDelete || entry.pending || editing}>
       <View>
         <View style={[styles.userBubble, entry.pending && styles.pendingUserBubble]}>
-          <Text style={styles.bubbleLabel}>{entry.source === 'voice' ? 'You said' : 'You'}</Text>
-          <Text style={styles.userText} selectable>
-            {userText}
-          </Text>
+          {editing ? (
+            <>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                multiline
+                autoFocus
+                editable={!savingEdit}
+                style={styles.userEditInput}
+                placeholderTextColor={colors.textMuted}
+                keyboardAppearance={resolvedTheme}
+              />
+              <View style={styles.editActionRow}>
+                <Pressable
+                  onPress={handleCancelEdit}
+                  disabled={savingEdit}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.editChip,
+                    styles.editChipCancel,
+                    pressed && { opacity: 0.6 },
+                  ]}>
+                  <Text style={styles.editChipCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSaveEdit}
+                  disabled={savingEdit || !draft.trim() || draft.trim() === userText.trim()}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.editChip,
+                    styles.editChipSave,
+                    (savingEdit ||
+                      !draft.trim() ||
+                      draft.trim() === userText.trim()) && { opacity: 0.5 },
+                    pressed && { opacity: 0.7 },
+                  ]}>
+                  <MaterialIcons name="send" size={13} color={colors.primary} />
+                  <Text style={styles.editChipSaveText}>
+                    {savingEdit ? 'Saving…' : 'Save & resend'}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          ) : animateUserVoice ? (
+            <TypewriterText
+              text={userText}
+              textStyle={styles.userText}
+              onSettled={() => setAnimateUserVoice(false)}
+            />
+          ) : (
+            <Text style={styles.userText} selectable>
+              {userText}
+            </Text>
+          )}
         </View>
-        <View style={styles.userMetaRow}>
-          {onCopy && userText ? (
-            <CopyButton tone="onBlue" onPress={() => onCopy(userText)} />
-          ) : null}
-          {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
-        </View>
+        {entry.rawTranscript &&
+          entry.rawTranscript.trim().toLowerCase() !== userText.trim().toLowerCase() && (
+            <View style={styles.rawSpeechContainer}>
+              <Pressable
+                onPress={() => setShowRawSpeech((prev) => !prev)}
+                hitSlop={6}
+                style={styles.rawSpeechToggle}>
+                <MaterialIcons
+                  name={showRawSpeech ? 'expand-less' : 'spellcheck'}
+                  size={14}
+                  color="rgba(255, 255, 255, 0.85)"
+                />
+                <Text style={styles.rawSpeechToggleText}>
+                  {showRawSpeech ? 'Hide raw speech' : 'Corrected (show raw)'}
+                </Text>
+              </Pressable>
+              {showRawSpeech && (
+                <View style={styles.rawSpeechBox}>
+                  <Text style={styles.rawSpeechLabel}>Original raw speech:</Text>
+                  <Text style={styles.rawSpeechText}>{entry.rawTranscript}</Text>
+                </View>
+              )}
+            </View>
+          )}
+        {editing ? null : (
+          <View style={styles.userMetaRow}>
+            {canEdit && userText ? (
+              <ActionChip
+                tone="onBlue"
+                icon="edit"
+                onPress={() => setEditing(true)}
+                accessibilityLabel="Edit and resend"
+              />
+            ) : null}
+            {onCopy && userText ? (
+              <ActionChip
+                tone="onBlue"
+                icon="content-copy"
+                onPress={() => onCopy(userText)}
+                accessibilityLabel="Copy text"
+              />
+            ) : null}
+            {timeLabel ? <Text style={styles.userTimestamp}>{timeLabel}</Text> : null}
+          </View>
+        )}
       </View>
       {entry.pending ? (
         <View>
           <View style={[styles.assistantBubble, styles.pendingAssistantBubble]}>
-            <Text style={styles.bubbleLabel}>{entry.response || 'Working on it…'}</Text>
+            <Text style={styles.bubbleLabel}>
+              {entry.response || phaseStatusLabel(entry.phase)}
+            </Text>
             <SkeletonLines lines={3} lineHeight={11} gap={8} lastLineWidth="55%" />
           </View>
         </View>
       ) : (
         <View>
           <View style={[styles.assistantBubble, entry.status === 'error' && styles.errorBubble]}>
-            <Text style={styles.bubbleLabel}>Response</Text>
-            <Text style={styles.assistantText} selectable>
-              {entry.response}
-            </Text>
+            {animateResponse ? (
+              <TypewriterText
+                text={entry.response}
+                textStyle={styles.assistantText}
+                onSettled={() => setAnimateResponse(false)}
+              />
+            ) : (
+              <MarkdownMessage content={entry.response} />
+            )}
           </View>
           <View style={styles.assistantMetaRow}>
             {timeLabel ? <Text style={styles.assistantTimestamp}>{timeLabel}</Text> : null}
             {onCopy && canCopyResponse ? (
-              <CopyButton tone="muted" onPress={() => onCopy(entry.response)} />
+              <ActionChip
+                tone="muted"
+                icon="content-copy"
+                onPress={() => onCopy(entry.response)}
+                accessibilityLabel="Copy text"
+              />
             ) : null}
           </View>
         </View>
@@ -327,42 +580,53 @@ function CommandBubble({
   );
 }
 
-function CopyButton({
+function ActionChip({
   onPress,
   tone,
+  icon,
+  accessibilityLabel,
 }: {
   onPress: () => void;
   tone: 'onBlue' | 'muted';
+  icon: React.ComponentProps<typeof MaterialIcons>['name'];
+  // Required because the chip is icon-only — screen readers / a11y need a
+  // human-readable label (e.g. "Edit and resend", "Copy text").
+  accessibilityLabel: string;
 }) {
-  const color = tone === 'onBlue' ? '#FFFFFF' : '#5F6368';
+  const { colors } = useAppTheme();
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
       style={({ pressed }) => [
-        styles.copyButton,
-        tone === 'onBlue' && styles.copyButtonOnBlue,
-        pressed && { opacity: 0.6 },
+        styles.actionChip,
+        tone === 'onBlue' && styles.actionChipOnBlue,
+        pressed && { opacity: 0.7 },
       ]}
-      accessibilityLabel="Copy text">
-      <MaterialIcons name="content-copy" size={14} color={color} />
-      <Text style={[styles.copyButtonText, { color }]}>Copy</Text>
+      accessibilityLabel={accessibilityLabel}>
+      <MaterialIcons name={icon} size={16} color={colors.primary} />
     </Pressable>
   );
 }
 
 function ChatSkeleton() {
+  const { colors } = useAppTheme();
   return (
-    <View style={{ gap: 18 }}>
+    <View style={{ gap: UiSpacing.lg }}>
       {[0, 1, 2].map((i) => (
         <View key={i} style={styles.commandGroup}>
           <View style={styles.skeletonUserBubble}>
-            <Skeleton width="70%" height={12} radius={6} style={{ backgroundColor: '#94B6F2' }} />
+            <Skeleton
+              width="70%"
+              height={12}
+              radius={6}
+              style={{ backgroundColor: colors.infoBorder }}
+            />
             <Skeleton
               width="45%"
               height={12}
               radius={6}
-              style={{ backgroundColor: '#94B6F2', marginTop: 8 }}
+              style={{ backgroundColor: colors.infoBorder, marginTop: UiSpacing.sm }}
             />
           </View>
           <View style={styles.skeletonAssistantBubble}>
@@ -380,12 +644,31 @@ function formatMessageTime(iso: string): string {
   return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+// Human-readable status shown in the pending assistant bubble, driven by the
+// SSE lifecycle phase. Falls back to the generic label before any phase or
+// when the phase is unknown.
+function phaseStatusLabel(phase: AssistantHistoryEntry['phase']): string {
+  switch (phase) {
+    case 'normalizing':
+      return 'Understanding your request…';
+    case 'working':
+      return 'Working on your CRM…';
+    case 'thinking':
+      return 'Writing a reply…';
+    default:
+      return 'Working on it…';
+  }
+}
+
 function voiceUserText(entry: AssistantHistoryEntry): string {
   if (entry.source !== 'voice') {
     return entry.command;
   }
 
-  const transcript = entry.transcript?.trim() || entry.command.trim();
+  const transcript =
+    entry.correctedTranscript?.trim() ||
+    entry.transcript?.trim() ||
+    entry.command.trim();
   if (transcript && transcript !== 'Voice message') {
     return transcript;
   }
@@ -398,149 +681,154 @@ function voiceUserText(entry: AssistantHistoryEntry): string {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F8FAFF',
-  },
   keyboardView: {
     flex: 1,
     position: 'relative',
   },
   header: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E8EAED',
+    backgroundColor: APP_BG,
+    borderBottomColor: BORDER,
     borderBottomWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    paddingBottom: 16,
-    paddingHorizontal: 12,
-    paddingTop: 26,
+    gap: UiSpacing.sm,
+    paddingBottom: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.md,
+    paddingTop: UiSpacing.xs,
   },
   backButton: {
     alignItems: 'center',
     backgroundColor: '#F1F3F4',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: HEADER_ACTION / 2,
+    height: HEADER_ACTION,
     justifyContent: 'center',
-    width: 44,
+    width: HEADER_ACTION,
   },
   headerCopy: {
     flex: 1,
   },
   eyebrow: {
     color: '#5F6368',
-    fontSize: 12,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
+    lineHeight: UiTypography.caption.lineHeight,
     textTransform: 'uppercase',
   },
   title: {
     color: '#202124',
-    fontSize: 22,
+    fontSize: UiTypography.navigationTitle.fontSize,
     fontWeight: '600',
-    marginTop: 2,
+    lineHeight: UiTypography.navigationTitle.lineHeight,
   },
   avatar: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: UiRadii.control,
+    height: UiControlHeights.iconButton,
     justifyContent: 'center',
-    width: 44,
+    width: UiControlHeights.iconButton,
   },
   avatarText: {
     color: '#1A73E8',
-    fontSize: 18,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   chatScroll: {
     flex: 1,
   },
   chatContent: {
+    alignSelf: 'center',
     flexGrow: 1,
-    gap: 18,
-    paddingHorizontal: 12,
-    paddingTop: 20,
-    paddingBottom: 16,
+    gap: UiSpacing.lg,
+    maxWidth: 720,
+    paddingBottom: UiSpacing.lg,
+    paddingHorizontal: UiSpacing.md,
+    paddingTop: UiSpacing.lg,
+    width: '100%',
   },
   heroCard: {
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
-    padding: 24,
+    maxWidth: 520,
+    padding: UiSpacing.xl,
+    width: '100%',
   },
   assistantMark: {
     alignItems: 'center',
-    height: 70,
+    height: 56,
     justifyContent: 'center',
-    marginBottom: 14,
-    width: 70,
+    marginBottom: UiSpacing.md,
+    width: 56,
   },
   dot: {
-    borderRadius: 18,
+    borderRadius: UiRadii.pill,
     position: 'absolute',
   },
   blueDot: {
     backgroundColor: '#4285F4',
-    height: 40,
-    left: 6,
-    width: 40,
+    height: 32,
+    left: 5,
+    width: 32,
   },
   redDot: {
     backgroundColor: '#EA4335',
-    height: 26,
-    right: 9,
-    top: 9,
-    width: 26,
+    height: 21,
+    right: 7,
+    top: 7,
+    width: 21,
   },
   yellowDot: {
     backgroundColor: '#FBBC04',
-    bottom: 10,
-    height: 24,
-    right: 12,
-    width: 24,
+    bottom: 8,
+    height: 19,
+    right: 10,
+    width: 19,
   },
   greenDot: {
     backgroundColor: '#34A853',
-    bottom: 14,
-    height: 18,
-    left: 18,
-    width: 18,
+    bottom: 11,
+    height: 14,
+    left: 14,
+    width: 14,
   },
   heroTitle: {
     color: '#202124',
-    fontSize: 24,
+    fontSize: UiTypography.sectionHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.sectionHeading.lineHeight,
     textAlign: 'center',
   },
   heroText: {
     color: '#5F6368',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 8,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
     textAlign: 'center',
   },
   commandGroup: {
-    gap: 10,
+    gap: UiSpacing.sm,
   },
   userBubble: {
     alignSelf: 'flex-end',
     backgroundColor: '#1A73E8',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     maxWidth: '86%',
-    padding: 14,
+    padding: UiSpacing.md,
   },
   assistantBubble: {
     alignSelf: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     maxWidth: '92%',
-    padding: 14,
+    padding: UiSpacing.md,
   },
   errorBubble: {
     backgroundColor: '#FCE8E6',
@@ -548,16 +836,17 @@ const styles = StyleSheet.create({
   },
   bubbleLabel: {
     color: '#80868B',
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '600',
     letterSpacing: 0.7,
-    marginBottom: 5,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginBottom: UiSpacing.xs,
     textTransform: 'uppercase',
   },
   userText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    lineHeight: 23,
+    fontSize: UiTypography.body.fontSize,
+    lineHeight: UiTypography.body.lineHeight,
   },
   pendingUserBubble: {
     opacity: 0.95,
@@ -569,103 +858,190 @@ const styles = StyleSheet.create({
   skeletonUserBubble: {
     alignSelf: 'flex-end',
     backgroundColor: '#1A73E8',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     maxWidth: '70%',
     minWidth: 180,
     opacity: 0.85,
-    padding: 14,
+    padding: UiSpacing.md,
   },
   skeletonAssistantBubble: {
     alignSelf: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderColor: '#E8EAED',
-    borderRadius: 14,
+    borderRadius: UiRadii.card,
     borderWidth: 1,
     maxWidth: '85%',
     minWidth: 220,
-    padding: 14,
+    padding: UiSpacing.md,
   },
   assistantText: {
     color: '#202124',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   composer: {
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopColor: '#E8EAED',
     borderTopWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
+    gap: UiSpacing.sm,
+    maxWidth: 720,
+    paddingHorizontal: UiSpacing.md,
+    paddingTop: UiSpacing.sm,
+    width: '100%',
   },
   input: {
     backgroundColor: '#F1F3F4',
-    borderRadius: 24,
+    borderRadius: UiRadii.control,
     color: '#202124',
     flex: 1,
-    fontSize: 15,
-    minHeight: 48,
-    paddingHorizontal: 16,
+    fontSize: UiTypography.input.fontSize,
+    lineHeight: UiTypography.input.lineHeight,
+    maxHeight: UiControlHeights.longTextarea,
+    minHeight: UiControlHeights.chatInput,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.md,
+    textAlignVertical: 'top',
   },
   sendButton: {
     alignItems: 'center',
     backgroundColor: '#34A853',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: UiRadii.control,
+    height: UiControlHeights.button,
     justifyContent: 'center',
-    width: 48,
+    width: UiControlHeights.button,
   },
   stopButton: {
     alignItems: 'center',
     backgroundColor: '#EA4335',
-    borderRadius: 24,
-    height: 48,
+    borderRadius: UiRadii.control,
+    height: UiControlHeights.button,
     justifyContent: 'center',
-    width: 48,
+    width: UiControlHeights.button,
   },
   disabledButton: {
     opacity: 0.45,
   },
   userMetaRow: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: UiSpacing.xs,
     justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 4,
+    marginTop: UiSpacing.xxs,
   },
   assistantMetaRow: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: UiSpacing.xs,
     justifyContent: 'flex-start',
-    gap: 8,
-    marginTop: 4,
+    marginTop: UiSpacing.xxs,
   },
   userTimestamp: {
     color: '#80868B',
-    fontSize: 11,
-    marginRight: 4,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginRight: UiSpacing.xxs,
   },
   assistantTimestamp: {
     color: '#80868B',
-    fontSize: 11,
-    marginLeft: 4,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginLeft: UiSpacing.xxs,
   },
-  copyButton: {
-    flexDirection: 'row',
+  actionChip: {
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(95, 99, 104, 0.08)',
+    backgroundColor: '#F1F3F4',
+    borderColor: '#D2E3FC',
+    borderRadius: UiRadii.icon,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
   },
-  copyButtonOnBlue: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  actionChipOnBlue: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
   },
-  copyButtonText: {
-    fontSize: 11,
+  userEditInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: UiRadii.icon,
+    color: '#FFFFFF',
+    fontSize: UiTypography.body.fontSize,
+    lineHeight: UiTypography.body.lineHeight,
+    minHeight: 56,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: UiSpacing.xs,
+    textAlignVertical: 'top',
+  },
+  editActionRow: {
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
+    justifyContent: 'flex-end',
+    marginTop: UiSpacing.sm,
+  },
+  editChip: {
+    alignItems: 'center',
+    borderRadius: UiRadii.control,
+    flexDirection: 'row',
+    gap: UiSpacing.xxs,
+    minHeight: 32,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.xs,
+  },
+  editChipCancel: {
+    backgroundColor: 'transparent',
+    borderColor: '#FFFFFF',
+    borderWidth: 1.5,
+  },
+  editChipCancelText: {
+    color: '#FFFFFF',
+    fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
+  },
+  editChipSave: {
+    backgroundColor: '#FFFFFF',
+  },
+  editChipSaveText: {
+    color: '#1A73E8',
+    fontSize: UiTypography.label.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.label.lineHeight,
+  },
+  rawSpeechContainer: {
+    alignSelf: 'flex-end',
+    marginTop: UiSpacing.xxs,
+  },
+  rawSpeechToggle: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  rawSpeechToggleText: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  rawSpeechBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+    borderRadius: UiRadii.control,
+    marginTop: 4,
+    padding: UiSpacing.xs,
+  },
+  rawSpeechLabel: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 10,
+    fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  rawSpeechText: {
+    color: '#FFFFFF',
+    fontSize: UiTypography.caption.fontSize,
+    fontStyle: 'italic',
   },
 });

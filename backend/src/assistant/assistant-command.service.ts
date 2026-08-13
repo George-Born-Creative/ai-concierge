@@ -1,10 +1,15 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { CrmProvider } from '@prisma/client';
 
-import type {
-  GhlOpportunitySummary,
-  GhlPipelineSummary,
-} from '../integrations/ghl/ghl.service';
+import { CRM_LABELS, crmLabel, crmLabelList } from '../common/crm-labels';
+import type { GhlAppointmentSummary } from '../integrations/ghl/appointments/appointments.type';
+import type { GhlOpportunitySummary } from '../integrations/ghl/opportunities/opportunities.type';
+import type { GhlPipelineSummary } from '../integrations/ghl/pipelines/pipelines.type';
 import { GhlService } from '../integrations/ghl/ghl.service';
+import { ConversationsService } from '../integrations/ghl/conversations/conversations.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { HubspotCommandService } from './hubspot-command.service';
 import {
   extractAppointmentCancelQuery,
   extractAppointmentDetails,
@@ -12,7 +17,14 @@ import {
   extractCalendarCreateDetails,
   extractCalendarQuery,
   extractCalendarUpdateDetails,
+  extractCompanyContactAssociation,
+  extractCompanyCreateDetails,
+  extractCompanyDealAssociation,
+  extractCompanyQuery,
+  extractCompanyUpdateDetails,
   extractContactUpdateDetails,
+  extractConversationQuery,
+  extractConversationRead,
   extractCreateDetails,
   extractFreeSlotsDetails,
   extractOpportunityCreateDetails,
@@ -20,7 +32,20 @@ import {
   extractOpportunityQuery,
   extractOpportunityStatusDetails,
   extractOpportunityUpdateDetails,
+  extractOrderCompanyAssociation,
+  extractOrderContactAssociation,
+  extractOrderCreateDetails,
+  extractOrderDealAssociation,
+  extractOrderUpdateDetails,
+  extractProductCreateDetails,
+  extractProductUpdateDetails,
   extractSearchQuery,
+  extractSendMessageDetails,
+  extractTicketCompanyAssociation,
+  extractTicketContactAssociation,
+  extractTicketCreateDetails,
+  extractTicketDealAssociation,
+  extractTicketUpdateDetails,
   mergeSessionIntoEntities,
   pendingIntentExpiry,
   shouldRunIntent,
@@ -30,10 +55,78 @@ import type {
   AssistantSessionContext,
   VoiceIntentPayload
 } from './assistant.types';
+import { VOICE_ASSISTANT_CAPABILITIES_RESPONSE } from './assistant-capabilities';
 
 @Injectable()
 export class AssistantCommandService {
-  constructor(private readonly ghl: GhlService) {}
+  private readonly logger = new Logger(AssistantCommandService.name);
+
+  // Maps a mutating intent to the browse-list object key the frontend uses
+  // (see components/ghl|hubspot/*-data-screen-content.tsx). Read intents
+  // (list_/find_/get_) are intentionally absent so they never trigger an
+  // invalidation. Appointments have no browse list here, so they're omitted.
+  private static readonly MUTATION_OBJECTS: Record<string, string> = {
+    create_contact: 'contacts',
+    update_contact: 'contacts',
+    delete_contact: 'contacts',
+    create_calendar: 'calendar',
+    update_calendar: 'calendar',
+    delete_calendar: 'calendar',
+    reschedule_appointment: 'calendar',
+    update_appointment_status: 'calendar',
+    add_appointment_note: 'calendar',
+    block_calendar_time: 'calendar',
+    calendar_admin: 'calendar',
+    create_opportunity: 'opportunities',
+    update_opportunity: 'opportunities',
+    update_opportunity_status: 'opportunities',
+    delete_opportunity: 'opportunities',
+    create_company: 'companies',
+    update_company: 'companies',
+    delete_company: 'companies',
+    attach_contact_to_company: 'companies',
+    detach_contact_from_company: 'companies',
+    attach_deal_to_company: 'companies',
+    detach_deal_from_company: 'companies',
+    create_ticket: 'tickets',
+    update_ticket: 'tickets',
+    delete_ticket: 'tickets',
+    attach_ticket_to_contact: 'tickets',
+    detach_ticket_from_contact: 'tickets',
+    attach_ticket_to_company: 'tickets',
+    detach_ticket_from_company: 'tickets',
+    attach_ticket_to_deal: 'tickets',
+    detach_ticket_from_deal: 'tickets',
+    create_product: 'products',
+    update_product: 'products',
+    delete_product: 'products',
+    create_order: 'orders',
+    update_order: 'orders',
+    delete_order: 'orders',
+    send_message: 'conversations',
+    attach_order_to_contact: 'orders',
+    detach_order_from_contact: 'orders',
+    attach_order_to_company: 'orders',
+    detach_order_from_company: 'orders',
+    attach_order_to_deal: 'orders',
+    detach_order_from_deal: 'orders',
+  };
+
+  constructor(
+    private readonly ghl: GhlService,
+    private readonly ghlConversations: ConversationsService,
+    private readonly hubspot: HubspotCommandService,
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
+
+  describeCapabilities(): AssistantCommandResult {
+    return {
+      response: VOICE_ASSISTANT_CAPABILITIES_RESPONSE,
+      status: 'success',
+      preservePendingIntent: true,
+    };
+  }
 
   async execute(
     userId: string,
@@ -46,6 +139,20 @@ export class AssistantCommandService {
       return {
         response: 'Tell me what you want to do with contacts or your calendar.',
         status: 'error',
+      };
+    }
+
+    // Decide whether this user is on GHL or HubSpot. Returns null when the
+    // user has no integration and no plan provider yet — we surface a CRM-
+    // agnostic "connect a CRM" message in that case so the copy never lies
+    // about which CRM the user actually wanted.
+    const provider = await this.loadProvider(userId);
+
+    if (!provider) {
+      return {
+        response: `Connect ${crmLabelList()} in Settings first so I can work with your contacts and calendar.`,
+        status: 'error',
+        intent,
       };
     }
 
@@ -62,19 +169,85 @@ export class AssistantCommandService {
         return { response: resolved.notes, status: 'error', intent: resolved };
       }
 
+      let result: AssistantCommandResult | null = null;
       if (resolved && shouldRunIntent(resolved)) {
-        const fromIntent = await this.executeFromIntent(userId, resolved);
-        if (fromIntent) return fromIntent;
+        result =
+          provider === CrmProvider.HUBSPOT
+            ? await this.executeHubspotIntent(userId, resolved)
+            : await this.executeFromIntent(userId, resolved);
+      }
+      if (!result) {
+        result =
+          provider === CrmProvider.HUBSPOT
+            ? await this.executeHubspotHeuristics(userId, normalized)
+            : await this.executeWithHeuristics(userId, normalized);
       }
 
-      return this.executeWithHeuristics(userId, normalized);
+      // Sprint 2: after a successful CRM mutation, tell the user's open browse
+      // screens to refetch the affected object (self-mutation invalidation).
+      // Reads map to no object, so this is a no-op for them.
+      this.emitCrmInvalidate(userId, provider, resolved?.intent, result);
+      return result;
     } catch (error) {
       return {
-        response: this.ghlErrorMessage(error),
+        response:
+          provider === CrmProvider.HUBSPOT
+            ? this.hubspotErrorMessage(error)
+            : this.ghlErrorMessage(error),
         status: 'error',
         intent,
       };
     }
+  }
+
+  /**
+   * Look up which CRM provider this user is on. Source of truth is the
+   * enabled IntegrationConnection row (set up by OAuth). Falls back to the
+   * subscription plan provider. Returns null when neither exists so callers
+   * can render a CRM-agnostic message instead of guessing GHL — picking the
+   * wrong CRM here is what made the "Hook up GoHighLevel" prompt show for
+   * users who actually wanted HubSpot.
+   */
+  private async loadProvider(userId: string): Promise<CrmProvider | null> {
+    try {
+      const enabled = await this.prisma.integrationConnection.findFirst({
+        where: { userId, enabled: true },
+        select: { provider: true },
+      });
+      if (enabled?.provider) return enabled.provider;
+
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { userId },
+        select: { plan: { select: { provider: true } } },
+      });
+      return subscription?.plan?.provider ?? null;
+    } catch (err) {
+      this.logger.warn(
+        `loadProvider failed for user ${userId}: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Emit `crm.invalidate` to the user's connected devices when a command
+   * successfully mutated CRM data, so any open browse list refetches just the
+   * affected object. No-op for reads (which don't map to a mutation object)
+   * and for failed commands.
+   */
+  private emitCrmInvalidate(
+    userId: string,
+    provider: CrmProvider,
+    intent: string | undefined,
+    result: AssistantCommandResult,
+  ): void {
+    if (result.status !== 'success' || !intent) return;
+    const object = AssistantCommandService.MUTATION_OBJECTS[intent];
+    if (!object) return;
+    this.realtime.emitToUser(userId, 'crm.invalidate', {
+      provider: provider === CrmProvider.HUBSPOT ? 'hubspot' : 'ghl',
+      object,
+    });
   }
 
   private async executeFromIntent(
@@ -113,6 +286,16 @@ export class AssistantCommandService {
         return this.createAppointmentFromDetails(userId, extractAppointmentDetails(intent.entities));
       case 'cancel_appointment':
         return this.cancelAppointmentByQuery(userId, extractAppointmentCancelQuery(intent.entities));
+      case 'reschedule_appointment':
+        return this.rescheduleAppointment(userId, intent.entities);
+      case 'update_appointment_status':
+        return this.updateAppointmentStatus(userId, intent.entities);
+      case 'add_appointment_note':
+        return this.addAppointmentNote(userId, intent.entities);
+      case 'block_calendar_time':
+        return this.blockCalendarTime(userId, intent.entities);
+      case 'calendar_admin':
+        return this.runCalendarAdmin(userId, intent.entities);
       case 'list_pipelines':
         return this.listPipelines(userId);
       case 'list_opportunities':
@@ -139,8 +322,199 @@ export class AssistantCommandService {
         );
       case 'delete_opportunity':
         return this.deleteOpportunityByQuery(userId, extractOpportunityQuery(intent.entities));
+      case 'list_tickets':
+      case 'find_ticket':
+      case 'create_ticket':
+      case 'update_ticket':
+      case 'delete_ticket':
+      case 'attach_ticket_to_contact':
+      case 'detach_ticket_from_contact':
+      case 'attach_ticket_to_company':
+      case 'detach_ticket_from_company':
+      case 'attach_ticket_to_deal':
+      case 'detach_ticket_from_deal':
+        return {
+          response:
+            'Tickets are a HubSpot feature — your account is on GoHighLevel, which uses opportunities instead. Try "show my opportunities".',
+          status: 'error',
+        };
+      case 'list_products':
+      case 'find_product':
+      case 'create_product':
+      case 'update_product':
+      case 'delete_product':
+        return {
+          response:
+            'Products are a HubSpot feature — your account is on GoHighLevel, which doesn\'t have a product catalog. Try "show my opportunities" instead.',
+          status: 'error',
+        };
+      case 'list_orders':
+      case 'find_order':
+      case 'create_order':
+      case 'update_order':
+      case 'delete_order':
+      case 'attach_order_to_contact':
+      case 'detach_order_from_contact':
+      case 'attach_order_to_company':
+      case 'detach_order_from_company':
+      case 'attach_order_to_deal':
+      case 'detach_order_from_deal':
+        return {
+          response:
+            'Orders are a HubSpot feature — your account is on GoHighLevel, which uses opportunities instead. Try "show my opportunities".',
+          status: 'error',
+        };
+      case 'list_conversations':
+        return this.listConversations(userId, extractConversationQuery(intent.entities));
+      case 'find_conversation':
+        return this.findConversation(userId, extractConversationQuery(intent.entities));
+      case 'read_conversation':
+        return this.readConversation(userId, extractConversationRead(intent.entities));
+      case 'send_message':
+        return this.sendMessageFromDetails(userId, extractSendMessageDetails(intent.entities));
       default:
         return null;
+    }
+  }
+
+  private async listConversations(
+    userId: string,
+    details: { limit: number; unreadOnly: boolean },
+  ): Promise<AssistantCommandResult> {
+    try {
+      const result = await this.ghlConversations.searchConversations(userId, {
+        limit: details.limit,
+        ...(details.unreadOnly ? { status: 'unread' as const } : {}),
+      });
+      if (!result.conversations || result.conversations.length === 0) {
+        return { response: 'You have no recent conversations.', status: 'success' };
+      }
+      const chatNames = result.conversations.map((c) => c.contactName).filter(Boolean);
+      
+      // We provide a purely factual baseline. The ConversationService's 
+      // polishActionResponse pass will use the LLM to rewrite this into a 
+      // conversational, natural response dynamically.
+      const bulletList = chatNames.map(name => `· ${name}`).join('\n');
+      return {
+        response: `Found ${result.conversations.length} conversation(s):\n${bulletList}`,
+        status: 'success',
+      };
+    } catch (error) {
+      return { response: 'Failed to list your conversations.', status: 'error' };
+    }
+  }
+
+  private async findConversation(
+    userId: string,
+    details: { query?: string; unreadOnly: boolean },
+  ): Promise<AssistantCommandResult> {
+    if (!details.query) {
+      return { response: 'Who are you looking for?', status: 'error' };
+    }
+    try {
+      const result = await this.ghlConversations.searchConversations(userId, {
+        query: details.query,
+        ...(details.unreadOnly ? { status: 'unread' as const } : {}),
+      });
+      if (!result.conversations || result.conversations.length === 0) {
+        return { response: `I couldn't find any conversations for "${details.query}".`, status: 'success' };
+      }
+      const match = result.conversations[0];
+      return {
+        response: `Found a conversation with ${match.contactName}. The last message was sent ${new Date(match.lastMessageAt || '').toLocaleDateString()}.`,
+        status: 'success',
+      };
+    } catch (error) {
+      return { response: `Failed to search for ${details.query}.`, status: 'error' };
+    }
+  }
+
+  private async readConversation(
+    userId: string,
+    details: { id?: string; contactName?: string },
+  ): Promise<AssistantCommandResult> {
+    try {
+      let conversationId = details.id;
+      if (!conversationId && details.contactName) {
+         const search = await this.ghlConversations.searchConversations(userId, { query: details.contactName });
+         if (search.conversations && search.conversations.length > 0) {
+           conversationId = search.conversations[0].id;
+         }
+      }
+      if (!conversationId) {
+         return { response: 'I could not figure out which conversation you want to read.', status: 'error' };
+      }
+
+      const result = await this.ghlConversations.getMessages(userId, conversationId, { limit: 5 });
+      if (!result.messages || result.messages.length === 0) {
+        return { response: 'That conversation has no messages.', status: 'success' };
+      }
+      const lastMsg = result.messages[0];
+      return {
+        response: `The last message says: "${lastMsg.body}"`,
+        status: 'success',
+      };
+    } catch (error) {
+      return { response: 'Failed to read the conversation.', status: 'error' };
+    }
+  }
+
+  private async sendMessageFromDetails(
+    userId: string,
+    details: {
+      recipient?: string;
+      text: string;
+      conversationId?: string;
+      contactId?: string;
+      type: 'SMS' | 'Email' | 'InternalComment' | 'WhatsApp' | 'Live_Chat' | 'FB' | 'IG' | 'Custom';
+      subject?: string;
+    },
+  ): Promise<AssistantCommandResult> {
+    if (!details.text) {
+      return { response: 'What message would you like to send?', status: 'error' };
+    }
+
+    try {
+      let conversationId = details.conversationId;
+      let contactId = details.contactId;
+
+      if (!conversationId && !contactId && details.recipient) {
+        // Search active conversations first
+        const search = await this.ghlConversations.searchConversations(userId, { query: details.recipient });
+        if (search.conversations && search.conversations.length > 0) {
+          conversationId = search.conversations[0].id;
+          contactId = search.conversations[0].contactId;
+        } else {
+          // Fall back to contact lookup
+          const contacts = await this.ghl.listContacts(userId, 10, details.recipient);
+          if (contacts.contacts && contacts.contacts.length > 0) {
+            contactId = contacts.contacts[0].id;
+          }
+        }
+      }
+
+      if (!conversationId && !contactId) {
+        return {
+          response: `Could not find a contact or conversation matching "${details.recipient || 'the recipient'}".`,
+          status: 'error',
+        };
+      }
+
+      await this.ghlConversations.sendMessage(userId, {
+        type: details.type,
+        message: details.text,
+        conversationId,
+        contactId,
+        subject: details.subject,
+      });
+
+      return {
+        response: `Sent ${details.type === 'InternalComment' ? 'internal comment' : details.type + ' message'}: "${details.text}"`,
+        status: 'success',
+      };
+    } catch (err: any) {
+      this.logger.error(`sendMessageFromDetails failed for user ${userId}: ${err.message}`, err.stack);
+      return { response: `Failed to send message: ${err.message}`, status: 'error' };
     }
   }
 
@@ -164,21 +538,338 @@ export class AssistantCommandService {
         extractOpportunityListDetails({ limit: 10 }),
       );
     }
+    if (/\b(conversations?|messages?|chats?|inbox)\b/.test(lower) && /\b(list|show|pull up|get|see|recent|latest|my|unread|all)\b/.test(lower)) {
+      return this.listConversations(userId, { limit: 10, unreadOnly: /\bunread\b/.test(lower) });
+    }
+    if (/\b(send|text|message|write|email|internal note|comment)\b/.test(lower) && /\b(to|saying|text|message)\b/.test(lower)) {
+      const match = lower.match(/(?:send|text|message|write|email)\s+(?:a\s+message\s+to\s+|to\s+)?([a-z0-9\s]+?)\s+(?:saying|that|with)\s+(.+)/i);
+      if (match) {
+        return this.sendMessageFromDetails(userId, {
+          recipient: match[1].trim(),
+          text: match[2].trim(),
+          type: /\bemail\b/.test(lower) ? 'Email' : /\b(internal|note|comment)\b/.test(lower) ? 'InternalComment' : 'SMS',
+        });
+      }
+    }
     return {
       response:
-        'I can handle contacts, calendars, appointments, and opportunities in GoHighLevel. Try "pull up my contacts", "what\'s on my calendar", "book Sarah tomorrow at 2pm", "show my pipelines", or "create an opportunity Website Redesign for John Smith worth 2500 in Sales".',
+        'I can handle contacts, calendars, appointments, opportunities, and conversations in GoHighLevel. Try "pull up my contacts", "show my conversations", "send a message to John saying hello", "book Sarah tomorrow at 2pm", or "show my pipelines".',
       status: 'error',
     };
   }
 
+  // ── HubSpot routing ─────────────────────────────────────────────────────────
+  //
+  // HubSpot now supports full contact CRUD plus full company CRUD and
+  // contact/deal associations on companies. Deal read works (list); deal
+  // search/edit + calendars/appointments still return a friendly "not wired
+  // yet" message so the user knows the chat didn't silently swallow the
+  // request.
+
+  private async executeHubspotIntent(
+    userId: string,
+    intent: VoiceIntentPayload,
+  ): Promise<AssistantCommandResult | null> {
+    switch (intent.intent) {
+      case 'list_contacts':
+        return this.hubspot.listLatestContacts(userId);
+      case 'find_contact':
+        return this.hubspot.findContact(userId, extractSearchQuery(intent.entities));
+      case 'list_opportunities':
+        // HubSpot's equivalent of opportunities is "deals".
+        return this.hubspot.listRecentDeals(userId);
+      case 'create_contact':
+        return this.hubspot.createContact(userId, extractCreateDetails(intent.entities));
+      case 'update_contact':
+        return this.hubspot.updateContact(
+          userId,
+          extractContactUpdateDetails(intent.entities),
+        );
+      case 'delete_contact':
+        return this.hubspot.deleteContact(userId, extractSearchQuery(intent.entities));
+      case 'list_companies':
+        return this.hubspot.listLatestCompanies(userId);
+      case 'find_company':
+        return this.hubspot.findCompany(userId, extractCompanyQuery(intent.entities));
+      case 'create_company':
+        return this.hubspot.createCompany(
+          userId,
+          extractCompanyCreateDetails(intent.entities),
+        );
+      case 'update_company':
+        return this.hubspot.updateCompany(
+          userId,
+          extractCompanyUpdateDetails(intent.entities),
+        );
+      case 'delete_company':
+        return this.hubspot.deleteCompany(userId, extractCompanyQuery(intent.entities));
+      case 'attach_contact_to_company':
+        return this.hubspot.attachContactToCompany(
+          userId,
+          extractCompanyContactAssociation(intent.entities),
+        );
+      case 'detach_contact_from_company':
+        return this.hubspot.detachContactFromCompany(
+          userId,
+          extractCompanyContactAssociation(intent.entities),
+        );
+      case 'attach_deal_to_company':
+        return this.hubspot.attachDealToCompany(
+          userId,
+          extractCompanyDealAssociation(intent.entities),
+        );
+      case 'detach_deal_from_company':
+        return this.hubspot.detachDealFromCompany(
+          userId,
+          extractCompanyDealAssociation(intent.entities),
+        );
+      case 'list_tickets':
+        return this.hubspot.listRecentTickets(userId);
+      case 'find_ticket':
+        return this.hubspot.findTicket(userId, extractSearchQuery(intent.entities));
+      case 'create_ticket':
+        return this.hubspot.createTicket(
+          userId,
+          extractTicketCreateDetails(intent.entities),
+        );
+      case 'update_ticket':
+        return this.hubspot.updateTicket(
+          userId,
+          extractTicketUpdateDetails(intent.entities),
+        );
+      case 'delete_ticket':
+        return this.hubspot.deleteTicket(userId, extractSearchQuery(intent.entities));
+      case 'attach_ticket_to_contact':
+        return this.hubspot.attachTicketToContact(
+          userId,
+          extractTicketContactAssociation(intent.entities),
+        );
+      case 'detach_ticket_from_contact':
+        return this.hubspot.detachTicketFromContact(
+          userId,
+          extractTicketContactAssociation(intent.entities),
+        );
+      case 'attach_ticket_to_company':
+        return this.hubspot.attachTicketToCompany(
+          userId,
+          extractTicketCompanyAssociation(intent.entities),
+        );
+      case 'detach_ticket_from_company':
+        return this.hubspot.detachTicketFromCompany(
+          userId,
+          extractTicketCompanyAssociation(intent.entities),
+        );
+      case 'attach_ticket_to_deal':
+        return this.hubspot.attachTicketToDeal(
+          userId,
+          extractTicketDealAssociation(intent.entities),
+        );
+      case 'detach_ticket_from_deal':
+        return this.hubspot.detachTicketFromDeal(
+          userId,
+          extractTicketDealAssociation(intent.entities),
+        );
+      case 'list_products':
+        return this.hubspot.listRecentProducts(userId);
+      case 'find_product':
+        return this.hubspot.findProduct(userId, extractSearchQuery(intent.entities));
+      case 'create_product':
+        return this.hubspot.createProduct(
+          userId,
+          extractProductCreateDetails(intent.entities),
+        );
+      case 'update_product':
+        return this.hubspot.updateProduct(
+          userId,
+          extractProductUpdateDetails(intent.entities),
+        );
+      case 'delete_product':
+        return this.hubspot.deleteProduct(userId, extractSearchQuery(intent.entities));
+      case 'list_orders':
+        return this.hubspot.listRecentOrders(userId);
+      case 'find_order':
+        return this.hubspot.findOrder(userId, extractSearchQuery(intent.entities));
+      case 'create_order':
+        return this.hubspot.createOrder(
+          userId,
+          extractOrderCreateDetails(intent.entities),
+        );
+      case 'update_order':
+        return this.hubspot.updateOrder(
+          userId,
+          extractOrderUpdateDetails(intent.entities),
+        );
+      case 'delete_order':
+        return this.hubspot.deleteOrder(userId, extractSearchQuery(intent.entities));
+      case 'attach_order_to_contact':
+        return this.hubspot.attachOrderToContact(
+          userId,
+          extractOrderContactAssociation(intent.entities),
+        );
+      case 'detach_order_from_contact':
+        return this.hubspot.detachOrderFromContact(
+          userId,
+          extractOrderContactAssociation(intent.entities),
+        );
+      case 'attach_order_to_company':
+        return this.hubspot.attachOrderToCompany(
+          userId,
+          extractOrderCompanyAssociation(intent.entities),
+        );
+      case 'detach_order_from_company':
+        return this.hubspot.detachOrderFromCompany(
+          userId,
+          extractOrderCompanyAssociation(intent.entities),
+        );
+      case 'attach_order_to_deal':
+        return this.hubspot.attachOrderToDeal(
+          userId,
+          extractOrderDealAssociation(intent.entities),
+        );
+      case 'detach_order_from_deal':
+        return this.hubspot.detachOrderFromDeal(
+          userId,
+          extractOrderDealAssociation(intent.entities),
+        );
+      case 'find_opportunity':
+      case 'create_opportunity':
+      case 'update_opportunity':
+      case 'update_opportunity_status':
+      case 'delete_opportunity':
+        return {
+          response:
+            "I can list HubSpot deals. Searching or editing them through the assistant isn't wired up yet.",
+          status: 'error',
+        };
+      case 'list_pipelines':
+        return {
+          response:
+            "Pipelines aren't wired up for HubSpot yet — try \"show my deals\" instead.",
+          status: 'error',
+        };
+      case 'list_calendars':
+      case 'get_calendar':
+      case 'create_calendar':
+      case 'update_calendar':
+      case 'delete_calendar':
+      case 'get_free_slots':
+      case 'list_appointments':
+      case 'create_appointment':
+      case 'cancel_appointment':
+        return {
+          response:
+            "HubSpot doesn't expose calendars or appointments in this app yet.",
+          status: 'error',
+        };
+      default:
+        return null;
+    }
+  }
+
+  private async executeHubspotHeuristics(
+    userId: string,
+    command: string,
+  ): Promise<AssistantCommandResult> {
+    const lower = command.toLowerCase();
+    if (
+      /\b(contacts?|people|leads|clients)\b/.test(lower) &&
+      /\b(list|show|pull up|get|see|recent|latest|my|all|who)\b/.test(lower)
+    ) {
+      return this.hubspot.listLatestContacts(userId);
+    }
+    if (
+      /\b(deals?|opportunit(y|ies))\b/.test(lower) &&
+      /\b(list|show|what|my|recent|open|all)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentDeals(userId);
+    }
+    if (
+      /\b(compan(y|ies)|accounts?|organi[sz]ations?)\b/.test(lower) &&
+      /\b(list|show|what|my|recent|all)\b/.test(lower)
+    ) {
+      return this.hubspot.listLatestCompanies(userId);
+    }
+    if (
+      /\btickets?\b/.test(lower) &&
+      /\b(list|show|what|my|recent|open|all)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentTickets(userId);
+    }
+    if (
+      /\b(products?|catalog|catalogue|sku)\b/.test(lower) &&
+      /\b(list|show|what|my|recent|all|sell)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentProducts(userId);
+    }
+    if (
+      /\borders?\b/.test(lower) &&
+      /\b(list|show|what|my|recent|all|history)\b/.test(lower)
+    ) {
+      return this.hubspot.listRecentOrders(userId);
+    }
+
+    // Last-line-of-defense fallbacks for company writes when the LLM
+    // mislabels the intent (e.g. emits "unknown" or routes to "create_deal"
+    // for a company create). Capture the most common phrasing patterns and
+    // re-route through the proper command method.
+    const createCompanyMatch = command.match(
+      /\b(?:create|add|save|make)\s+(?:a|an|the|new)?\s*(?:compan(?:y|ies)|account|organi[sz]ation)\s+(?:called|named)?\s*"?([^",]+?)"?(?:\s+(?:with|in|at|domain|website)\s+.*)?$/i,
+    );
+    if (createCompanyMatch?.[1]) {
+      return this.hubspot.createCompany(userId, {
+        name: createCompanyMatch[1].trim(),
+        domain: undefined,
+        phone: undefined,
+        industry: undefined,
+        city: undefined,
+        state: undefined,
+        country: undefined,
+        numberOfEmployees: undefined,
+        description: undefined,
+        website: undefined,
+      });
+    }
+    const findCompanyMatch = command.match(
+      /\b(?:find|look\s+up|show\s+me|search\s+for)\s+(?:the\s+)?(?:compan(?:y|ies)|account|organi[sz]ation)\s+"?([^",]+?)"?$/i,
+    );
+    if (findCompanyMatch?.[1]) {
+      return this.hubspot.findCompany(userId, { name: findCompanyMatch[1].trim() });
+    }
+    const deleteCompanyMatch = command.match(
+      /\b(?:delete|remove|drop)\s+(?:the\s+)?(?:compan(?:y|ies)|account|organi[sz]ation)\s+"?([^",]+?)"?$/i,
+    );
+    if (deleteCompanyMatch?.[1]) {
+      return this.hubspot.deleteCompany(userId, { name: deleteCompanyMatch[1].trim() });
+    }
+
+    return {
+      response:
+        'I can show your HubSpot contacts, deals, companies, tickets, or products. Try "pull up my contacts", "list my deals", "what companies do I have", "show my tickets", "show my products", or "create a ticket titled Login bug".',
+      status: 'error',
+    };
+  }
+
+  private hubspotErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+      // HubspotApiClient already throws Nest exceptions with friendly copy
+      // (reconnect / scope / rate-limit messages). Surface them verbatim.
+      return error.message;
+    }
+    return `Something went wrong talking to ${CRM_LABELS[CrmProvider.HUBSPOT]}.`;
+  }
+
   private async listLatestContacts(userId: string): Promise<AssistantCommandResult> {
-    const result = await this.ghl.listContacts(userId, 10);
-    const summaries = result.contacts.filter((c) => c.name !== 'Unknown');
+    const result = await this.ghl.listAllContacts(userId);
+    const summaries = result.contacts;
     if (summaries.length === 0) {
       return { response: "You don't have any contacts in GoHighLevel yet.", status: 'success' };
     }
     return {
-      response: `Here's who you've got recently:\n${summaries.map((c) => this.formatContact(c)).join('\n')}`,
+      response:
+        `Here are all ${summaries.length} contacts in GoHighLevel:\n${summaries
+          .map((c) => this.formatContact(c))
+          .join('\n')}\n\n` +
+        "Want a closer look at someone? Just say their name and I'll pull up the details.",
       status: 'success',
     };
   }
@@ -195,8 +886,13 @@ export class AssistantCommandService {
     return {
       response:
         matches.length === 1
-          ? `Found them:\n${this.formatContact(top)}`
-          : `Found ${matches.length} people:\n${matches.slice(0, 5).map((c) => this.formatContact(c)).join('\n')}`,
+          ? `Found them in GoHighLevel:\n${this.formatContact(top)}\n\n` +
+            "I'll keep them in mind — say \"update their phone\" or \"book them tomorrow\" and I'll know who you mean."
+          : `Found ${matches.length} people in GoHighLevel — here are the closest matches:\n${matches
+              .slice(0, 5)
+              .map((c) => this.formatContact(c))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (a name, email, or phone) and I'll zero in.",
       status: 'success',
       contextPatch: { lastContactId: top.id, lastContactName: top.name },
     };
@@ -215,7 +911,7 @@ export class AssistantCommandService {
     const parts = details.name.trim().split(/\s+/);
     const firstName = parts[0];
     const lastName = parts.length > 1 ? parts.slice(1).join(' ') : undefined;
-    const created = await this.ghl.createContact(userId, {
+    const created = await this.ghl.upsertContact(userId, {
       name: details.name,
       firstName,
       lastName,
@@ -226,7 +922,10 @@ export class AssistantCommandService {
       .filter(Boolean)
       .join(', ');
     return {
-      response: `Added ${created.name}${bits ? ` (${bits})` : ''} to GoHighLevel.`,
+      response:
+        `Done — ${created.name} is now in GoHighLevel${bits ? ` (${bits})` : ''}. ` +
+        "I'll keep them in mind for follow-ups, so you can say things like " +
+        '"update their phone" or "book them tomorrow at 2" and I\'ll know who you mean.',
       status: 'success',
       contextPatch: { lastContactId: created.id, lastContactName: created.name },
     };
@@ -297,7 +996,9 @@ export class AssistantCommandService {
       .map(([k, v]) => `${k} → ${v}`)
       .join(', ');
     return {
-      response: `Updated ${updated.name} (${changed}).`,
+      response:
+        `All set — ${updated.name} is updated in GoHighLevel (${changed}). ` +
+        "Want me to tweak something else on this contact, or pull up their full details?",
       status: 'success',
       contextPatch: { lastContactId: updated.id, lastContactName: updated.name },
       clearPendingIntent: true,
@@ -319,7 +1020,12 @@ export class AssistantCommandService {
       };
     }
     await this.ghl.deleteContact(userId, matches[0].id);
-    return { response: `Removed ${matches[0].name} from GoHighLevel.`, status: 'success' };
+    return {
+      response:
+        `Done — ${matches[0].name} is removed from GoHighLevel. ` +
+        "If that was a mistake, let me know and I can recreate them; otherwise, anything else you'd like me to tidy up?",
+      status: 'success',
+    };
   }
 
   private async listCalendars(userId: string): Promise<AssistantCommandResult> {
@@ -328,7 +1034,11 @@ export class AssistantCommandService {
       return { response: "You don't have any calendars set up in GoHighLevel yet.", status: 'success' };
     }
     return {
-      response: `Here are your calendars:\n${result.calendars.map((c) => this.formatCalendar(c)).join('\n')}`,
+      response:
+        `Here are the calendars on your GoHighLevel account:\n${result.calendars
+          .map((c) => this.formatCalendar(c))
+          .join('\n')}\n\n` +
+        "Want me to check open slots, list upcoming appointments, or update one of these? Just say the word.",
       status: 'success',
     };
   }
@@ -359,7 +1069,10 @@ export class AssistantCommandService {
       isActive: details.isActive,
     });
     return {
-      response: `Created calendar "${created.name}" (id ${created.id}).`,
+      response:
+        `Done — the "${created.name}" calendar is set up in GoHighLevel. ` +
+        "I'll keep this calendar in mind, so you can say things like " +
+        '"book Sarah on it tomorrow at 2" or "show available slots this week" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: { lastCalendarId: created.id, lastCalendarName: created.name },
     };
@@ -379,7 +1092,9 @@ export class AssistantCommandService {
       isActive: details.isActive,
     });
     return {
-      response: `Updated calendar "${updated.name}".`,
+      response:
+        `All set — the "${updated.name}" calendar is updated in GoHighLevel. ` +
+        "Want me to tweak another field, check open slots, or list upcoming appointments on it?",
       status: 'success',
       contextPatch: { lastCalendarId: updated.id, lastCalendarName: updated.name },
     };
@@ -392,7 +1107,12 @@ export class AssistantCommandService {
     const calendarId = await this.resolveCalendarId(userId, undefined, query);
     const calendar = await this.ghl.getCalendar(userId, calendarId);
     await this.ghl.deleteCalendar(userId, calendarId);
-    return { response: `Deleted calendar "${calendar.name}".`, status: 'success' };
+    return {
+      response:
+        `Done — the "${calendar.name}" calendar is removed from GoHighLevel. ` +
+        "Any appointments that lived on it are still around in your account; let me know if you want me to clean those up too.",
+      status: 'success',
+    };
   }
 
   private async getFreeSlotsFromDetails(
@@ -422,17 +1142,19 @@ export class AssistantCommandService {
     const result = await this.ghl.listCalendarEvents(userId, {
       startTime: range?.startTime,
       endTime: range?.endTime,
-      days: range?.days ?? 14,
+      days: range?.days ?? 60,
     });
     if (result.appointments.length === 0) {
       return { response: 'Nothing on the calendar for that window.', status: 'success' };
     }
     const top = result.appointments[0];
     return {
-      response: `Here's what's coming up:\n${result.appointments
-        .slice(0, 10)
-        .map((a) => this.formatAppointment(a))
-        .join('\n')}`,
+      response:
+        `Here's what's coming up on your GoHighLevel calendar:\n${result.appointments
+          .slice(0, 50)
+          .map((a) => this.formatAppointment(a))
+          .join('\n')}\n\n` +
+        "Need to reschedule, cancel one, or book something new? Just say the word.",
       status: 'success',
       contextPatch: top
         ? {
@@ -469,7 +1191,10 @@ export class AssistantCommandService {
       notes: details.notes,
     });
     return {
-      response: `Booked — ${created.title} ${this.formatWhen(created.startTime)}.`,
+      response:
+        `Booked — ${created.title} is on the calendar for ${this.formatWhen(created.startTime)}. ` +
+        "I'll keep this appointment in mind, so you can say things like " +
+        '"cancel it", "move it to 3pm", or "reschedule that one" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: {
         lastAppointmentId: created.id,
@@ -491,9 +1216,127 @@ export class AssistantCommandService {
     }
     await this.ghl.cancelAppointment(userId, matches[0].id);
     return {
-      response: `Canceled ${matches[0].title} ${this.formatWhen(matches[0].startTime)}.`,
+      response:
+        `Done — ${matches[0].title} on ${this.formatWhen(matches[0].startTime)} is canceled. ` +
+        "Want me to rebook it for a different time, or send a quick note to the contact?",
       status: 'success',
     };
+  }
+
+  private async rescheduleAppointment(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const appointment = await this.resolveAppointmentForIntent(userId, entities);
+    const startTime = this.intentString(entities, 'startTime', 'start_time');
+    if (!startTime) return { response: 'What new date and time should I use?', status: 'error' };
+    const endTime = this.intentString(entities, 'endTime', 'end_time');
+    await this.ghl.updateAppointment(userId, appointment.id, { startTime, endTime });
+    return {
+      response: `${appointment.title} has been rescheduled to ${this.formatWhen(startTime)}.`,
+      status: 'success',
+      contextPatch: { lastAppointmentId: appointment.id, lastAppointmentTitle: appointment.title },
+    };
+  }
+
+  private async updateAppointmentStatus(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const appointment = await this.resolveAppointmentForIntent(userId, entities);
+    const appointmentStatus = this.intentString(entities, 'appointmentStatus', 'status');
+    if (!appointmentStatus) return { response: 'What status should I set for the appointment?', status: 'error' };
+    await this.ghl.updateAppointment(userId, appointment.id, { appointmentStatus });
+    return { response: `${appointment.title} is now marked ${appointmentStatus}.`, status: 'success' };
+  }
+
+  private async addAppointmentNote(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const appointment = await this.resolveAppointmentForIntent(userId, entities);
+    const body = this.intentString(entities, 'body', 'notes', 'note');
+    if (!body) return { response: 'What note should I add?', status: 'error' };
+    await this.ghl.createAppointmentNote(userId, appointment.id, { body });
+    return { response: `I added that note to ${appointment.title}.`, status: 'success' };
+  }
+
+  private async blockCalendarTime(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const calendarId = await this.resolveCalendarId(
+      userId,
+      this.intentString(entities, 'calendarId', 'calendar_id'),
+      this.intentString(entities, 'calendarName', 'calendar_name'),
+    );
+    const startTime = this.intentString(entities, 'startTime', 'start_time');
+    const endTime = this.intentString(entities, 'endTime', 'end_time');
+    if (!startTime || !endTime) {
+      return { response: 'What start and end time should I block?', status: 'error' };
+    }
+    const title = this.intentString(entities, 'title') ?? 'Unavailable';
+    await this.ghl.createBlockSlot(userId, { calendarId, startTime, endTime, title });
+    return { response: `Blocked ${this.formatWhen(startTime)} through ${this.formatWhen(endTime)}.`, status: 'success' };
+  }
+
+  private async runCalendarAdmin(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const resource = this.intentString(entities, 'resource');
+    const action = this.intentString(entities, 'action');
+    if (!resource || !action) {
+      return { response: 'Which calendar resource and action should I use?', status: 'error' };
+    }
+    const id = this.intentString(entities, 'id', 'resourceId', 'notificationId');
+    const calendarId = this.intentString(entities, 'calendarId', 'calendar_id');
+    const body = Object.fromEntries(
+      Object.entries(entities).filter(([key, value]) =>
+        !['resource', 'action', 'id', 'resourceId', 'notificationId', 'calendarId', 'calendar_id'].includes(key) &&
+        value !== null,
+      ),
+    );
+    const result = await this.ghl.calendarAssistantResource(
+      userId,
+      resource,
+      action,
+      id,
+      calendarId,
+      body,
+    );
+    const detail = JSON.stringify(result).slice(0, 1200);
+    return { response: `${resource} ${action} completed.${detail && action === 'list' ? `\n${detail}` : ''}`, status: 'success' };
+  }
+
+  private async resolveAppointmentForIntent(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<{ id: string; title: string }> {
+    const appointmentId = this.intentString(entities, 'appointmentId', 'appointment_id');
+    if (appointmentId) {
+      const raw = await this.ghl.getAppointment(userId, appointmentId);
+      const event = ((raw.event as Record<string, unknown> | undefined) ?? raw);
+      return { id: appointmentId, title: String(event.title ?? 'Appointment') };
+    }
+    const query = this.intentString(entities, 'query', 'contactName', 'title', 'startTime');
+    if (!query) throw new Error('Which appointment do you mean?');
+    const result = await this.ghl.listCalendarEvents(userId, { days: 60 });
+    const match = this.findMatchingAppointments(result.appointments, query)[0];
+    if (!match) throw new Error(`Couldn't find an appointment matching "${query}".`);
+    return { id: match.id, title: match.title };
+  }
+
+  private intentString(
+    entities: Record<string, string | number | boolean | null>,
+    ...keys: string[]
+  ): string | undefined {
+    for (const key of keys) {
+      const value = entities[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+      if (typeof value === 'number') return String(value);
+    }
+    return undefined;
   }
 
   // ── Opportunities & pipelines ──────────────────────────────────────────────
@@ -508,7 +1351,11 @@ export class AssistantCommandService {
       };
     }
     return {
-      response: `Your pipelines:\n${pipelines.map((p) => this.formatPipeline(p)).join('\n')}`,
+      response:
+        `Here are the pipelines on your GoHighLevel account:\n${pipelines
+          .map((p) => this.formatPipeline(p))
+          .join('\n')}\n\n` +
+        "Want to see open opportunities in one of them, or create a new deal? Just point me at the pipeline.",
       status: 'success',
       contextPatch: { lastPipelineId: pipelines[0].id, lastPipelineName: pipelines[0].name },
       clearPendingIntent: true,
@@ -555,10 +1402,12 @@ export class AssistantCommandService {
     }
     const top = result.opportunities[0];
     return {
-      response: `Opportunities:\n${result.opportunities
-        .slice(0, 10)
-        .map((o) => this.formatOpportunity(o))
-        .join('\n')}`,
+      response:
+        `Here are the opportunities I'm seeing in GoHighLevel:\n${result.opportunities
+          .slice(0, 10)
+          .map((o) => this.formatOpportunity(o))
+          .join('\n')}\n\n` +
+        "Want me to drill into one (\"show the Acme deal\"), update a status, or add a new one? I'm ready when you are.",
       status: 'success',
       contextPatch: this.opportunityContextPatch(top, pipelineName),
       clearPendingIntent: true,
@@ -583,8 +1432,13 @@ export class AssistantCommandService {
     return {
       response:
         matches.length === 1
-          ? `Found it:\n${this.formatOpportunity(top)}`
-          : `Found ${matches.length} matches:\n${matches.slice(0, 5).map((o) => this.formatOpportunity(o)).join('\n')}`,
+          ? `Found it in GoHighLevel:\n${this.formatOpportunity(top)}\n\n` +
+            "I'll keep this deal in mind — say \"mark it won\", \"update its value\", or \"move it to Negotiation\" and I'll know which one you mean."
+          : `Found ${matches.length} matches in GoHighLevel — here's the top of the list:\n${matches
+              .slice(0, 5)
+              .map((o) => this.formatOpportunity(o))
+              .join('\n')}\n\n` +
+            "Tell me which one you mean (the deal name works) and I'll zero in.",
       status: 'success',
       contextPatch: this.opportunityContextPatch(top),
       clearPendingIntent: true,
@@ -621,7 +1475,7 @@ export class AssistantCommandService {
     // Field gather order — change here to reorder the conversational flow.
     // contactName comes first because GHL requires a contactId on opportunity
     // create and we resolve contactId from the name.
-    const requiredOrder: Array<'contact' | 'name' | 'monetaryValue' | 'pipeline'> = [
+    const requiredOrder: ('contact' | 'name' | 'monetaryValue' | 'pipeline')[] = [
       'contact',
       'name',
       'monetaryValue',
@@ -764,7 +1618,10 @@ export class AssistantCommandService {
       .join(' ');
 
     return {
-      response: `Created opportunity "${created.name}"${bits ? ` ${bits}` : ''}.`,
+      response:
+        `Done — the "${created.name}" opportunity is in GoHighLevel${bits ? ` ${bits}` : ''}. ` +
+        "I'll keep this deal in mind, so you can say things like " +
+        '"mark it won", "update its value", or "move it to Negotiation" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: this.opportunityContextPatch(created, resolvedPipeline.pipelineName),
       clearPendingIntent: true,
@@ -805,7 +1662,9 @@ export class AssistantCommandService {
     });
 
     return {
-      response: `Updated "${updated.name}".`,
+      response:
+        `All set — the "${updated.name}" opportunity is updated in GoHighLevel. ` +
+        "Want me to change another field, mark it won, or move it to a different stage?",
       status: 'success',
       contextPatch: this.opportunityContextPatch(updated, pipelineResolved.pipelineName),
       clearPendingIntent: true,
@@ -837,7 +1696,9 @@ export class AssistantCommandService {
     );
 
     return {
-      response: `Marked "${updated.name}" as ${updated.status}.`,
+      response:
+        `Done — "${updated.name}" is now marked ${updated.status} in GoHighLevel. ` +
+        "Want me to log a note on it, update the amount, or move it to a different stage next?",
       status: 'success',
       contextPatch: this.opportunityContextPatch(updated),
       clearPendingIntent: true,
@@ -859,7 +1720,9 @@ export class AssistantCommandService {
 
     await this.ghl.deleteOpportunity(userId, target.opportunity.id);
     return {
-      response: `Removed opportunity "${target.opportunity.name}".`,
+      response:
+        `Done — the "${target.opportunity.name}" opportunity is removed from GoHighLevel. ` +
+        "If that was a mistake, let me know and I can recreate it; otherwise, anything else you'd like me to clean up?",
       status: 'success',
       clearPendingIntent: true,
     };
@@ -1092,9 +1955,19 @@ export class AssistantCommandService {
     return calendar.isActive === false ? `· ${calendar.name} (inactive)` : `· ${calendar.name}`;
   }
 
-  private formatAppointment(appointment: { title: string; startTime?: string }) {
+  private formatAppointment(appointment: GhlAppointmentSummary) {
+    // One bullet line per appointment, matching the contact/opportunity style
+    // so the polish pass can render the set as a table. Skip any field the CRM
+    // didn't populate (e.g. owner when the /users scope isn't granted).
+    const bits: string[] = [];
     const when = this.formatWhen(appointment.startTime);
-    return when ? `· ${appointment.title} — ${when}` : `· ${appointment.title}`;
+    if (when) bits.push(when);
+    if (appointment.contactName) bits.push(`Contact: ${appointment.contactName}`);
+    if (appointment.calendarName) bits.push(`Calendar: ${appointment.calendarName}`);
+    if (appointment.ownerName) bits.push(`Owner: ${appointment.ownerName}`);
+    if (appointment.status) bits.push(`Status: ${appointment.status}`);
+    const detail = bits.join(' · ');
+    return detail ? `· ${appointment.title} — ${detail}` : `· ${appointment.title}`;
   }
 
   private formatWhen(iso?: string) {
@@ -1161,9 +2034,9 @@ export class AssistantCommandService {
       ) {
         return message;
       }
-      return 'Hook up GoHighLevel in Profile first, then I can work with your contacts, calendar, and opportunities.';
+      return `Hook up ${CRM_LABELS[CrmProvider.GHL]} in Profile first, then I can work with your contacts, calendar, and opportunities.`;
     }
     if (error instanceof Error) return error.message;
-    return 'Something went wrong while working with GoHighLevel.';
+    return `Something went wrong while working with ${CRM_LABELS[CrmProvider.GHL]}.`;
   }
 }

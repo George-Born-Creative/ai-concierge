@@ -17,11 +17,20 @@ export function isActiveSubscription(plan?: UserPlan | null): boolean {
 //   - any future place that wants to drop a user back into the funnel
 //
 // Funnel (matches the product spec):
+//   email not verified                                     → /verify-email
 //   not subscribed (no plan or status not active/trialing) → /plan
 //   subscribed but CRM not authorized                      → /connect
 //   CRM connected but no OpenAI key                        → /openai-key
 //   everything set                                         → /(tabs) (Home)
 export function routeForUser(user: User): Href {
+  // Gate email/password signups until they confirm the emailed code. Checked
+  // explicitly against `false` so older cached users (undefined) aren't gated.
+  // Cast: the /verify-email route exists (app/(auth)/verify-email.tsx) but
+  // expo-router only regenerates the typed-routes union at Metro start, so it
+  // may not be in the committed types yet.
+  if (user.emailVerified === false) {
+    return '/verify-email' as Href;
+  }
   if (!isActiveSubscription(user.plan)) {
     return '/plan';
   }

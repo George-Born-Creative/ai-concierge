@@ -4,11 +4,14 @@ import {
   Delete,
   Get,
   HttpCode,
+  type MessageEvent,
   Param,
   Post,
   Query,
+  Sse,
   UseGuards,
 } from '@nestjs/common';
+import type { Observable } from 'rxjs';
 
 import { AuthenticatedUser, CurrentUser } from '../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../common/guards/active-subscription.guard';
@@ -64,6 +67,22 @@ export class AssistantController {
     @Body() body: RunAssistantCommandDto,
   ) {
     return this.assistant.runCommand(user.id, id, body);
+  }
+
+  /**
+   * SSE-streaming sibling of `runCommand`. The body is the same DTO; the
+   * response is a Server-Sent Events stream of `phase` / `token` / `done`
+   * events. The legacy JSON endpoint above is kept as a fallback for
+   * clients that can't (or shouldn't) hold an open SSE connection.
+   */
+  @Post('conversations/:id/commands/stream')
+  @Sse()
+  runCommandStream(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: RunAssistantCommandDto,
+  ): Observable<MessageEvent> {
+    return this.assistant.runCommandStream(user.id, id, body);
   }
 
   @Delete('conversations/:conversationId/messages/:messageId')

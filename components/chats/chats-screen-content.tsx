@@ -6,7 +6,6 @@ import {
   Alert,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   SectionList,
   StyleSheet,
   Text,
@@ -14,12 +13,20 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
-import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
+import { ScreenShell } from '@/components/screen';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
+import {
+  UiControlHeights,
+  UiRadii,
+  UiSpacing,
+  UiTypography,
+} from '@/constants/theme';
 import {
   useAssistantHistory,
   type AssistantChat,
   type AssistantChatGroup,
 } from '@/lib/assistant-history';
+import { useAppTheme } from '@/lib/theme/theme-provider';
 
 type Section = {
   key: AssistantChatGroup['key'];
@@ -29,6 +36,7 @@ type Section = {
 
 export function ChatsScreenContent() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const {
     chats,
     chatGroups,
@@ -87,8 +95,12 @@ export function ChatsScreenContent() {
     ]);
   }
 
+  if (loading && totalChats === 0) {
+    return <PageSkeleton title="Chats" />;
+  }
+
   return (
-    <SafeAreaView style={styles.screen}>
+    <ScreenShell edges={['bottom']}>
       <PageHeader
         title="Chats"
         showBack
@@ -102,9 +114,7 @@ export function ChatsScreenContent() {
         }
       />
 
-      {loading && totalChats === 0 ? (
-        <ChatsSkeleton />
-      ) : totalChats === 0 ? (
+      {totalChats === 0 ? (
         <EmptyState onStart={() => router.push('/(chat)/chat')} />
       ) : (
         <SectionList
@@ -115,7 +125,7 @@ export function ChatsScreenContent() {
             <RefreshControl
               refreshing={loading}
               onRefresh={() => void refreshChats()}
-              tintColor="#1A73E8"
+            tintColor={colors.primary}
             />
           }
           contentContainerStyle={styles.listContent}
@@ -134,7 +144,7 @@ export function ChatsScreenContent() {
           ItemSeparatorComponent={() => <View style={styles.divider} />}
         />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -153,6 +163,7 @@ function ChatRow({
   onOpen: () => void;
   onDelete: () => void;
 }) {
+  const { colors } = useAppTheme();
   const time = formatTime(chat.updatedAt);
   const status = chat.lastStatus ?? 'success';
   const source = chat.lastSource ?? 'text';
@@ -174,7 +185,7 @@ function ChatRow({
         <MaterialIcons
           name={source === 'voice' ? 'mic' : 'chat-bubble-outline'}
           size={18}
-          color="#1A73E8"
+          color={colors.primary}
         />
       </View>
       <View style={styles.rowCopy}>
@@ -196,28 +207,30 @@ function ChatRow({
           <StatusBadge status={status} />
         </View>
       </View>
-      <MaterialIcons name="chevron-right" size={22} color="#BDC1C6" />
+      <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
     </Pressable>
   );
 }
 
 function StatusBadge({ status }: { status: 'success' | 'error' | 'pending' }) {
+  const { colors } = useAppTheme();
   if (status === 'pending') {
     return (
-      <View style={[styles.statusDot, { backgroundColor: '#1A73E8' }]} />
+      <View style={[styles.statusDot, { backgroundColor: colors.primary }]} />
     );
   }
   if (status === 'error') {
-    return <View style={[styles.statusDot, { backgroundColor: '#EA4335' }]} />;
+    return <View style={[styles.statusDot, { backgroundColor: colors.danger }]} />;
   }
-  return <View style={[styles.statusDot, { backgroundColor: '#34A853' }]} />;
+  return <View style={[styles.statusDot, { backgroundColor: colors.success }]} />;
 }
 
 function EmptyState({ onStart }: { onStart: () => void }) {
+  const { colors } = useAppTheme();
   return (
     <View style={styles.empty}>
       <View style={styles.emptyIcon}>
-        <MaterialIcons name="chat-bubble-outline" size={28} color="#1A73E8" />
+        <MaterialIcons name="chat-bubble-outline" size={28} color={colors.primary} />
       </View>
       <Text style={styles.emptyTitle}>No chats yet</Text>
       <Text style={styles.emptyText}>
@@ -230,30 +243,6 @@ function EmptyState({ onStart }: { onStart: () => void }) {
   );
 }
 
-function ChatsSkeleton() {
-  return (
-    <View style={styles.listContent}>
-      {[0, 1].map((s) => (
-        <View key={s} style={{ marginBottom: 18 }}>
-          <Skeleton width={120} height={11} radius={6} style={{ marginLeft: 4, marginBottom: 10 }} />
-          <View style={styles.skeletonGroup}>
-            {[0, 1, 2].map((i) => (
-              <View key={i} style={[styles.row, i === 0 && styles.rowTop, i === 2 && styles.rowBottom]}>
-                <View style={styles.rowIcon}>
-                  <Skeleton width={18} height={18} radius={6} />
-                </View>
-                <View style={styles.rowCopy}>
-                  <Skeleton width="55%" height={14} radius={6} />
-                  <SkeletonLines lines={1} lineHeight={11} gap={6} lastLineWidth="80%" />
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -275,44 +264,46 @@ function formatTime(iso: string): string {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F2F4F8',
-  },
   listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 32,
+    alignSelf: 'center',
+    maxWidth: 720,
+    paddingBottom: UiSpacing.xxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: UiSpacing.md,
+    width: '100%',
   },
   clearAll: {
     color: '#EA4335',
-    fontSize: 14,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   sectionHeader: {
     color: '#80868B',
-    fontSize: 11,
+    fontSize: UiTypography.caption.fontSize,
     fontWeight: '700',
     letterSpacing: 1.1,
-    marginBottom: 8,
-    marginLeft: 4,
-    marginTop: 18,
+    lineHeight: UiTypography.caption.lineHeight,
+    marginBottom: UiSpacing.sm,
+    marginLeft: UiSpacing.xxs,
+    marginTop: UiSpacing.lg,
   },
   row: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    gap: UiSpacing.md,
+    minHeight: 64,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
   },
   rowTop: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: UiRadii.card,
+    borderTopRightRadius: UiRadii.card,
   },
   rowBottom: {
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
+    borderBottomLeftRadius: UiRadii.card,
+    borderBottomRightRadius: UiRadii.card,
   },
   rowPressed: {
     backgroundColor: '#F6F8FB',
@@ -320,35 +311,37 @@ const styles = StyleSheet.create({
   rowIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 10,
-    height: 34,
+    borderRadius: UiRadii.icon,
+    height: 32,
     justifyContent: 'center',
-    width: 34,
+    width: 32,
   },
   rowCopy: {
     flex: 1,
-    gap: 2,
+    gap: UiSpacing.xxs,
   },
   rowTitle: {
     color: '#202124',
-    fontSize: 15,
+    fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.bodySmall.lineHeight,
   },
   rowSubtitle: {
     color: '#5F6368',
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
   },
   rowMetaRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 2,
+    gap: UiSpacing.sm,
+    marginTop: UiSpacing.xxs,
   },
   rowMeta: {
     color: '#80868B',
     flex: 1,
-    fontSize: 12,
+    fontSize: UiTypography.caption.fontSize,
+    lineHeight: UiTypography.caption.lineHeight,
   },
   statusDot: {
     borderRadius: 4,
@@ -358,51 +351,54 @@ const styles = StyleSheet.create({
   divider: {
     backgroundColor: '#EEF0F3',
     height: 1,
-    marginLeft: 60,
+    marginLeft: 56,
   },
   empty: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    padding: 32,
+    padding: UiSpacing.xxxl,
   },
   emptyIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F0FE',
-    borderRadius: 30,
-    height: 60,
+    borderRadius: UiRadii.pill,
+    height: 48,
     justifyContent: 'center',
-    marginBottom: 18,
-    width: 60,
+    marginBottom: UiSpacing.lg,
+    width: 48,
   },
   emptyTitle: {
     color: '#202124',
-    fontSize: 20,
+    fontSize: UiTypography.cardHeading.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.cardHeading.lineHeight,
   },
   emptyText: {
     color: '#5F6368',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 8,
+    fontSize: UiTypography.bodySmall.fontSize,
+    lineHeight: UiTypography.bodySmall.lineHeight,
+    marginTop: UiSpacing.sm,
     maxWidth: 300,
     textAlign: 'center',
   },
   startButton: {
     backgroundColor: '#1A73E8',
-    borderRadius: 14,
-    marginTop: 22,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
+    borderRadius: UiRadii.control,
+    justifyContent: 'center',
+    marginTop: UiSpacing.xl,
+    minHeight: UiControlHeights.button,
+    paddingHorizontal: UiSpacing.xl,
   },
   startButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: UiTypography.button.fontSize,
     fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
   skeletonGroup: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: UiRadii.card,
     overflow: 'hidden',
   },
 });

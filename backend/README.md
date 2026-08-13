@@ -2,7 +2,7 @@
 
 NestJS API that powers the AI-Concierge mobile app: authentication, plans,
 Stripe subscriptions, CRM OAuth (GoHighLevel, HubSpot), encrypted OpenAI key
-storage, and voice transcription.
+storage, and voice transcription (Whisper).
 
 ## Stack
 
@@ -37,6 +37,13 @@ npm run start:dev
 ```
 
 The API listens on `http://localhost:4000` by default.
+
+## Production deploy
+
+- Dedicated AWS EC2 host on Ubuntu 24.04 LTS:
+  [`../deploy/ec2/README.md`](../deploy/ec2/README.md)
+- Shared WordPress + API domain (`borncreative.net`) with nginx callback proxy:
+  [`../deploy/README.md`](../deploy/README.md)
 
 ## Stripe setup (one-time)
 
