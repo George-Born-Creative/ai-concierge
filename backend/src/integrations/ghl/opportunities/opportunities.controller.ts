@@ -6,6 +6,12 @@ import { CreateGhlOpportunityDto } from '../dto/create-opportunity.dto';
 import { ListGhlOpportunitiesQueryDto } from '../dto/list-opportunities.query.dto';
 import { UpdateGhlOpportunityDto } from '../dto/update-opportunity.dto';
 import { UpdateGhlOpportunityStatusDto } from '../dto/update-opportunity-status.dto';
+import {
+  AdvancedOpportunitySearchDto,
+  OpportunityFollowersDto,
+  RemoveOpportunityFollowersDto,
+  UpsertGhlOpportunityDto,
+} from '../dto/opportunity-v3.dto';
 import { OpportunitiesService } from './opportunities.service';
 
 @Controller('integrations/ghl')
@@ -16,6 +22,26 @@ export class OpportunitiesController {
   @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
   listOpportunities(@CurrentUser() user: AuthenticatedUser, @Query() query: ListGhlOpportunitiesQueryDto) {
     return this.opportunities.listOpportunities(user.id, query);
+  }
+
+  @Post('opportunities/search')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  searchOpportunities(@CurrentUser() user: AuthenticatedUser, @Body() body: AdvancedOpportunitySearchDto) {
+    return this.opportunities.searchOpportunities(user.id, body);
+  }
+
+  @Post('opportunities/upsert')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  upsertOpportunity(@CurrentUser() user: AuthenticatedUser, @Body() body: UpsertGhlOpportunityDto) {
+    return this.opportunities.upsertOpportunity(user.id, body);
+  }
+
+  @Get('opportunities/lost-reasons')
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  listLostReasons(@CurrentUser() user: AuthenticatedUser) {
+    return this.opportunities.listLostReasons(user.id);
   }
 
   @Post('opportunities')
@@ -30,6 +56,33 @@ export class OpportunitiesController {
   @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
   updateOpportunityStatus(@CurrentUser() user: AuthenticatedUser, @Param('id') opportunityId: string, @Body() body: UpdateGhlOpportunityStatusDto) {
     return this.opportunities.updateOpportunityStatus(user.id, opportunityId, body.status, body.lostReasonId);
+  }
+
+  @Post('opportunities/:id/followers')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  addOpportunityFollowers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') opportunityId: string,
+    @Body() body: OpportunityFollowersDto,
+  ) {
+    return this.opportunities.addOpportunityFollowers(user.id, opportunityId, body.followers);
+  }
+
+  @Delete('opportunities/:id/followers')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
+  removeOpportunityFollowers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') opportunityId: string,
+    @Body() body: RemoveOpportunityFollowersDto,
+  ) {
+    return this.opportunities.removeOpportunityFollowers(
+      user.id,
+      opportunityId,
+      body.followers,
+      body.removeAll,
+    );
   }
 
   @Get('opportunities/:id')

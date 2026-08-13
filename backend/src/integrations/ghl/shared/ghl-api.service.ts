@@ -18,6 +18,8 @@ import type { GhlAppointmentSummary, GhlAppointmentsListResult } from '../appoin
 import type { GhlCalendarSummary, GhlCalendarsListResult } from '../calendars/calendars.type';
 import type { CreateGhlCalendarDto } from '../dto/create-calendar.dto';
 import type { UpdateGhlCalendarDto } from '../dto/update-calendar.dto';
+import type { AdvancedOpportunitySearchDto, UpsertGhlOpportunityDto } from '../dto/opportunity-v3.dto';
+import type { CreateGhlPipelineDto, UpdateGhlPipelineDto } from '../dto/pipeline.dto';
 import type {
   GhlOpportunitiesListResult,
   GhlOpportunityStatus,
@@ -25,6 +27,7 @@ import type {
   GhlOpportunitySummary,
 } from '../opportunities/opportunities.type';
 import type {
+  GhlLostReason,
   GhlPipelineStageSummary,
   GhlPipelineSummary,
   GhlPipelinesListResult,
@@ -35,6 +38,7 @@ const OAUTH_TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
 const GHL_API_BASE = 'https://services.leadconnectorhq.com';
 const GHL_API_VERSION = '2023-02-21';
 const GHL_CONTACTS_API_VERSION = '2021-07-28';
+const GHL_OPPORTUNITIES_API_VERSION = 'v3';
 /** Current Calendar API endpoints require the v3 version header. */
 const GHL_CALENDAR_API_VERSION = 'v3';
 // Must match scopes enabled in Marketplace → Advanced Settings → Auth (e.g. Calendars section).
@@ -164,6 +168,7 @@ type GhlRawPipelineStage = {
   position?: number;
   showInFunnel?: boolean;
   showInPieChart?: boolean;
+  stageWinProbability?: number;
 };
 
 type GhlRawPipeline = {
@@ -171,6 +176,7 @@ type GhlRawPipeline = {
   _id?: string;
   name?: string;
   stages?: GhlRawPipelineStage[];
+  useOpportunityProbability?: boolean;
 };
 
 type GhlRawPipelinesResponse = {
@@ -203,6 +209,20 @@ type GhlRawOpportunity = {
   updatedAt?: string;
   dateAdded?: string;
   dateUpdated?: string;
+  lastStatusChangeAt?: string;
+  lastStageChangeAt?: string;
+  lastActionDate?: string;
+  forecastExpectedCloseDate?: string;
+  forecastOriginalCloseDate?: string;
+  forecastSlippageCount?: number;
+  forecastDaysSlipped?: number;
+  forecastLastSlippedAt?: string;
+  forecastProbability?: number;
+  effectiveProbability?: number;
+  lostReasonId?: string;
+  followers?: string[];
+  customFields?: { id?: string; key?: string; fieldValue?: unknown }[];
+  externalObjectId?: string;
 };
 
 type GhlRawOpportunitiesResponse = {
@@ -212,6 +232,8 @@ type GhlRawOpportunitiesResponse = {
     nextPageUrl?: string | null;
     startAfter?: number | string;
     startAfterId?: string | null;
+    page?: number;
+    limit?: number;
   };
 };
 
@@ -699,6 +721,89 @@ export class GhlApiService {
     };
   }
 
+  async getPipeline(userId: string, pipelineId: string): Promise<GhlPipelineSummary> {
+    await this.requireOpportunityScopes(userId);
+    const id = this.requireIdentifier(pipelineId, 'pipelineId');
+    const raw = await this.ghlRequest<{ pipeline?: GhlRawPipeline } & GhlRawPipeline>(
+      userId,
+      'GET',
+      `/opportunities/pipelines/${id}`,
+    );
+    const pipeline = raw.pipeline ?? raw;
+    if (!pipeline.id && !pipeline._id) throw new NotFoundException('Pipeline not found');
+    return this.toPipelineSummary(pipeline);
+  }
+
+  async createPipeline(userId: string, input: CreateGhlPipelineDto): Promise<GhlPipelineSummary> {
+    await this.requireOpportunityScopes(userId);
+    const locationId = await this.requireLocationId(userId);
+    const raw = await this.ghlRequest<{ pipeline?: GhlRawPipeline } & GhlRawPipeline>(
+      userId,
+      'POST',
+      '/opportunities/pipelines',
+      this.pipelineRequestBody(input, locationId),
+    );
+    const pipeline = raw.pipeline ?? raw;
+    if (!pipeline.id && !pipeline._id) {
+      throw new BadRequestException('GHL did not return the created pipeline');
+    }
+    const summary = this.toPipelineSummary(pipeline);
+    await this.audit(userId, 'ghl.pipeline.create', 'success', { pipelineId: summary.id });
+    return summary;
+  }
+
+  async updatePipeline(
+    userId: string,
+    pipelineId: string,
+    input: UpdateGhlPipelineDto,
+  ): Promise<GhlPipelineSummary> {
+    await this.requireOpportunityScopes(userId);
+    const id = this.requireIdentifier(pipelineId, 'pipelineId');
+    const locationId = await this.requireLocationId(userId);
+    const raw = await this.ghlRequest<{ pipeline?: GhlRawPipeline } & GhlRawPipeline>(
+      userId,
+      'PUT',
+      `/opportunities/pipelines/${id}`,
+      this.pipelineRequestBody(input, locationId),
+    );
+    const pipeline = raw.pipeline ?? raw;
+    const summary =
+      pipeline.id || pipeline._id
+        ? this.toPipelineSummary(pipeline)
+        : await this.getPipeline(userId, id);
+    await this.audit(userId, 'ghl.pipeline.update', 'success', { pipelineId: id });
+    return summary;
+  }
+
+  async deletePipeline(userId: string, pipelineId: string): Promise<{ ok: true }> {
+    await this.requireOpportunityScopes(userId);
+    const id = this.requireIdentifier(pipelineId, 'pipelineId');
+    await this.ghlRequest(userId, 'DELETE', `/opportunities/pipelines/${id}`);
+    await this.audit(userId, 'ghl.pipeline.delete', 'success', { pipelineId: id });
+    return { ok: true };
+  }
+
+  async listLostReasons(userId: string): Promise<{ lostReasons: GhlLostReason[] }> {
+    await this.requireOpportunityScopes(userId);
+    const locationId = await this.requireLocationId(userId);
+    const raw = await this.ghlRequest<{
+      lostReasons?: { id?: string; _id?: string; name?: string; label?: string }[];
+      data?: { id?: string; _id?: string; name?: string; label?: string }[];
+    }>(
+      userId,
+      'GET',
+      `/opportunities/lost-reason?${new URLSearchParams({ locationId }).toString()}`,
+    );
+    return {
+      lostReasons: (raw.lostReasons ?? raw.data ?? []).flatMap((reason) => {
+        const id = (reason.id ?? reason._id ?? '').trim();
+        return id
+          ? [{ id, name: reason.name?.trim() || reason.label?.trim() || 'Unnamed reason' }]
+          : [];
+      }),
+    };
+  }
+
   async listOpportunities(
     userId: string,
     input: {
@@ -717,20 +822,20 @@ export class GhlApiService {
     await this.requireOpportunityScopes(userId);
     const locationId = await this.requireLocationId(userId);
 
-    // GHL /opportunities/search expects snake_case params and uses `q` for the
-    // free-text search field (see SDK `searchOpportunity`).
+    // The v3 endpoint validates camelCase query keys. Legacy snake_case keys
+    // such as `location_id` are rejected with a 422 response.
     const params = new URLSearchParams({
-      location_id: locationId,
+      locationId,
       limit: String(input.limit ?? 20),
     });
-    if (input.pipelineId?.trim()) params.set('pipeline_id', input.pipelineId.trim());
+    if (input.pipelineId?.trim()) params.set('pipelineId', input.pipelineId.trim());
     if (input.pipelineStageId?.trim()) {
-      params.set('pipeline_stage_id', input.pipelineStageId.trim());
+      params.set('pipelineStageId', input.pipelineStageId.trim());
     }
     if (input.status && input.status !== 'all') params.set('status', input.status);
     if (input.query?.trim()) params.set('q', input.query.trim());
-    if (input.contactId?.trim()) params.set('contact_id', input.contactId.trim());
-    if (input.assignedTo?.trim()) params.set('assigned_to', input.assignedTo.trim());
+    if (input.contactId?.trim()) params.set('contactId', input.contactId.trim());
+    if (input.assignedTo?.trim()) params.set('assignedTo', input.assignedTo.trim());
     if (input.campaignId?.trim()) params.set('campaignId', input.campaignId.trim());
     if (input.order) params.set('order', input.order);
     if (input.page && input.page > 1) params.set('page', String(input.page));
@@ -741,17 +846,89 @@ export class GhlApiService {
       `/opportunities/search?${params.toString()}`,
     );
 
-    return {
-      opportunities: (raw.opportunities ?? [])
-        .map((opportunity) => this.toOpportunitySummary(opportunity))
-        .filter((opportunity): opportunity is GhlOpportunitySummary => Boolean(opportunity.id)),
-      meta: raw.meta
-        ? {
-            total: raw.meta.total,
-            nextPageUrl: raw.meta.nextPageUrl ?? null,
-          }
-        : undefined,
-    };
+    return this.normalizeOpportunitiesResult(raw);
+  }
+
+  async searchOpportunities(
+    userId: string,
+    input: AdvancedOpportunitySearchDto,
+  ): Promise<GhlOpportunitiesListResult> {
+    await this.requireOpportunityScopes(userId);
+    const locationId = await this.requireLocationId(userId);
+    const body: Record<string, unknown> = { ...input, locationId };
+    if (input.status === 'all') delete body.status;
+    const raw = await this.ghlRequest<GhlRawOpportunitiesResponse>(
+      userId,
+      'POST',
+      '/opportunities/search',
+      body,
+    );
+    return this.normalizeOpportunitiesResult(raw);
+  }
+
+  async upsertOpportunity(
+    userId: string,
+    input: UpsertGhlOpportunityDto,
+  ): Promise<GhlOpportunitySummary> {
+    await this.requireOpportunityScopes(userId);
+    const locationId = await this.requireLocationId(userId);
+    const raw = await this.ghlRequest<{ opportunity?: GhlRawOpportunity } & GhlRawOpportunity>(
+      userId,
+      'POST',
+      '/opportunities/upsert',
+      { ...input, locationId },
+    );
+    const opportunity = raw.opportunity ?? raw;
+    if (!opportunity.id && !opportunity._id) {
+      throw new BadRequestException('GHL did not return the upserted opportunity');
+    }
+    const summary = this.toOpportunitySummary(opportunity);
+    await this.audit(userId, 'ghl.opportunity.upsert', 'success', {
+      opportunityId: summary.id,
+    });
+    return summary;
+  }
+
+  async addOpportunityFollowers(
+    userId: string,
+    opportunityId: string,
+    followers: string[],
+  ): Promise<{ ok: true }> {
+    await this.requireOpportunityScopes(userId);
+    const id = this.requireIdentifier(opportunityId, 'opportunityId');
+    const normalized = [...new Set(followers.map((value) => value.trim()).filter(Boolean))];
+    if (!normalized.length) throw new BadRequestException('At least one follower is required');
+    await this.ghlRequest(userId, 'POST', `/opportunities/${id}/followers`, {
+      followers: normalized,
+    });
+    await this.audit(userId, 'ghl.opportunity.followers.add', 'success', {
+      opportunityId: id,
+      count: normalized.length,
+    });
+    return { ok: true };
+  }
+
+  async removeOpportunityFollowers(
+    userId: string,
+    opportunityId: string,
+    followers?: string[],
+    removeAll = false,
+  ): Promise<{ ok: true }> {
+    await this.requireOpportunityScopes(userId);
+    const id = this.requireIdentifier(opportunityId, 'opportunityId');
+    const normalized = [...new Set((followers ?? []).map((value) => value.trim()).filter(Boolean))];
+    if (!removeAll && !normalized.length) {
+      throw new BadRequestException('Provide followers or set removeAll to true');
+    }
+    await this.ghlRequest(userId, 'DELETE', `/opportunities/${id}/followers`,
+      removeAll ? { removeAll: true } : { followers: normalized },
+    );
+    await this.audit(userId, 'ghl.opportunity.followers.remove', 'success', {
+      opportunityId: id,
+      removeAll,
+      count: normalized.length,
+    });
+    return { ok: true };
   }
 
   async getOpportunity(userId: string, opportunityId: string): Promise<GhlOpportunitySummary> {
@@ -784,6 +961,10 @@ export class GhlApiService {
       contactId?: string;
       assignedTo?: string;
       source?: string;
+      forecastExpectedCloseDate?: string;
+      forecastProbability?: number;
+      externalObjectId?: string;
+      customFields?: { id?: string; key?: string; fieldValue: unknown }[];
     },
   ): Promise<GhlOpportunitySummary> {
     await this.requireOpportunityScopes(userId);
@@ -815,6 +996,14 @@ export class GhlApiService {
     if (typeof input.monetaryValue === 'number') body.monetaryValue = input.monetaryValue;
     if (input.assignedTo?.trim()) body.assignedTo = input.assignedTo.trim();
     if (input.source?.trim()) body.source = input.source.trim();
+    if (input.forecastExpectedCloseDate?.trim()) {
+      body.forecastExpectedCloseDate = input.forecastExpectedCloseDate.trim();
+    }
+    if (typeof input.forecastProbability === 'number') {
+      body.forecastProbability = input.forecastProbability;
+    }
+    if (input.externalObjectId?.trim()) body.externalObjectId = input.externalObjectId.trim();
+    if (input.customFields) body.customFields = input.customFields;
 
     const raw = await this.ghlRequest<{ opportunity?: GhlRawOpportunity } & GhlRawOpportunity>(
       userId,
@@ -846,6 +1035,10 @@ export class GhlApiService {
       monetaryValue?: number;
       assignedTo?: string;
       source?: string;
+      forecastExpectedCloseDate?: string;
+      forecastProbability?: number;
+      externalObjectId?: string;
+      customFields?: { id?: string; key?: string; fieldValue: unknown }[];
     },
   ): Promise<GhlOpportunitySummary> {
     await this.requireOpportunityScopes(userId);
@@ -862,6 +1055,14 @@ export class GhlApiService {
     if (typeof input.monetaryValue === 'number') body.monetaryValue = input.monetaryValue;
     if (input.assignedTo?.trim()) body.assignedTo = input.assignedTo.trim();
     if (input.source?.trim()) body.source = input.source.trim();
+    if (input.forecastExpectedCloseDate?.trim()) {
+      body.forecastExpectedCloseDate = input.forecastExpectedCloseDate.trim();
+    }
+    if (typeof input.forecastProbability === 'number') {
+      body.forecastProbability = input.forecastProbability;
+    }
+    if (input.externalObjectId?.trim()) body.externalObjectId = input.externalObjectId.trim();
+    if (input.customFields) body.customFields = input.customFields;
 
     if (Object.keys(body).length === 0) {
       throw new BadRequestException('Provide at least one field to update');
@@ -1050,6 +1251,7 @@ export class GhlApiService {
   private ghlApiVersion(path: string): string {
     if (path.startsWith('/calendars')) return GHL_CALENDAR_API_VERSION;
     if (path.startsWith('/contacts')) return GHL_CONTACTS_API_VERSION;
+    if (path.startsWith('/opportunities')) return GHL_OPPORTUNITIES_API_VERSION;
     return GHL_API_VERSION;
   }
 
@@ -1083,6 +1285,11 @@ export class GhlApiService {
         name: stage.name?.trim() || 'Unnamed stage',
       };
       if (typeof stage.position === 'number') summary.position = stage.position;
+      if (typeof stage.showInFunnel === 'boolean') summary.showInFunnel = stage.showInFunnel;
+      if (typeof stage.showInPieChart === 'boolean') summary.showInPieChart = stage.showInPieChart;
+      if (typeof stage.stageWinProbability === 'number') {
+        summary.stageWinProbability = stage.stageWinProbability;
+      }
       stages.push(summary);
     }
 
@@ -1090,6 +1297,7 @@ export class GhlApiService {
       id,
       name: pipeline.name?.trim() || 'Unnamed pipeline',
       stages,
+      useOpportunityProbability: pipeline.useOpportunityProbability,
     };
   }
 
@@ -1126,6 +1334,84 @@ export class GhlApiService {
       source: opportunity.source,
       createdAt: opportunity.createdAt ?? opportunity.dateAdded,
       updatedAt: opportunity.updatedAt ?? opportunity.dateUpdated,
+      lastStatusChangeAt: opportunity.lastStatusChangeAt,
+      lastStageChangeAt: opportunity.lastStageChangeAt,
+      lastActionDate: opportunity.lastActionDate,
+      forecastExpectedCloseDate: opportunity.forecastExpectedCloseDate,
+      forecastOriginalCloseDate: opportunity.forecastOriginalCloseDate,
+      forecastSlippageCount: opportunity.forecastSlippageCount,
+      forecastDaysSlipped: opportunity.forecastDaysSlipped,
+      forecastLastSlippedAt: opportunity.forecastLastSlippedAt,
+      forecastProbability: opportunity.forecastProbability,
+      effectiveProbability: opportunity.effectiveProbability,
+      lostReasonId: opportunity.lostReasonId,
+      followers: opportunity.followers,
+      customFields: opportunity.customFields,
+      externalObjectId: opportunity.externalObjectId,
+    };
+  }
+
+  private normalizeOpportunitiesResult(
+    raw: GhlRawOpportunitiesResponse,
+  ): GhlOpportunitiesListResult {
+    return {
+      opportunities: (raw.opportunities ?? [])
+        .map((opportunity) => this.toOpportunitySummary(opportunity))
+        .filter((opportunity): opportunity is GhlOpportunitySummary => Boolean(opportunity.id)),
+      meta: raw.meta
+        ? {
+            total: raw.meta.total,
+            nextPageUrl: raw.meta.nextPageUrl ?? null,
+            page: raw.meta.page,
+            limit: raw.meta.limit,
+            startAfter: raw.meta.startAfter,
+            startAfterId: raw.meta.startAfterId ?? null,
+          }
+        : undefined,
+    };
+  }
+
+  private requireIdentifier(value: string, label: string): string {
+    const id = value?.trim();
+    if (!id) throw new BadRequestException(`${label} is required`);
+    return id;
+  }
+
+  private pipelineRequestBody(
+    input: CreateGhlPipelineDto | UpdateGhlPipelineDto,
+    locationId: string,
+  ): Record<string, unknown> {
+    const name = input.name?.trim();
+    if (!name) throw new BadRequestException('name is required');
+    if (!input.stages?.length) {
+      throw new BadRequestException('A pipeline must contain at least one stage');
+    }
+    const stageNames = input.stages.map((stage) => stage.name.trim().toLowerCase());
+    if (stageNames.some((stageName) => !stageName) || new Set(stageNames).size !== stageNames.length) {
+      throw new BadRequestException('Pipeline stage names must be non-empty and unique');
+    }
+    if (
+      input.useOpportunityProbability &&
+      input.stages.some((stage) => typeof stage.stageWinProbability !== 'number')
+    ) {
+      throw new BadRequestException(
+        'Every stage requires stageWinProbability when opportunity probability is enabled',
+      );
+    }
+    return {
+      locationId,
+      name,
+      useOpportunityProbability: input.useOpportunityProbability ?? false,
+      stages: input.stages.map((stage) => ({
+        ...(stage.id?.trim() ? { id: stage.id.trim() } : {}),
+        name: stage.name.trim(),
+        position: stage.position,
+        showInFunnel: stage.showInFunnel ?? true,
+        showInPieChart: stage.showInPieChart ?? true,
+        ...(typeof stage.stageWinProbability === 'number'
+          ? { stageWinProbability: stage.stageWinProbability }
+          : {}),
+      })),
     };
   }
 
