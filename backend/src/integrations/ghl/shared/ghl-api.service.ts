@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -15,6 +16,8 @@ import { decryptSecret, encryptSecret } from '../../../common/crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import type { GhlAppointmentSummary, GhlAppointmentsListResult } from '../appointments/appointments.type';
 import type { GhlCalendarSummary, GhlCalendarsListResult } from '../calendars/calendars.type';
+import type { CreateGhlCalendarDto } from '../dto/create-calendar.dto';
+import type { UpdateGhlCalendarDto } from '../dto/update-calendar.dto';
 import type {
   GhlOpportunitiesListResult,
   GhlOpportunityStatus,
@@ -32,8 +35,8 @@ const OAUTH_TOKEN_URL = 'https://services.leadconnectorhq.com/oauth/token';
 const GHL_API_BASE = 'https://services.leadconnectorhq.com';
 const GHL_API_VERSION = '2023-02-21';
 const GHL_CONTACTS_API_VERSION = '2021-07-28';
-/** Calendar / appointment routes require this version (contacts use GHL_API_VERSION). */
-const GHL_CALENDAR_API_VERSION = '2021-04-15';
+/** Current Calendar API endpoints require the v3 version header. */
+const GHL_CALENDAR_API_VERSION = 'v3';
 // Must match scopes enabled in Marketplace → Advanced Settings → Auth (e.g. Calendars section).
 const DEFAULT_SCOPES = [
   'contacts.readonly',
@@ -44,8 +47,6 @@ const DEFAULT_SCOPES = [
   'calendars/events.write',
   'calendars/groups.readonly',
   'calendars/groups.write',
-  'calendars/resources.readonly',
-  'calendars/resources.write',
   'opportunities.readonly',
   'opportunities.write',
   'conversations.readonly',
@@ -120,6 +121,15 @@ type GhlRawCalendar = {
   slotDurationUnit?: string;
   timezone?: string;
   selectedTimezone?: string;
+  description?: string;
+  calendarType?: string;
+  groupId?: string;
+  slug?: string;
+  slotInterval?: number;
+  slotIntervalUnit?: string;
+  allowReschedule?: boolean;
+  allowCancellation?: boolean;
+  [key: string]: unknown;
 };
 
 type GhlRawCalendarsResponse = {
@@ -136,6 +146,11 @@ type GhlRawEvent = {
   calendarId?: string;
   assignedUserId?: string;
   appointmentStatus?: string;
+  description?: string;
+  notes?: string;
+  address?: string;
+  isRecurring?: boolean;
+  [key: string]: unknown;
 };
 
 type GhlRawEventsResponse = {
@@ -380,21 +395,11 @@ export class GhlApiService {
 
   async createCalendar(
     userId: string,
-    input: {
-      name: string;
-      description?: string;
-      isActive?: boolean;
-      options?: Record<string, unknown>;
-    },
+    input: CreateGhlCalendarDto,
   ): Promise<GhlCalendarSummary> {
     const locationId = await this.requireLocationId(userId);
-    const body: Record<string, unknown> = {
-      locationId,
-      name: input.name.trim(),
-      ...(input.options ?? {}),
-    };
-    if (input.description?.trim()) body.description = input.description.trim();
-    if (input.isActive !== undefined) body.isActive = input.isActive;
+    const { options: _options, locationId: _locationId, id: _id, ...safeInput } = input as unknown as Record<string, unknown>;
+    const body: Record<string, unknown> = { ...safeInput, locationId, name: input.name.trim() };
 
     const raw = await this.ghlRequest<{ calendar?: GhlRawCalendar } & GhlRawCalendar>(
       userId,
@@ -413,17 +418,11 @@ export class GhlApiService {
   async updateCalendar(
     userId: string,
     calendarId: string,
-    input: {
-      name?: string;
-      description?: string;
-      isActive?: boolean;
-      options?: Record<string, unknown>;
-    },
+    input: UpdateGhlCalendarDto,
   ): Promise<GhlCalendarSummary> {
-    const body: Record<string, unknown> = { ...(input.options ?? {}) };
+    const { options: _options, locationId: _locationId, id: _id, ...safeInput } = input as unknown as Record<string, unknown>;
+    const body: Record<string, unknown> = { ...safeInput };
     if (input.name?.trim()) body.name = input.name.trim();
-    if (input.description?.trim()) body.description = input.description.trim();
-    if (input.isActive !== undefined) body.isActive = input.isActive;
 
     const raw = await this.ghlRequest<{ calendar?: GhlRawCalendar } & GhlRawCalendar>(
       userId,
@@ -628,17 +627,39 @@ export class GhlApiService {
       endTime,
       title: input.title?.trim() || 'Appointment',
       appointmentStatus: 'confirmed',
+      // Voice/chat commands provide an explicit time chosen by the user. GHL's
+      // appointment API requires these documented overrides when that exact
+      // time falls outside the calendar's public booking availability.
       ignoreDateRange: true,
       ignoreFreeSlotValidation: true,
     };
     if (input.notes?.trim()) body.description = input.notes.trim();
 
-    const raw = await this.ghlRequest<{ id?: string; event?: GhlRawEvent } & GhlRawEvent>(
-      userId,
-      'POST',
-      '/calendars/events/appointments',
-      body,
-    );
+    let raw: { id?: string; event?: GhlRawEvent } & GhlRawEvent;
+    try {
+      raw = await this.ghlRequest<{ id?: string; event?: GhlRawEvent } & GhlRawEvent>(
+        userId,
+        'POST',
+        '/calendars/events/appointments',
+        body,
+      );
+    } catch (error) {
+      if (!(error instanceof ConflictException)) throw error;
+      const requestedMs = Date.parse(startTime);
+      const availability = await this.getCalendarFreeSlots(userId, calendarId, {
+        startDate: requestedMs,
+        endDate: requestedMs + 7 * 24 * 60 * 60 * 1000,
+        timezone: timeZone,
+      }).catch(() => ({}));
+      const suggestedSlots = this.collectSlotTimes(availability)
+        .filter((slot) => !Number.isNaN(Date.parse(slot)) && Date.parse(slot) > requestedMs)
+        .sort((a, b) => Date.parse(a) - Date.parse(b))
+        .slice(0, 5);
+      throw new ConflictException({
+        message: 'That time is not available for this calendar.',
+        suggestedSlots,
+      });
+    }
 
     const event = raw.event ?? raw;
     if (!event.id) {
@@ -1037,6 +1058,17 @@ export class GhlApiService {
       id: calendar.id,
       name: calendar.name?.trim() || 'Unnamed calendar',
       isActive: calendar.isActive,
+      description: calendar.description,
+      calendarType: calendar.calendarType,
+      groupId: calendar.groupId,
+      slug: calendar.slug,
+      timezone: calendar.timezone ?? calendar.selectedTimezone,
+      slotDuration: calendar.slotDuration,
+      slotDurationUnit: calendar.slotDurationUnit,
+      slotInterval: calendar.slotInterval,
+      slotIntervalUnit: calendar.slotIntervalUnit,
+      allowReschedule: calendar.allowReschedule,
+      allowCancellation: calendar.allowCancellation,
     };
   }
 
@@ -1258,6 +1290,17 @@ export class GhlApiService {
     };
   }
 
+  private collectSlotTimes(value: unknown): string[] {
+    if (typeof value === 'string') {
+      return Number.isNaN(Date.parse(value)) ? [] : [value];
+    }
+    if (Array.isArray(value)) return value.flatMap((item) => this.collectSlotTimes(item));
+    if (!value || typeof value !== 'object') return [];
+    return Object.values(value as Record<string, unknown>).flatMap((item) =>
+      this.collectSlotTimes(item),
+    );
+  }
+
   private parseAppointmentTime(value: string): number {
     const ms = Date.parse(value);
     if (Number.isNaN(ms)) {
@@ -1376,6 +1419,9 @@ export class GhlApiService {
       calendarId: event.calendarId,
       ownerId: event.assignedUserId,
       status: event.appointmentStatus,
+      description: event.description ?? event.notes,
+      address: event.address,
+      recurring: event.isRecurring,
     };
   }
 
@@ -1579,10 +1625,14 @@ export class GhlApiService {
     if (status === 401) {
       throw new UnauthorizedException('GHL session expired — please reconnect in Profile');
     }
-    if (status === 422 && /invalid slot range/i.test(message)) {
-      throw new BadRequestException(
-        'That time is not a valid booking slot for this calendar. Try asking for free slots first, or pick a time that matches your calendar interval.',
-      );
+    if (
+      (status === 400 || status === 409 || status === 422) &&
+      /slot|availab|overlap|booking|range/i.test(message)
+    ) {
+      throw new ConflictException({
+        message: 'That time is not available for this calendar. Ask for free slots or choose another time.',
+        suggestedSlots: [],
+      });
     }
     throw new BadRequestException(`GHL API error (${status}): ${message}`);
   }

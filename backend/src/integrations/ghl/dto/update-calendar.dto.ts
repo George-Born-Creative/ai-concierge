@@ -1,20 +1,10 @@
-import { IsBoolean, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
+import { CalendarV3PayloadDto } from './calendar-v3.dto';
 
-export class UpdateGhlCalendarDto {
+export class UpdateGhlCalendarDto extends CalendarV3PayloadDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
-  name?: string;
+  declare name?: string;
 
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  @IsOptional()
-  @IsObject()
-  options?: Record<string, unknown>;
 }

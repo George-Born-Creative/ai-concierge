@@ -47,10 +47,20 @@ export class GhlService {
   updateCalendar(...args: Parameters<CalendarsService['updateCalendar']>) { return this.calendars.updateCalendar(...args); }
   deleteCalendar(...args: Parameters<CalendarsService['deleteCalendar']>) { return this.calendars.deleteCalendar(...args); }
   getCalendarFreeSlots(...args: Parameters<CalendarsService['getCalendarFreeSlots']>) { return this.calendars.getCalendarFreeSlots(...args); }
+  calendarAssistantResource(...args: Parameters<CalendarsService['assistantResource']>) { return this.calendars.assistantResource(...args); }
 
   listCalendarEvents(...args: Parameters<AppointmentsService['listCalendarEvents']>) { return this.appointments.listCalendarEvents(...args); }
   createAppointment(...args: Parameters<AppointmentsService['createAppointment']>) { return this.appointments.createAppointment(...args); }
   cancelAppointment(...args: Parameters<AppointmentsService['cancelAppointment']>) { return this.appointments.cancelAppointment(...args); }
+  getAppointment(...args: Parameters<AppointmentsService['getAppointment']>) { return this.appointments.getAppointment(...args); }
+  updateAppointment(...args: Parameters<AppointmentsService['updateAppointment']>) { return this.appointments.updateAppointment(...args); }
+  listBlockedSlots(...args: Parameters<AppointmentsService['listBlockedSlots']>) { return this.appointments.listBlockedSlots(...args); }
+  createBlockSlot(...args: Parameters<AppointmentsService['createBlockSlot']>) { return this.appointments.createBlockSlot(...args); }
+  updateBlockSlot(...args: Parameters<AppointmentsService['updateBlockSlot']>) { return this.appointments.updateBlockSlot(...args); }
+  listAppointmentNotes(...args: Parameters<AppointmentsService['listNotes']>) { return this.appointments.listNotes(...args); }
+  createAppointmentNote(...args: Parameters<AppointmentsService['createNote']>) { return this.appointments.createNote(...args); }
+  updateAppointmentNote(...args: Parameters<AppointmentsService['updateNote']>) { return this.appointments.updateNote(...args); }
+  deleteAppointmentNote(...args: Parameters<AppointmentsService['deleteNote']>) { return this.appointments.deleteNote(...args); }
 
   listPipelines(...args: Parameters<PipelinesService['listPipelines']>) { return this.pipelines.listPipelines(...args); }
 

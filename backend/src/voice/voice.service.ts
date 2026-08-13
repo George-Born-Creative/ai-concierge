@@ -35,6 +35,11 @@ const SUPPORTED_INTENTS = [
   'list_appointments',
   'create_appointment',
   'cancel_appointment',
+  'reschedule_appointment',
+  'update_appointment_status',
+  'add_appointment_note',
+  'block_calendar_time',
+  'calendar_admin',
   'list_pipelines',
   'list_opportunities',
   'find_opportunity',
@@ -151,6 +156,11 @@ Intent examples (informal → intent):
 - "what's on my calendar", "any meetings tomorrow", "show upcoming appointments" → list_appointments
 - "book Sarah tomorrow at 2pm", "schedule a call with Mike Friday at 10", "set up a meeting with John" → create_appointment
 - "cancel Sarah's appointment", "remove tomorrow's meeting with Mike" → cancel_appointment
+- "move Sarah's appointment to Friday at 3", "reschedule that meeting" → reschedule_appointment
+- "mark that appointment as showed", "set the meeting to confirmed" → update_appointment_status
+- "add a note to that appointment", "note that they asked for a callback" → add_appointment_note
+- "block my calendar tomorrow afternoon", "make Friday 2 to 4 unavailable" → block_calendar_time
+- Calendar administration involving groups, availability schedules, notifications, services, service locations, or service bookings → calendar_admin
 - "what pipelines do I have", "show my sales pipelines" → list_pipelines
 - "show my opportunities", "list open deals", "what's in the Sales pipeline" → list_opportunities
 - "find the website redesign opportunity", "look up John's deal" → find_opportunity
@@ -209,6 +219,11 @@ Entity rules:
 - list_appointments: optional "startTime" / "endTime" as ISO 8601, or "days" as number of days ahead (default 14).
 - create_appointment: "contactName" or "name", "title", "calendarName" if mentioned, "startTime" as ISO 8601 (infer from spoken date/time), optional "endTime" or "durationMinutes" (default 30).
 - cancel_appointment: "query", "contactName", "title", and/or "startTime" to identify the booking.
+- reschedule_appointment: "appointmentId" or "query" to identify it; "startTime" is required and "endTime" is optional.
+- update_appointment_status: "appointmentId" or "query" plus "appointmentStatus".
+- add_appointment_note: "appointmentId" or "query" plus note text in "body" or "notes".
+- block_calendar_time: "calendarId" or "calendarName", "startTime", "endTime", and optional "title".
+- calendar_admin: "resource" is groups/schedules/services/service_locations/service_bookings/notifications; "action" is list/create/update/delete; include "id", "calendarId", "name", and other stated fields. Ask for missing ids before update/delete.
 - list_opportunities: optional "pipelineName"/"pipelineId", "pipelineStageName"/"pipelineStageId", "status" (open/won/lost/abandoned/all), "contactName"/"contactId", "query", "limit".
 - find_opportunity: put the search target in "query" — the user's words (deal/opportunity name, contact mentioned, or phrase). Optional "pipelineName".
 - create_opportunity: "contactName" or "contactId" (REQUIRED — GHL won't accept an opportunity without a contact; extract from "for X", "with X", "X's deal"), "name" (the opportunity title — usually the phrase after "called"/"named", or the noun phrase the user is creating), "pipelineName" or "pipelineId" (the pipeline the deal lives in, REQUIRED), optional "pipelineStageName"/"pipelineStageId", optional "monetaryValue" (number — extract from "worth 2500", "5000 dollars", "$2.5k"; ALSO accept obvious typos / mishearings like "wars 2500", "wort 2500", "wert 2500" as monetary value), optional "status" (default "open"), optional "assignedTo", optional "source". When some required fields are missing, still emit intent "create_opportunity" with the fields you have AND set needs_clarification = true asking ONE specific missing field.

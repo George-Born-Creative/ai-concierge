@@ -464,6 +464,9 @@ export function mergeSessionIntoEntities(
   if (!entityString(merged, 'calendarName', 'calendar_name') && ctx.lastCalendarName) {
     merged.calendarName = ctx.lastCalendarName;
   }
+  if (!entityString(merged, 'appointmentId', 'appointment_id') && ctx.lastAppointmentId) {
+    merged.appointmentId = ctx.lastAppointmentId;
+  }
   if (!entityString(merged, 'opportunityId', 'opportunity_id') && ctx.lastOpportunityId) {
     merged.opportunityId = ctx.lastOpportunityId;
   }
@@ -572,6 +575,11 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'list_appointments',
     'create_appointment',
     'cancel_appointment',
+    'reschedule_appointment',
+    'update_appointment_status',
+    'add_appointment_note',
+    'block_calendar_time',
+    'calendar_admin',
     'list_pipelines',
     'list_opportunities',
     'find_opportunity',

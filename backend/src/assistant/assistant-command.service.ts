@@ -72,6 +72,11 @@ export class AssistantCommandService {
     create_calendar: 'calendar',
     update_calendar: 'calendar',
     delete_calendar: 'calendar',
+    reschedule_appointment: 'calendar',
+    update_appointment_status: 'calendar',
+    add_appointment_note: 'calendar',
+    block_calendar_time: 'calendar',
+    calendar_admin: 'calendar',
     create_opportunity: 'opportunities',
     update_opportunity: 'opportunities',
     update_opportunity_status: 'opportunities',
@@ -281,6 +286,16 @@ export class AssistantCommandService {
         return this.createAppointmentFromDetails(userId, extractAppointmentDetails(intent.entities));
       case 'cancel_appointment':
         return this.cancelAppointmentByQuery(userId, extractAppointmentCancelQuery(intent.entities));
+      case 'reschedule_appointment':
+        return this.rescheduleAppointment(userId, intent.entities);
+      case 'update_appointment_status':
+        return this.updateAppointmentStatus(userId, intent.entities);
+      case 'add_appointment_note':
+        return this.addAppointmentNote(userId, intent.entities);
+      case 'block_calendar_time':
+        return this.blockCalendarTime(userId, intent.entities);
+      case 'calendar_admin':
+        return this.runCalendarAdmin(userId, intent.entities);
       case 'list_pipelines':
         return this.listPipelines(userId);
       case 'list_opportunities':
@@ -1206,6 +1221,122 @@ export class AssistantCommandService {
         "Want me to rebook it for a different time, or send a quick note to the contact?",
       status: 'success',
     };
+  }
+
+  private async rescheduleAppointment(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const appointment = await this.resolveAppointmentForIntent(userId, entities);
+    const startTime = this.intentString(entities, 'startTime', 'start_time');
+    if (!startTime) return { response: 'What new date and time should I use?', status: 'error' };
+    const endTime = this.intentString(entities, 'endTime', 'end_time');
+    await this.ghl.updateAppointment(userId, appointment.id, { startTime, endTime });
+    return {
+      response: `${appointment.title} has been rescheduled to ${this.formatWhen(startTime)}.`,
+      status: 'success',
+      contextPatch: { lastAppointmentId: appointment.id, lastAppointmentTitle: appointment.title },
+    };
+  }
+
+  private async updateAppointmentStatus(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const appointment = await this.resolveAppointmentForIntent(userId, entities);
+    const appointmentStatus = this.intentString(entities, 'appointmentStatus', 'status');
+    if (!appointmentStatus) return { response: 'What status should I set for the appointment?', status: 'error' };
+    await this.ghl.updateAppointment(userId, appointment.id, { appointmentStatus });
+    return { response: `${appointment.title} is now marked ${appointmentStatus}.`, status: 'success' };
+  }
+
+  private async addAppointmentNote(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const appointment = await this.resolveAppointmentForIntent(userId, entities);
+    const body = this.intentString(entities, 'body', 'notes', 'note');
+    if (!body) return { response: 'What note should I add?', status: 'error' };
+    await this.ghl.createAppointmentNote(userId, appointment.id, { body });
+    return { response: `I added that note to ${appointment.title}.`, status: 'success' };
+  }
+
+  private async blockCalendarTime(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const calendarId = await this.resolveCalendarId(
+      userId,
+      this.intentString(entities, 'calendarId', 'calendar_id'),
+      this.intentString(entities, 'calendarName', 'calendar_name'),
+    );
+    const startTime = this.intentString(entities, 'startTime', 'start_time');
+    const endTime = this.intentString(entities, 'endTime', 'end_time');
+    if (!startTime || !endTime) {
+      return { response: 'What start and end time should I block?', status: 'error' };
+    }
+    const title = this.intentString(entities, 'title') ?? 'Unavailable';
+    await this.ghl.createBlockSlot(userId, { calendarId, startTime, endTime, title });
+    return { response: `Blocked ${this.formatWhen(startTime)} through ${this.formatWhen(endTime)}.`, status: 'success' };
+  }
+
+  private async runCalendarAdmin(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<AssistantCommandResult> {
+    const resource = this.intentString(entities, 'resource');
+    const action = this.intentString(entities, 'action');
+    if (!resource || !action) {
+      return { response: 'Which calendar resource and action should I use?', status: 'error' };
+    }
+    const id = this.intentString(entities, 'id', 'resourceId', 'notificationId');
+    const calendarId = this.intentString(entities, 'calendarId', 'calendar_id');
+    const body = Object.fromEntries(
+      Object.entries(entities).filter(([key, value]) =>
+        !['resource', 'action', 'id', 'resourceId', 'notificationId', 'calendarId', 'calendar_id'].includes(key) &&
+        value !== null,
+      ),
+    );
+    const result = await this.ghl.calendarAssistantResource(
+      userId,
+      resource,
+      action,
+      id,
+      calendarId,
+      body,
+    );
+    const detail = JSON.stringify(result).slice(0, 1200);
+    return { response: `${resource} ${action} completed.${detail && action === 'list' ? `\n${detail}` : ''}`, status: 'success' };
+  }
+
+  private async resolveAppointmentForIntent(
+    userId: string,
+    entities: Record<string, string | number | boolean | null>,
+  ): Promise<{ id: string; title: string }> {
+    const appointmentId = this.intentString(entities, 'appointmentId', 'appointment_id');
+    if (appointmentId) {
+      const raw = await this.ghl.getAppointment(userId, appointmentId);
+      const event = ((raw.event as Record<string, unknown> | undefined) ?? raw);
+      return { id: appointmentId, title: String(event.title ?? 'Appointment') };
+    }
+    const query = this.intentString(entities, 'query', 'contactName', 'title', 'startTime');
+    if (!query) throw new Error('Which appointment do you mean?');
+    const result = await this.ghl.listCalendarEvents(userId, { days: 60 });
+    const match = this.findMatchingAppointments(result.appointments, query)[0];
+    if (!match) throw new Error(`Couldn't find an appointment matching "${query}".`);
+    return { id: match.id, title: match.title };
+  }
+
+  private intentString(
+    entities: Record<string, string | number | boolean | null>,
+    ...keys: string[]
+  ): string | undefined {
+    for (const key of keys) {
+      const value = entities[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+      if (typeof value === 'number') return String(value);
+    }
+    return undefined;
   }
 
   // ── Opportunities & pipelines ──────────────────────────────────────────────

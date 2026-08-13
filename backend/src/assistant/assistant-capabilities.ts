@@ -7,8 +7,8 @@ You can speak naturally and use follow-up requests. The assistant supports multi
 - Create, update, and delete contacts.
 
 ### GoHighLevel
-- **Calendars:** list, open, create, update, and delete calendars.
-- **Availability and appointments:** check free slots, list appointments, book appointments, and cancel appointments.
+- **Calendars:** list, open, create, update, and delete calendars; manage groups, availability schedules, notifications, services, service locations, and service bookings.
+- **Availability and appointments:** check free slots, list and book appointments, reschedule or change status, cancel appointments, block time, and manage appointment notes.
 - **Pipelines and opportunities:** list pipelines; list or find opportunities; create, update, move, change status, and delete opportunities.
 - **Conversations and messaging:** list, search, and read conversations; send messages through supported channels such as SMS and email.
 
