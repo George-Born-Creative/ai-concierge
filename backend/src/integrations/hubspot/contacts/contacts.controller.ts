@@ -18,6 +18,7 @@ import {
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { HubspotContactsService } from './contacts.service';
+import { HubspotContactIdentifierQueryDto } from './dto/contact-identifier.query.dto';
 import { CreateHubspotContactDto } from './dto/create-contact.dto';
 import { ListHubspotContactsQueryDto } from './dto/list-contacts.query.dto';
 import { SearchHubspotContactsQueryDto } from './dto/search-contacts.query.dto';
@@ -55,8 +56,9 @@ export class HubspotContactsController {
   getById(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
+    @Query() query: HubspotContactIdentifierQueryDto,
   ) {
-    return this.contacts.getById(user.id, id);
+    return this.contacts.getById(user.id, id, query.idProperty);
   }
 
   @Post()
@@ -74,8 +76,9 @@ export class HubspotContactsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Body() body: UpdateHubspotContactDto,
+    @Query() query: HubspotContactIdentifierQueryDto,
   ) {
-    return this.contacts.update(user.id, id, body);
+    return this.contacts.update(user.id, id, body, query.idProperty);
   }
 
   @Delete(':id')

@@ -22,6 +22,7 @@ export class CreateHubspotContactDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(120)
   lastName?: string;
 
@@ -32,16 +33,19 @@ export class CreateHubspotContactDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(64)
   phone?: string;
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(200)
   company?: string;
 
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(64)
   lifecycleStage?: string;
 }

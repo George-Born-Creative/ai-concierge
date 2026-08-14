@@ -64,9 +64,13 @@ export async function searchContacts(
   );
 }
 
-export async function getContact(id: string): Promise<HubspotContactSummary> {
+export async function getContact(
+  id: string,
+  idProperty: 'id' | 'email' = 'id',
+): Promise<HubspotContactSummary> {
+  const query = idProperty === 'email' ? '?idProperty=email' : '';
   return apiRequest<HubspotContactSummary>(
-    `/integrations/hubspot/contacts/${encodeURIComponent(id)}`,
+    `/integrations/hubspot/contacts/${encodeURIComponent(id)}${query}`,
   );
 }
 
