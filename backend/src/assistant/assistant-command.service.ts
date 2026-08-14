@@ -560,11 +560,8 @@ export class AssistantCommandService {
 
   // ── HubSpot routing ─────────────────────────────────────────────────────────
   //
-  // HubSpot now supports full contact CRUD plus full company CRUD and
-  // contact/deal associations on companies. Deal read works (list); deal
-  // search/edit + calendars/appointments still return a friendly "not wired
-  // yet" message so the user knows the chat didn't silently swallow the
-  // request.
+  // HubSpot supports contact, company, deal, ticket, product, and order
+  // operations. Calendars/appointments remain provider-specific.
 
   private async executeHubspotIntent(
     userId: string,
@@ -732,21 +729,26 @@ export class AssistantCommandService {
           extractOrderDealAssociation(intent.entities),
         );
       case 'find_opportunity':
+        return this.hubspot.findDeal(userId, extractOpportunityQuery(intent.entities));
       case 'create_opportunity':
+        return this.hubspot.createDeal(
+          userId,
+          extractOpportunityCreateDetails(intent.entities),
+        );
       case 'update_opportunity':
+        return this.hubspot.updateDeal(
+          userId,
+          extractOpportunityUpdateDetails(intent.entities),
+        );
       case 'update_opportunity_status':
+        return this.hubspot.updateDealStatus(
+          userId,
+          extractOpportunityStatusDetails(intent.entities),
+        );
       case 'delete_opportunity':
-        return {
-          response:
-            "I can list HubSpot deals. Searching or editing them through the assistant isn't wired up yet.",
-          status: 'error',
-        };
+        return this.hubspot.deleteDeal(userId, extractOpportunityQuery(intent.entities));
       case 'list_pipelines':
-        return {
-          response:
-            "Pipelines aren't wired up for HubSpot yet — try \"show my deals\" instead.",
-          status: 'error',
-        };
+        return this.hubspot.listDealPipelines(userId);
       case 'list_calendars':
       case 'get_calendar':
       case 'create_calendar':

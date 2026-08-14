@@ -10,8 +10,10 @@ import { HubspotContactsService } from './contacts/contacts.service';
 import { HubspotDealsController } from './deals/deals.controller';
 import { HubspotDealsService } from './deals/deals.service';
 import { HubspotApiClient } from './hubspot-api.client';
+import { HubspotAssociationsService } from './hubspot-associations.service';
 import { HubspotController } from './hubspot.controller';
 import { HubspotService } from './hubspot.service';
+import { HubspotPipelinesService } from './hubspot-pipelines.service';
 import { HubspotWebhookController } from './hubspot-webhook.controller';
 import { HubspotOrdersController } from './orders/orders.controller';
 import { HubspotOrdersService } from './orders/orders.service';
@@ -55,6 +57,8 @@ import { HubspotTicketsService } from './tickets/tickets.service';
   providers: [
     HubspotService,
     HubspotApiClient,
+    HubspotAssociationsService,
+    HubspotPipelinesService,
     HubspotContactsService,
     HubspotDealsService,
     HubspotCompaniesService,
@@ -65,6 +69,8 @@ import { HubspotTicketsService } from './tickets/tickets.service';
   exports: [
     HubspotService,
     HubspotApiClient,
+    HubspotAssociationsService,
+    HubspotPipelinesService,
     HubspotContactsService,
     HubspotDealsService,
     HubspotCompaniesService,

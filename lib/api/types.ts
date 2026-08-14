@@ -489,12 +489,51 @@ export type HubspotDealSummary = {
   id: string;
   name: string;
   amount?: number | null;
+  currency?: string;
+  pipeline?: string;
+  pipelineLabel?: string;
+  stage?: string;
+  stageLabel?: string;
+  closeDate?: string;
+  ownerId?: string;
+  description?: string;
+  dealType?: string;
+  pinnedEngagementId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type HubspotPipeline = {
+  id: string;
+  label: string;
+  displayOrder?: number;
+  stages: { id: string; label: string; displayOrder?: number }[];
+};
+
+export type HubspotDealWriteInput = {
+  name?: string;
+  amount?: number | null;
+  currency?: string;
   pipeline?: string;
   stage?: string;
   closeDate?: string;
   ownerId?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  collaboratorOwnerIds?: string[];
+  description?: string;
+  dealType?: string;
+  pinnedEngagementId?: string;
+};
+
+export type HubspotDealDetail = HubspotDealSummary & {
+  properties: Record<string, string | null | undefined>;
+  propertiesWithHistory?: Record<string, unknown>;
+  associations?: Record<string, unknown>;
+};
+
+export type HubspotDealBatchResponse = {
+  status?: string;
+  results: HubspotDealSummary[];
+  errors?: unknown[];
 };
 
 export type HubspotCompanySummary = {
@@ -551,6 +590,10 @@ export type ListHubspotParams = {
 };
 
 export type SearchHubspotContactsParams = ListHubspotParams & {
+  q: string;
+};
+
+export type SearchHubspotDealsParams = ListHubspotParams & {
   q: string;
 };
 

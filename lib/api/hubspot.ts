@@ -4,6 +4,10 @@ import type {
   HubspotCompanySummary,
   HubspotContactSummary,
   HubspotDealSummary,
+  HubspotDealBatchResponse,
+  HubspotDealDetail,
+  HubspotDealWriteInput,
+  HubspotPipeline,
   HubspotOrderSummary,
   HubspotPaginated,
   HubspotProductSummary,
@@ -11,6 +15,7 @@ import type {
   HubspotTicketSummary,
   ListHubspotParams,
   SearchHubspotContactsParams,
+  SearchHubspotDealsParams,
   SearchHubspotOrdersParams,
   SearchHubspotProductsParams,
   SearchHubspotTicketsParams,
@@ -84,9 +89,122 @@ export async function listDeals(
   );
 }
 
-export async function getDeal(id: string): Promise<HubspotDealSummary> {
+export async function listRecentDeals(
+  params?: ListHubspotParams,
+): Promise<HubspotPaginated<HubspotDealSummary>> {
+  return apiRequest<HubspotPaginated<HubspotDealSummary>>(
+    withQuery('/integrations/hubspot/deals/recent', params),
+  );
+}
+
+export async function searchDeals(
+  params: SearchHubspotDealsParams,
+): Promise<HubspotPaginated<HubspotDealSummary>> {
+  return apiRequest<HubspotPaginated<HubspotDealSummary>>(
+    withQuery('/integrations/hubspot/deals/search', params),
+  );
+}
+
+export async function getDeal(
+  id: string,
+  idProperty: string = 'id',
+): Promise<HubspotDealSummary> {
   return apiRequest<HubspotDealSummary>(
-    `/integrations/hubspot/deals/${encodeURIComponent(id)}`,
+    withQuery(`/integrations/hubspot/deals/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+  );
+}
+
+export async function getDealDetail(
+  id: string,
+  params?: {
+    idProperty?: string;
+    properties?: string;
+    propertiesWithHistory?: string;
+    associations?: string;
+  },
+): Promise<HubspotDealDetail> {
+  return apiRequest<HubspotDealDetail>(
+    withQuery(`/integrations/hubspot/deals/${encodeURIComponent(id)}/detail`, params),
+  );
+}
+
+export async function listDealPipelines(): Promise<HubspotPipeline[]> {
+  return apiRequest<HubspotPipeline[]>('/integrations/hubspot/deals/pipelines');
+}
+
+export async function createDeal(input: HubspotDealWriteInput & { name: string }) {
+  return apiRequest<HubspotDealSummary>('/integrations/hubspot/deals', {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export async function updateDeal(
+  id: string,
+  input: HubspotDealWriteInput,
+  idProperty: string = 'id',
+) {
+  return apiRequest<HubspotDealSummary>(
+    withQuery(`/integrations/hubspot/deals/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+    { method: 'PATCH', body: input },
+  );
+}
+
+export async function deleteDeal(id: string): Promise<{ id: string; deleted: true }> {
+  return apiRequest(`/integrations/hubspot/deals/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function batchReadDeals(input: {
+  ids: string[];
+  idProperty?: string;
+  properties?: string[];
+  propertiesWithHistory?: string[];
+}): Promise<HubspotDealBatchResponse> {
+  return apiRequest('/integrations/hubspot/deals/batch/read', { method: 'POST', body: input });
+}
+
+export async function batchUpdateDeals(input: {
+  inputs: { id: string; idProperty?: string; properties: HubspotDealWriteInput }[];
+}): Promise<HubspotDealBatchResponse> {
+  return apiRequest('/integrations/hubspot/deals/batch/update', { method: 'POST', body: input });
+}
+
+export async function batchArchiveDeals(ids: string[]): Promise<{ ids: string[]; archived: true }> {
+  return apiRequest('/integrations/hubspot/deals/batch/archive', {
+    method: 'POST',
+    body: { ids },
+  });
+}
+
+export async function associateDeal(
+  dealId: string,
+  toObjectType: string,
+  toObjectId: string,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    `/integrations/hubspot/deals/${encodeURIComponent(dealId)}/associations/${encodeURIComponent(
+      toObjectType,
+    )}/${encodeURIComponent(toObjectId)}`,
+    { method: 'PUT' },
+  );
+}
+
+export async function disassociateDeal(
+  dealId: string,
+  toObjectType: string,
+  toObjectId: string,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    `/integrations/hubspot/deals/${encodeURIComponent(dealId)}/associations/${encodeURIComponent(
+      toObjectType,
+    )}/${encodeURIComponent(toObjectId)}`,
+    { method: 'DELETE' },
   );
 }
 

@@ -43,8 +43,9 @@ test('catalog includes every implemented voice-assistant resource group', () => 
   }
 });
 
-test('catalog states important HubSpot limitations instead of overclaiming', () => {
-  assert.match(VOICE_ASSISTANT_CAPABILITIES_RESPONSE, /HubSpot deal editing/i);
+test('catalog states important HubSpot limitations without hiding deal support', () => {
+  assert.doesNotMatch(VOICE_ASSISTANT_CAPABILITIES_RESPONSE, /HubSpot deal editing/i);
+  assert.match(VOICE_ASSISTANT_CAPABILITIES_RESPONSE, /HubSpot calendars/i);
   assert.match(VOICE_ASSISTANT_CAPABILITIES_RESPONSE, /not currently available/i);
 });
 

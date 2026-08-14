@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { HubspotApiClient } from '../hubspot-api.client';
+import { HubspotAssociationsService } from '../hubspot-associations.service';
 import {
   HubspotPagedResponse,
   HubspotPaginated,
@@ -40,7 +41,10 @@ export type HubspotTicketWriteInput = {
 
 @Injectable()
 export class HubspotTicketsService {
-  constructor(private readonly api: HubspotApiClient) {}
+  constructor(
+    private readonly api: HubspotApiClient,
+    private readonly associations: HubspotAssociationsService,
+  ) {}
 
   async list(
     userId: string,
@@ -192,7 +196,7 @@ export class HubspotTicketsService {
     ticketId: string,
     contactId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, ticketId, 'contacts', contactId);
+    return this.associations.associate(userId, 'tickets', ticketId, 'contacts', contactId);
   }
 
   async disassociateContact(
@@ -200,7 +204,7 @@ export class HubspotTicketsService {
     ticketId: string,
     contactId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, ticketId, 'contacts', contactId);
+    return this.associations.disassociate(userId, 'tickets', ticketId, 'contacts', contactId);
   }
 
   async associateCompany(
@@ -208,7 +212,7 @@ export class HubspotTicketsService {
     ticketId: string,
     companyId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, ticketId, 'companies', companyId);
+    return this.associations.associate(userId, 'tickets', ticketId, 'companies', companyId);
   }
 
   async disassociateCompany(
@@ -216,7 +220,7 @@ export class HubspotTicketsService {
     ticketId: string,
     companyId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, ticketId, 'companies', companyId);
+    return this.associations.disassociate(userId, 'tickets', ticketId, 'companies', companyId);
   }
 
   async associateDeal(
@@ -224,7 +228,7 @@ export class HubspotTicketsService {
     ticketId: string,
     dealId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, ticketId, 'deals', dealId);
+    return this.associations.associate(userId, 'tickets', ticketId, 'deals', dealId);
   }
 
   async disassociateDeal(
@@ -232,55 +236,7 @@ export class HubspotTicketsService {
     ticketId: string,
     dealId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, ticketId, 'deals', dealId);
-  }
-
-  private async associate(
-    userId: string,
-    ticketId: string,
-    toObjectType: 'contacts' | 'companies' | 'deals',
-    toObjectId: string,
-  ): Promise<{ ok: true }> {
-    const ticketIdTrimmed = ticketId?.trim();
-    const toIdTrimmed = toObjectId?.trim();
-    if (!ticketIdTrimmed) {
-      throw new BadRequestException('Ticket id is required.');
-    }
-    if (!toIdTrimmed) {
-      throw new BadRequestException(`${labelFor(toObjectType)} id is required.`);
-    }
-    await this.api.request<void>(
-      userId,
-      'PUT',
-      `/crm/v4/objects/tickets/${encodeURIComponent(
-        ticketIdTrimmed,
-      )}/associations/default/${toObjectType}/${encodeURIComponent(toIdTrimmed)}`,
-    );
-    return { ok: true };
-  }
-
-  private async disassociate(
-    userId: string,
-    ticketId: string,
-    toObjectType: 'contacts' | 'companies' | 'deals',
-    toObjectId: string,
-  ): Promise<{ ok: true }> {
-    const ticketIdTrimmed = ticketId?.trim();
-    const toIdTrimmed = toObjectId?.trim();
-    if (!ticketIdTrimmed) {
-      throw new BadRequestException('Ticket id is required.');
-    }
-    if (!toIdTrimmed) {
-      throw new BadRequestException(`${labelFor(toObjectType)} id is required.`);
-    }
-    await this.api.request<void>(
-      userId,
-      'DELETE',
-      `/crm/v4/objects/tickets/${encodeURIComponent(
-        ticketIdTrimmed,
-      )}/associations/${toObjectType}/${encodeURIComponent(toIdTrimmed)}`,
-    );
-    return { ok: true };
+    return this.associations.disassociate(userId, 'tickets', ticketId, 'deals', dealId);
   }
 
   // ── Mappers ────────────────────────────────────────────────────────────────
@@ -319,10 +275,4 @@ function clean(value: string | null | undefined): string | undefined {
   if (value === null || value === undefined) return undefined;
   const trimmed = String(value).trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function labelFor(type: 'contacts' | 'companies' | 'deals'): string {
-  if (type === 'contacts') return 'Contact';
-  if (type === 'companies') return 'Company';
-  return 'Deal';
 }
