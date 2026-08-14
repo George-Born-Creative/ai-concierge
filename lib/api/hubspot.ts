@@ -3,6 +3,8 @@ import type {
   HubspotAuthUrlResponse,
   HubspotCompanySummary,
   HubspotContactSummary,
+  HubspotContactWriteInput,
+  HubspotDealCreateInput,
   HubspotDealSummary,
   HubspotDealBatchResponse,
   HubspotDealDetail,
@@ -79,6 +81,36 @@ export async function getContact(
   );
 }
 
+export async function createContact(
+  input: HubspotContactWriteInput,
+): Promise<HubspotContactSummary> {
+  return apiRequest<HubspotContactSummary>('/integrations/hubspot/contacts', {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export async function updateContact(
+  id: string,
+  input: HubspotContactWriteInput,
+  idProperty: 'id' | 'email' = 'id',
+): Promise<HubspotContactSummary> {
+  return apiRequest<HubspotContactSummary>(
+    withQuery(`/integrations/hubspot/contacts/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+    { method: 'PATCH', body: input },
+  );
+}
+
+export async function deleteContact(
+  id: string,
+): Promise<{ id: string; deleted: true }> {
+  return apiRequest(`/integrations/hubspot/contacts/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
 // ─── CRM: deals ──────────────────────────────────────────────────────────────
 
 export async function listDeals(
@@ -134,7 +166,7 @@ export async function listDealPipelines(): Promise<HubspotPipeline[]> {
   return apiRequest<HubspotPipeline[]>('/integrations/hubspot/deals/pipelines');
 }
 
-export async function createDeal(input: HubspotDealWriteInput & { name: string }) {
+export async function createDeal(input: HubspotDealCreateInput) {
   return apiRequest<HubspotDealSummary>('/integrations/hubspot/deals', {
     method: 'POST',
     body: input,

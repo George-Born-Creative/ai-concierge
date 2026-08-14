@@ -242,8 +242,15 @@ export class AssistantCommandService {
     result: AssistantCommandResult,
   ): void {
     if (result.status !== 'success' || !intent) return;
-    const object = AssistantCommandService.MUTATION_OBJECTS[intent];
-    if (!object) return;
+    const mutationObject = AssistantCommandService.MUTATION_OBJECTS[intent];
+    if (!mutationObject) return;
+    // GHL calls these records opportunities, while the HubSpot browse screen
+    // uses the native object name `deals`. Emit the key expected by the active
+    // provider so an open list refreshes immediately after assistant writes.
+    const object =
+      provider === CrmProvider.HUBSPOT && mutationObject === 'opportunities'
+        ? 'deals'
+        : mutationObject;
     this.realtime.emitToUser(userId, 'crm.invalidate', {
       provider: provider === CrmProvider.HUBSPOT ? 'hubspot' : 'ghl',
       object,

@@ -24,6 +24,9 @@ const {
 const {
   HubspotCommandService,
 } = require('../dist/assistant/hubspot-command.service.js');
+const {
+  AssistantCommandService,
+} = require('../dist/assistant/assistant-command.service.js');
 
 const dealPipelines = [
   {
@@ -363,4 +366,32 @@ test('assistant deal lookup asks the user to disambiguate server-side search mat
   assert.match(result.response, /Which deal/);
   assert.match(result.response, /Renewal East/);
   assert.match(result.response, /Renewal West/);
+});
+
+test('HubSpot deal mutations invalidate the frontend deals list', () => {
+  const events = [];
+  const commands = new AssistantCommandService(
+    {},
+    {},
+    {},
+    {},
+    {
+      emitToUser: (...args) => events.push(args),
+    },
+  );
+
+  commands.emitCrmInvalidate(
+    'user-1',
+    'HUBSPOT',
+    'update_opportunity',
+    { response: 'Updated.', status: 'success' },
+  );
+
+  assert.deepEqual(events, [
+    [
+      'user-1',
+      'crm.invalidate',
+      { provider: 'hubspot', object: 'deals' },
+    ],
+  ]);
 });

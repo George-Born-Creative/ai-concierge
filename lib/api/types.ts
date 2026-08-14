@@ -503,6 +503,19 @@ export type HubspotDealSummary = {
   updatedAt?: string;
 };
 
+/**
+ * Contact properties accepted by HubSpot create/update endpoints. Empty
+ * strings are useful on update because HubSpot treats them as field clears.
+ */
+export type HubspotContactWriteInput = {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  lifecycleStage?: string;
+};
+
 export type HubspotPipeline = {
   id: string;
   label: string;
@@ -522,6 +535,19 @@ export type HubspotDealWriteInput = {
   description?: string;
   dealType?: string;
   pinnedEngagementId?: string;
+};
+
+export type HubspotDealCreateAssociation = {
+  to: { id: string };
+  types: {
+    associationCategory: 'HUBSPOT_DEFINED' | 'USER_DEFINED' | 'INTEGRATOR_DEFINED';
+    associationTypeId: number;
+  }[];
+};
+
+export type HubspotDealCreateInput = HubspotDealWriteInput & {
+  name: string;
+  associations?: HubspotDealCreateAssociation[];
 };
 
 export type HubspotDealDetail = HubspotDealSummary & {
@@ -635,10 +661,9 @@ export type VoiceIntent = {
 /**
  * Response from POST /voice/transcribe.
  *
- * The backend used to also run the gpt-4o-mini intent normalizer here,
- * doubling perceived voice latency. Normalization now happens once in
- * /assistant/.../commands with full conversation history + session
- * context, so this endpoint just returns the transcript.
+ * Speech-to-text and grammar correction happen here. Intent normalization
+ * still happens once in /assistant/.../commands with full conversation
+ * history and session context.
  */
 export type TranscribeResponse = {
   transcript: string;
