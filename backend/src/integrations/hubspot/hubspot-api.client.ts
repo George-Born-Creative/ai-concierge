@@ -1,8 +1,13 @@
 import {
+  BadGatewayException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 
@@ -66,7 +71,12 @@ export class HubspotApiClient {
       this.logger.warn(
         `HubSpot ${method} ${path} ${res.status}: ${text.slice(0, 300)}`,
       );
-      this.throwHubspotHttpError(res.status, text, path);
+      this.throwHubspotHttpError(
+        res.status,
+        text,
+        path,
+        res.headers.get('retry-after'),
+      );
     }
 
     if (!text) return {} as T;
@@ -103,6 +113,7 @@ export class HubspotApiClient {
     status: number,
     text: string,
     path?: string,
+    retryAfter?: string | null,
   ): never {
     const message = this.extractMessage(text);
     const lower = message.toLowerCase();
@@ -121,13 +132,26 @@ export class HubspotApiClient {
       );
     }
     if (status === 404) {
-      throw new BadRequestException(
+      throw new NotFoundException(
         `HubSpot returned 404 for ${path ?? 'request'}: ${message}`,
       );
     }
+    if (status === 409) {
+      throw new ConflictException(`HubSpot conflict: ${message}`);
+    }
     if (status === 429) {
-      throw new BadRequestException(
-        'HubSpot rate limit hit — try again in a moment.',
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: 'HubSpot rate limit hit — try again in a moment.',
+          ...(retryAfter ? { retryAfter } : {}),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (status >= 500) {
+      throw new BadGatewayException(
+        `HubSpot service error (${status}): ${message}`,
       );
     }
     throw new BadRequestException(`HubSpot API error (${status}): ${message}`);

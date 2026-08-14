@@ -74,7 +74,7 @@ export class HubspotCommandService {
   // ── Contacts ───────────────────────────────────────────────────────────────
 
   async listLatestContacts(userId: string): Promise<AssistantCommandResult> {
-    const { results } = await this.contacts.list(userId, { limit: 10 });
+    const { results } = await this.contacts.listRecent(userId, { limit: 10 });
     if (results.length === 0) {
       return { response: "You don't have any contacts in HubSpot yet.", status: 'success' };
     }

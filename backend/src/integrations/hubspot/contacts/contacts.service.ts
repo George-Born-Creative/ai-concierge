@@ -27,6 +27,8 @@ export type HubspotContactWriteInput = {
   lifecycleStage?: string;
 };
 
+export type HubspotContactIdProperty = 'id' | 'email';
+
 @Injectable()
 export class HubspotContactsService {
   constructor(private readonly api: HubspotApiClient) {}
@@ -88,7 +90,37 @@ export class HubspotContactsService {
     };
   }
 
-  async getById(userId: string, id: string): Promise<HubspotContactSummary> {
+  async listRecent(
+    userId: string,
+    options: { limit?: number; after?: string } = {},
+  ): Promise<HubspotPaginated<HubspotContactSummary>> {
+    const data = await this.api.request<HubspotSearchResponse>(
+      userId,
+      'POST',
+      '/crm/v3/objects/contacts/search',
+      {
+        body: {
+          limit: options.limit ?? 25,
+          after: options.after,
+          properties: CONTACT_PROPERTIES,
+          sorts: [
+            { propertyName: 'createdate', direction: 'DESCENDING' },
+          ],
+        },
+      },
+    );
+
+    return {
+      results: (data.results ?? []).map((row) => this.toSummary(row)),
+      after: data.paging?.next?.after ?? null,
+    };
+  }
+
+  async getById(
+    userId: string,
+    id: string,
+    idProperty: HubspotContactIdProperty = 'id',
+  ): Promise<HubspotContactSummary> {
     const trimmed = id?.trim();
     if (!trimmed) {
       throw new BadRequestException('Contact id is required.');
@@ -98,7 +130,10 @@ export class HubspotContactsService {
       'GET',
       `/crm/v3/objects/contacts/${encodeURIComponent(trimmed)}`,
       {
-        query: { properties: CONTACT_PROPERTIES.join(',') },
+        query: {
+          idProperty: idProperty === 'email' ? 'email' : undefined,
+          properties: CONTACT_PROPERTIES.join(','),
+        },
       },
     );
     return this.toSummary(data);
@@ -116,9 +151,11 @@ export class HubspotContactsService {
     userId: string,
     input: HubspotContactWriteInput,
   ): Promise<HubspotContactSummary> {
-    const properties = this.toHubspotProperties(input);
-    if (Object.keys(properties).length === 0) {
-      throw new BadRequestException('At least one property is required.');
+    const properties = this.toHubspotProperties(input, false);
+    if (!properties.email && !properties.firstname && !properties.lastname) {
+      throw new BadRequestException(
+        'Email, first name, or last name is required.',
+      );
     }
     const data = await this.api.request<HubspotRawObject>(
       userId,
@@ -133,12 +170,13 @@ export class HubspotContactsService {
     userId: string,
     id: string,
     input: HubspotContactWriteInput,
+    idProperty: HubspotContactIdProperty = 'id',
   ): Promise<HubspotContactSummary> {
     const trimmed = id?.trim();
     if (!trimmed) {
       throw new BadRequestException('Contact id is required.');
     }
-    const properties = this.toHubspotProperties(input);
+    const properties = this.toHubspotProperties(input, true);
     if (Object.keys(properties).length === 0) {
       throw new BadRequestException('At least one property is required.');
     }
@@ -147,11 +185,20 @@ export class HubspotContactsService {
       'PATCH',
       `/crm/v3/objects/contacts/${encodeURIComponent(trimmed)}`,
       {
-        query: { properties: CONTACT_PROPERTIES.join(',') },
+        query: { idProperty: idProperty === 'email' ? 'email' : undefined },
         body: { properties },
       },
     );
-    return this.toSummary(data);
+
+    // PATCH does not support the read endpoint's `properties` selector. Fetch
+    // the updated record by its canonical ID so callers always receive a full
+    // contact summary, including fields that were not part of this patch.
+    if (!data.id) {
+      throw new BadRequestException(
+        'HubSpot update response did not include a contact id.',
+      );
+    }
+    return this.getById(userId, data.id);
   }
 
   async delete(userId: string, id: string): Promise<void> {
@@ -168,15 +215,20 @@ export class HubspotContactsService {
 
   private toHubspotProperties(
     input: HubspotContactWriteInput,
+    preserveEmpty: boolean,
   ): Record<string, string> {
     const props: Record<string, string> = {};
-    if (input.firstName !== undefined) props.firstname = input.firstName;
-    if (input.lastName !== undefined) props.lastname = input.lastName;
-    if (input.email !== undefined) props.email = input.email;
-    if (input.phone !== undefined) props.phone = input.phone;
-    if (input.company !== undefined) props.company = input.company;
-    if (input.lifecycleStage !== undefined)
-      props.lifecyclestage = input.lifecycleStage;
+    const assign = (key: string, value: string | undefined) => {
+      if (value === undefined) return;
+      const normalized = value.trim();
+      if (preserveEmpty || normalized) props[key] = normalized;
+    };
+    assign('firstname', input.firstName);
+    assign('lastname', input.lastName);
+    assign('email', input.email);
+    assign('phone', input.phone);
+    assign('company', input.company);
+    assign('lifecyclestage', input.lifecycleStage);
     return props;
   }
 
