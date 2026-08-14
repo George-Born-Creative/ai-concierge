@@ -238,6 +238,20 @@ export type GhlOpportunitySummary = {
   source?: string;
   createdAt?: string;
   updatedAt?: string;
+  lastStatusChangeAt?: string;
+  lastStageChangeAt?: string;
+  lastActionDate?: string;
+  forecastExpectedCloseDate?: string;
+  forecastOriginalCloseDate?: string;
+  forecastSlippageCount?: number;
+  forecastDaysSlipped?: number;
+  forecastLastSlippedAt?: string;
+  forecastProbability?: number;
+  effectiveProbability?: number;
+  lostReasonId?: string;
+  followers?: string[];
+  customFields?: { id?: string; key?: string; fieldValue?: unknown }[];
+  externalObjectId?: string;
 };
 
 export type GhlOpportunitiesListResponse = {
@@ -245,6 +259,10 @@ export type GhlOpportunitiesListResponse = {
   meta?: {
     total?: number;
     nextPageUrl?: string | null;
+    page?: number;
+    limit?: number;
+    startAfter?: number | string;
+    startAfterId?: string | null;
   };
 };
 
@@ -252,7 +270,19 @@ export type ListGhlOpportunitiesParams = {
   limit?: number;
   query?: string;
   pipelineId?: string;
+  pipelineStageId?: string;
+  contactId?: string;
+  assignedTo?: string;
+  order?: 'added_asc' | 'added_desc' | 'updated_asc' | 'updated_desc';
+  page?: number;
   status?: 'open' | 'won' | 'lost' | 'abandoned' | 'all';
+};
+
+export type SearchGhlOpportunitiesRequest = ListGhlOpportunitiesParams & {
+  filters?: Record<string, unknown>[];
+  sort?: { field: string; direction: 'asc' | 'desc' }[];
+  startAfter?: number;
+  startAfterId?: string;
 };
 
 export type GhlCalendarSummary = {

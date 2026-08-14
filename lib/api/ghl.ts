@@ -26,6 +26,7 @@ import type {
   SendGhlMessageRequest,
   SendGhlMessageResponse,
   SearchGhlContactsRequest,
+  SearchGhlOpportunitiesRequest,
   UpdateGhlContactRequest,
 } from './types';
 
@@ -126,6 +127,11 @@ export async function listOpportunities(
   if (params?.limit) q.set('limit', String(params.limit));
   if (params?.query) q.set('query', params.query);
   if (params?.pipelineId) q.set('pipelineId', params.pipelineId);
+  if (params?.pipelineStageId) q.set('pipelineStageId', params.pipelineStageId);
+  if (params?.contactId) q.set('contactId', params.contactId);
+  if (params?.assignedTo) q.set('assignedTo', params.assignedTo);
+  if (params?.order) q.set('order', params.order);
+  if (params?.page) q.set('page', String(params.page));
   if (params?.status) q.set('status', params.status);
   const suffix = q.toString();
   return apiRequest<GhlOpportunitiesListResponse>(
@@ -133,6 +139,15 @@ export async function listOpportunities(
       ? `/integrations/ghl/opportunities?${suffix}`
       : '/integrations/ghl/opportunities',
   );
+}
+
+export async function searchOpportunities(
+  body: SearchGhlOpportunitiesRequest,
+): Promise<GhlOpportunitiesListResponse> {
+  return apiRequest<GhlOpportunitiesListResponse>('/integrations/ghl/opportunities/search', {
+    method: 'POST',
+    body,
+  });
 }
 
 export async function listCalendars(): Promise<GhlCalendarsListResponse> {

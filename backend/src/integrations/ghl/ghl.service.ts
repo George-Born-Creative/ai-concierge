@@ -63,12 +63,21 @@ export class GhlService {
   deleteAppointmentNote(...args: Parameters<AppointmentsService['deleteNote']>) { return this.appointments.deleteNote(...args); }
 
   listPipelines(...args: Parameters<PipelinesService['listPipelines']>) { return this.pipelines.listPipelines(...args); }
+  getPipeline(...args: Parameters<PipelinesService['getPipeline']>) { return this.pipelines.getPipeline(...args); }
+  createPipeline(...args: Parameters<PipelinesService['createPipeline']>) { return this.pipelines.createPipeline(...args); }
+  updatePipeline(...args: Parameters<PipelinesService['updatePipeline']>) { return this.pipelines.updatePipeline(...args); }
+  deletePipeline(...args: Parameters<PipelinesService['deletePipeline']>) { return this.pipelines.deletePipeline(...args); }
 
   listOpportunities(...args: Parameters<OpportunitiesService['listOpportunities']>) { return this.opportunities.listOpportunities(...args); }
+  searchOpportunities(...args: Parameters<OpportunitiesService['searchOpportunities']>) { return this.opportunities.searchOpportunities(...args); }
   getOpportunity(...args: Parameters<OpportunitiesService['getOpportunity']>) { return this.opportunities.getOpportunity(...args); }
   createOpportunity(...args: Parameters<OpportunitiesService['createOpportunity']>) { return this.opportunities.createOpportunity(...args); }
+  upsertOpportunity(...args: Parameters<OpportunitiesService['upsertOpportunity']>) { return this.opportunities.upsertOpportunity(...args); }
   updateOpportunity(...args: Parameters<OpportunitiesService['updateOpportunity']>) { return this.opportunities.updateOpportunity(...args); }
   updateOpportunityStatus(...args: Parameters<OpportunitiesService['updateOpportunityStatus']>) { return this.opportunities.updateOpportunityStatus(...args); }
+  listLostReasons(...args: Parameters<OpportunitiesService['listLostReasons']>) { return this.opportunities.listLostReasons(...args); }
+  addOpportunityFollowers(...args: Parameters<OpportunitiesService['addOpportunityFollowers']>) { return this.opportunities.addOpportunityFollowers(...args); }
+  removeOpportunityFollowers(...args: Parameters<OpportunitiesService['removeOpportunityFollowers']>) { return this.opportunities.removeOpportunityFollowers(...args); }
   deleteOpportunity(...args: Parameters<OpportunitiesService['deleteOpportunity']>) { return this.opportunities.deleteOpportunity(...args); }
 
   searchConversations(...args: Parameters<ConversationsService['searchConversations']>) { return this.conversations.searchConversations(...args); }

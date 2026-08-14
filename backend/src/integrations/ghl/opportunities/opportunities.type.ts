@@ -15,6 +15,20 @@ export type GhlOpportunitySummary = {
   source?: string;
   createdAt?: string;
   updatedAt?: string;
+  lastStatusChangeAt?: string;
+  lastStageChangeAt?: string;
+  lastActionDate?: string;
+  forecastExpectedCloseDate?: string;
+  forecastOriginalCloseDate?: string;
+  forecastSlippageCount?: number;
+  forecastDaysSlipped?: number;
+  forecastLastSlippedAt?: string;
+  forecastProbability?: number;
+  effectiveProbability?: number;
+  lostReasonId?: string;
+  followers?: string[];
+  customFields?: { id?: string; key?: string; fieldValue?: unknown }[];
+  externalObjectId?: string;
 };
 
 export type GhlOpportunitiesListResult = {
@@ -22,5 +36,9 @@ export type GhlOpportunitiesListResult = {
   meta?: {
     total?: number;
     nextPageUrl?: string | null;
+    page?: number;
+    limit?: number;
+    startAfter?: number | string;
+    startAfterId?: string | null;
   };
 };

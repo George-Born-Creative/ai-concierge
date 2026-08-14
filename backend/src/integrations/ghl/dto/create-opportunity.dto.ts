@@ -1,4 +1,6 @@
-import { IsEnum, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsEnum, IsNumber, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { GhlOpportunityCustomFieldDto } from './opportunity-v3.dto';
 
 export type GhlOpportunityStatus = 'open' | 'won' | 'lost' | 'abandoned';
 
@@ -35,4 +37,10 @@ export class CreateGhlOpportunityDto {
   @IsOptional()
   @IsString()
   source?: string;
+
+  @IsOptional() @IsString() forecastExpectedCloseDate?: string;
+  @IsOptional() @IsNumber() @Min(0) @Max(100) forecastProbability?: number;
+  @IsOptional() @IsString() externalObjectId?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => GhlOpportunityCustomFieldDto)
+  customFields?: GhlOpportunityCustomFieldDto[];
 }
