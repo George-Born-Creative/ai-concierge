@@ -42,13 +42,14 @@ type LoadState<T> = {
   data: T[];
   loading: boolean;
   error: string | null;
+  after?: string | null;
 };
 
 // Seed a section from the CRM cache: show cached rows instantly (no skeleton)
 // when present, otherwise start in the loading state until the first fetch.
 function seedState<T>(key: string): LoadState<T> {
   const data = getCrmCache<T>(key);
-  return { data: data ?? [], loading: data === undefined, error: null };
+  return { data: data ?? [], loading: data === undefined, error: null, after: null };
 }
 
 // Persist a successful fetch to the cache, then apply it to component state.
@@ -123,6 +124,7 @@ export function HubspotDataScreenContent() {
     seedState(crmCacheKey('hubspot', 'orders')),
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMoreTickets, setLoadingMoreTickets] = useState(false);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
@@ -220,6 +222,29 @@ export function HubspotDataScreenContent() {
       await loadAll('refresh');
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function loadMoreTickets() {
+    if (!tickets.after || loadingMoreTickets) return;
+    setLoadingMoreTickets(true);
+    try {
+      const page = await hubspotApi.listTickets({ limit, after: tickets.after });
+      const data = [
+        ...tickets.data,
+        ...page.results.filter(
+          (row) => !tickets.data.some((existing) => existing.id === row.id),
+        ),
+      ];
+      commit(
+        crmCacheKey('hubspot', 'tickets'),
+        { data, loading: false, error: null, after: page.after },
+        setTickets,
+      );
+    } catch (error) {
+      show(error instanceof Error ? error.message : 'Could not load more tickets.', 'error');
+    } finally {
+      setLoadingMoreTickets(false);
     }
   }
 
@@ -329,21 +354,40 @@ export function HubspotDataScreenContent() {
         )}
 
         {want('tickets') && (
-          <Section
-            icon="confirmation-number"
-            title="Tickets"
-            state={tickets}
-            emptyText="No tickets in your HubSpot portal yet."
-            renderRow={(row) => (
-              <RowCard
-                key={row.id}
-                title={row.subject}
-                subtitle={row.content}
-                meta={[row.priority, row.stage].filter(Boolean).join(' · ') || undefined}
-                onPress={() => handleCopy('Ticket id', row.id)}
-              />
-            )}
-          />
+          <View style={styles.ticketSection}>
+            <Section
+              icon="confirmation-number"
+              title="Tickets"
+              state={tickets}
+              emptyText="No tickets in your HubSpot portal yet."
+              renderRow={(row) => (
+                <RowCard
+                  key={row.id}
+                  title={row.subject}
+                  subtitle={row.content}
+                  meta={
+                    [row.priority, row.pipelineLabel, row.stageLabel ?? row.stage]
+                      .filter(Boolean)
+                      .join(' · ') || undefined
+                  }
+                  onPress={() => handleCopy('Ticket id', row.id)}
+                />
+              )}
+            />
+            {active === 'tickets' && tickets.after ? (
+              <Pressable
+                disabled={loadingMoreTickets}
+                onPress={() => void loadMoreTickets()}
+                style={({ pressed }) => [
+                  styles.loadMoreButton,
+                  (pressed || loadingMoreTickets) && { opacity: 0.7 },
+                ]}>
+                <Text style={styles.loadMoreText}>
+                  {loadingMoreTickets ? 'Loading…' : 'Load more tickets'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         )}
 
         {want('products') && (
@@ -410,6 +454,7 @@ function formatDealAmount(amount: number, currency?: string): string {
   } catch {
     return `${amount.toLocaleString()} ${currency}`;
   }
+
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -425,7 +470,12 @@ function stateFor<T>(
   settled: PromiseSettledResult<{ results: T[]; after: string | null }>,
 ): LoadState<T> {
   if (settled.status === 'fulfilled') {
-    return { data: settled.value.results, loading: false, error: null };
+    return {
+      data: settled.value.results,
+      loading: false,
+      error: null,
+      after: settled.value.after,
+    };
   }
   const reason = settled.reason;
   const message =
@@ -434,7 +484,7 @@ function stateFor<T>(
       : reason instanceof Error
         ? reason.message
         : 'Could not load from HubSpot.';
-  return { data: [], loading: false, error: message };
+  return { data: [], loading: false, error: message, after: null };
 }
 
 // ─── Section ──────────────────────────────────────────────────────────────────
@@ -550,6 +600,18 @@ const styles = StyleSheet.create({
     borderRadius: UiRadii.card,
     borderWidth: 1,
     overflow: 'hidden',
+  },
+  ticketSection: { gap: UiSpacing.sm },
+  loadMoreButton: {
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    borderRadius: UiRadii.card,
+    paddingVertical: UiSpacing.sm,
+  },
+  loadMoreText: {
+    color: '#1967D2',
+    fontSize: UiTypography.label.fontSize,
+    fontWeight: '600',
   },
   sectionHeader: {
     alignItems: 'center',

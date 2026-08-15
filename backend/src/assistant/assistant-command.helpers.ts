@@ -103,6 +103,19 @@ export function entityString(
   return undefined;
 }
 
+function entityClearableString(
+  entities: Record<string, string | number | boolean | null>,
+  ...keys: string[]
+): string | null | undefined {
+  for (const key of keys) {
+    if (!(key in entities)) continue;
+    const value = entities[key];
+    if (value === null) return null;
+    if (typeof value === 'string') return value.trim();
+  }
+  return undefined;
+}
+
 export function entityNumber(
   entities: Record<string, string | number | boolean | null>,
   ...keys: string[]
@@ -517,6 +530,9 @@ export function mergeSessionIntoEntities(
   ) {
     merged.ticketSubject = ctx.lastTicketSubject;
   }
+  if (!entityString(merged, 'ticketAfter', 'after') && ctx.lastTicketAfter) {
+    merged.ticketAfter = ctx.lastTicketAfter;
+  }
   // Products — same wrong-target safety: only fill from session when the user
   // didn't name a product themselves.
   if (
@@ -607,6 +623,7 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'detach_ticket_from_company',
     'attach_ticket_to_deal',
     'detach_ticket_from_deal',
+    'pin_ticket_activity',
     'list_products',
     'find_product',
     'create_product',
@@ -816,6 +833,8 @@ export function extractTicketCreateDetails(
     priority: entityString(entities, 'ticketPriority', 'ticket_priority', 'priority'),
     pipeline: entityString(entities, 'ticketPipeline', 'ticket_pipeline', 'pipeline'),
     stage: entityString(entities, 'ticketStage', 'ticket_stage', 'stage'),
+    ownerId: entityString(entities, 'ticketOwnerId', 'ownerId'),
+    pinnedEngagementId: entityString(entities, 'pinnedEngagementId', 'engagementId'),
   };
 }
 
@@ -833,7 +852,7 @@ export function extractTicketUpdateDetails(
   return {
     query,
     subject: entityString(entities, 'newTicketSubject', 'new_ticket_subject', 'newSubject'),
-    content: entityString(
+    content: entityClearableString(
       entities,
       'newTicketContent',
       'new_ticket_content',
@@ -841,7 +860,7 @@ export function extractTicketUpdateDetails(
       'content',
       'description',
     ),
-    priority: entityString(
+    priority: entityClearableString(
       entities,
       'newTicketPriority',
       'new_ticket_priority',
@@ -855,6 +874,13 @@ export function extractTicketUpdateDetails(
       'new_ticket_stage',
       'ticketStage',
       'stage',
+    ),
+    ownerId: entityClearableString(entities, 'newTicketOwnerId', 'ticketOwnerId', 'ownerId'),
+    pinnedEngagementId: entityClearableString(
+      entities,
+      'newPinnedEngagementId',
+      'pinnedEngagementId',
+      'engagementId',
     ),
   };
 }

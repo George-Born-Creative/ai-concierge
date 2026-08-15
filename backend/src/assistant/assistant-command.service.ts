@@ -45,6 +45,7 @@ import {
   extractTicketContactAssociation,
   extractTicketCreateDetails,
   extractTicketDealAssociation,
+  extractTicketQuery,
   extractTicketUpdateDetails,
   mergeSessionIntoEntities,
   pendingIntentExpiry,
@@ -91,6 +92,7 @@ export class AssistantCommandService {
     create_ticket: 'tickets',
     update_ticket: 'tickets',
     delete_ticket: 'tickets',
+    pin_ticket_activity: 'tickets',
     attach_ticket_to_contact: 'tickets',
     detach_ticket_from_contact: 'tickets',
     attach_ticket_to_company: 'tickets',
@@ -628,7 +630,10 @@ export class AssistantCommandService {
           extractCompanyDealAssociation(intent.entities),
         );
       case 'list_tickets':
-        return this.hubspot.listRecentTickets(userId);
+        return this.hubspot.listRecentTickets(
+          userId,
+          this.intentString(intent.entities, 'ticketAfter', 'after'),
+        );
       case 'find_ticket':
         return this.hubspot.findTicket(userId, extractSearchQuery(intent.entities));
       case 'create_ticket':
@@ -642,7 +647,11 @@ export class AssistantCommandService {
           extractTicketUpdateDetails(intent.entities),
         );
       case 'delete_ticket':
-        return this.hubspot.deleteTicket(userId, extractSearchQuery(intent.entities));
+        return this.hubspot.deleteTicket(
+          userId,
+          extractTicketQuery(intent.entities),
+          this.intentString(intent.entities, 'confirmation', 'confirmed'),
+        );
       case 'attach_ticket_to_contact':
         return this.hubspot.attachTicketToContact(
           userId,
@@ -742,6 +751,24 @@ export class AssistantCommandService {
           userId,
           extractOpportunityCreateDetails(intent.entities),
         );
+      case 'pin_ticket_activity': {
+        const rawAssociationTypeId = intent.entities.associationTypeId;
+        const associationTypeId =
+          typeof rawAssociationTypeId === 'number'
+            ? rawAssociationTypeId
+            : typeof rawAssociationTypeId === 'string'
+              ? Number(rawAssociationTypeId)
+              : undefined;
+        return this.hubspot.pinTicketActivity(userId, {
+          ticket: extractTicketQuery(intent.entities),
+          activityId: this.intentString(intent.entities, 'activityId', 'engagementId'),
+          activityType: this.intentString(intent.entities, 'activityType', 'engagementType'),
+          associationTypeId:
+            typeof associationTypeId === 'number' && Number.isFinite(associationTypeId)
+              ? associationTypeId
+              : undefined,
+        });
+      }
       case 'update_opportunity':
         return this.hubspot.updateDeal(
           userId,
