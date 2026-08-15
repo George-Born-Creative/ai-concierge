@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { HubspotApiClient } from '../hubspot-api.client';
+import { HubspotAssociationsService } from '../hubspot-associations.service';
+import { HubspotPipelinesService } from '../hubspot-pipelines.service';
 import {
   HubspotOrderSummary,
   HubspotPagedResponse,
@@ -43,19 +45,13 @@ export type HubspotOrderWriteInput = {
   ownerId?: string;
 };
 
-/** Shape of `GET /crm/v3/pipelines/orders`. */
-type HubspotPipelinesResponse = {
-  results?: {
-    id: string;
-    label?: string;
-    displayOrder?: number;
-    stages?: { id: string; label?: string; displayOrder?: number }[];
-  }[];
-};
-
 @Injectable()
 export class HubspotOrdersService {
-  constructor(private readonly api: HubspotApiClient) {}
+  constructor(
+    private readonly api: HubspotApiClient,
+    private readonly associations: HubspotAssociationsService,
+    private readonly pipelines: HubspotPipelinesService,
+  ) {}
 
   async list(
     userId: string,
@@ -148,13 +144,14 @@ export class HubspotOrdersService {
     // vary per portal, so when the caller doesn't supply them, resolve the
     // first order pipeline and its first stage as sensible defaults.
     if (!properties.hs_pipeline || !properties.hs_pipeline_stage) {
-      const fallback = await this.resolveDefaultPipelineStage(userId);
-      if (fallback) {
-        if (!properties.hs_pipeline) properties.hs_pipeline = fallback.pipeline;
-        if (!properties.hs_pipeline_stage) {
-          properties.hs_pipeline_stage = fallback.stage;
-        }
-      }
+      const fallback = await this.pipelines.resolve(
+        userId,
+        'orders',
+        input.pipeline,
+        input.stage,
+      );
+      properties.hs_pipeline = fallback.pipeline.id;
+      properties.hs_pipeline_stage = fallback.stage.id;
     }
 
     const data = await this.api.request<HubspotRawObject>(
@@ -215,7 +212,7 @@ export class HubspotOrdersService {
     orderId: string,
     contactId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, orderId, 'contacts', contactId);
+    return this.associations.associate(userId, 'orders', orderId, 'contacts', contactId);
   }
 
   async disassociateContact(
@@ -223,7 +220,7 @@ export class HubspotOrdersService {
     orderId: string,
     contactId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, orderId, 'contacts', contactId);
+    return this.associations.disassociate(userId, 'orders', orderId, 'contacts', contactId);
   }
 
   async associateCompany(
@@ -231,7 +228,7 @@ export class HubspotOrdersService {
     orderId: string,
     companyId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, orderId, 'companies', companyId);
+    return this.associations.associate(userId, 'orders', orderId, 'companies', companyId);
   }
 
   async disassociateCompany(
@@ -239,7 +236,7 @@ export class HubspotOrdersService {
     orderId: string,
     companyId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, orderId, 'companies', companyId);
+    return this.associations.disassociate(userId, 'orders', orderId, 'companies', companyId);
   }
 
   async associateDeal(
@@ -247,7 +244,7 @@ export class HubspotOrdersService {
     orderId: string,
     dealId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, orderId, 'deals', dealId);
+    return this.associations.associate(userId, 'orders', orderId, 'deals', dealId);
   }
 
   async disassociateDeal(
@@ -255,78 +252,7 @@ export class HubspotOrdersService {
     orderId: string,
     dealId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, orderId, 'deals', dealId);
-  }
-
-  private async associate(
-    userId: string,
-    orderId: string,
-    toObjectType: 'contacts' | 'companies' | 'deals',
-    toObjectId: string,
-  ): Promise<{ ok: true }> {
-    const orderIdTrimmed = orderId?.trim();
-    const toIdTrimmed = toObjectId?.trim();
-    if (!orderIdTrimmed) {
-      throw new BadRequestException('Order id is required.');
-    }
-    if (!toIdTrimmed) {
-      throw new BadRequestException(`${labelFor(toObjectType)} id is required.`);
-    }
-    await this.api.request<void>(
-      userId,
-      'PUT',
-      `/crm/v4/objects/orders/${encodeURIComponent(
-        orderIdTrimmed,
-      )}/associations/default/${toObjectType}/${encodeURIComponent(toIdTrimmed)}`,
-    );
-    return { ok: true };
-  }
-
-  private async disassociate(
-    userId: string,
-    orderId: string,
-    toObjectType: 'contacts' | 'companies' | 'deals',
-    toObjectId: string,
-  ): Promise<{ ok: true }> {
-    const orderIdTrimmed = orderId?.trim();
-    const toIdTrimmed = toObjectId?.trim();
-    if (!orderIdTrimmed) {
-      throw new BadRequestException('Order id is required.');
-    }
-    if (!toIdTrimmed) {
-      throw new BadRequestException(`${labelFor(toObjectType)} id is required.`);
-    }
-    await this.api.request<void>(
-      userId,
-      'DELETE',
-      `/crm/v4/objects/orders/${encodeURIComponent(
-        orderIdTrimmed,
-      )}/associations/${toObjectType}/${encodeURIComponent(toIdTrimmed)}`,
-    );
-    return { ok: true };
-  }
-
-  // ── Pipeline defaults ────────────────────────────────────────────────────────
-
-  private async resolveDefaultPipelineStage(
-    userId: string,
-  ): Promise<{ pipeline: string; stage: string } | null> {
-    try {
-      const data = await this.api.request<HubspotPipelinesResponse>(
-        userId,
-        'GET',
-        '/crm/v3/pipelines/orders',
-      );
-      const pipeline = (data.results ?? [])[0];
-      const stage = pipeline?.stages?.[0];
-      if (pipeline?.id && stage?.id) {
-        return { pipeline: pipeline.id, stage: stage.id };
-      }
-    } catch {
-      // If pipelines can't be read, fall through and let HubSpot's own
-      // validation surface a clear error on create.
-    }
-    return null;
+    return this.associations.disassociate(userId, 'orders', orderId, 'deals', dealId);
   }
 
   // ── Mappers ────────────────────────────────────────────────────────────────
@@ -378,10 +304,4 @@ function toNumber(value: string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function labelFor(type: 'contacts' | 'companies' | 'deals'): string {
-  if (type === 'contacts') return 'Contact';
-  if (type === 'companies') return 'Company';
-  return 'Deal';
 }

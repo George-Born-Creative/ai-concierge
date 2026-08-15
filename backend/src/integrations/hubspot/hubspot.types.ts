@@ -29,12 +29,19 @@ export type HubspotDealSummary = {
   id: string;
   name: string;
   amount?: number | null;
+  /** ISO currency code when HubSpot multi-currency is available. */
+  currency?: string;
   /** Pipeline id (HubSpot uses ids like `default`). */
   pipeline?: string;
+  pipelineLabel?: string;
   /** Pipeline stage id (HubSpot uses ids like `appointmentscheduled`). */
   stage?: string;
+  stageLabel?: string;
   closeDate?: string;
   ownerId?: string;
+  description?: string;
+  dealType?: string;
+  pinnedEngagementId?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -115,6 +122,9 @@ export type HubspotRawObject = {
   properties: Record<string, string | null | undefined>;
   createdAt?: string;
   updatedAt?: string;
+  archived?: boolean;
+  propertiesWithHistory?: Record<string, unknown>;
+  associations?: Record<string, unknown>;
 };
 
 export type HubspotPagedResponse = {

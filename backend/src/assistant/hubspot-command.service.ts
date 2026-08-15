@@ -39,6 +39,9 @@ import type {
   extractOrderCreateDetails,
   extractOrderDealAssociation,
   extractOrderUpdateDetails,
+  extractOpportunityCreateDetails,
+  extractOpportunityStatusDetails,
+  extractOpportunityUpdateDetails,
   extractProductCreateDetails,
   extractProductUpdateDetails,
   extractTicketCompanyAssociation,
@@ -267,7 +270,7 @@ export class HubspotCommandService {
   // ── Deals (HubSpot equivalent of GHL opportunities) ────────────────────────
 
   async listRecentDeals(userId: string): Promise<AssistantCommandResult> {
-    const { results } = await this.deals.list(userId, { limit: 10 });
+    const { results } = await this.deals.listRecent(userId, { limit: 10 });
     if (results.length === 0) {
       return { response: "You don't have any deals in HubSpot yet.", status: 'success' };
     }
@@ -279,6 +282,141 @@ export class HubspotCommandService {
         "Want to dig into one of them, or attach a deal to a company? Just say the word.",
       status: 'success',
     };
+  }
+
+  async listDealPipelines(userId: string): Promise<AssistantCommandResult> {
+    const pipelines = await this.deals.listPipelines(userId);
+    if (pipelines.length === 0) {
+      return { response: 'No HubSpot deal pipelines are available.', status: 'success' };
+    }
+    return {
+      response: `Here are your HubSpot deal pipelines:\n${pipelines
+        .map((pipeline) =>
+          `· ${pipeline.label} — ${pipeline.stages.map((stage) => stage.label).join(', ')}`,
+        )
+        .join('\n')}`,
+      status: 'success',
+    };
+  }
+
+  async findDeal(userId: string, query: string): Promise<AssistantCommandResult> {
+    const trimmed = query?.trim();
+    const resolved = await this.resolveDeal(userId, {
+      id: /^\d+$/.test(trimmed) ? trimmed : undefined,
+      name: trimmed,
+    });
+    if (resolved.kind === 'missing') return resolved.result;
+    return {
+      response: `Found it in HubSpot:\n${this.formatDeal(resolved.deal)}`,
+      status: 'success',
+      contextPatch: {
+        lastOpportunityId: resolved.deal.id,
+        lastOpportunityName: resolved.deal.name,
+      },
+    };
+  }
+
+  async createDeal(
+    userId: string,
+    details: ReturnType<typeof extractOpportunityCreateDetails>,
+  ): Promise<AssistantCommandResult> {
+    if (!details.name?.trim()) {
+      return { response: 'What should I name the new HubSpot deal?', status: 'error' };
+    }
+    let contactId = details.contactId;
+    if (!contactId && details.contactName) {
+      const contact = await this.resolveContact(userId, { query: details.contactName });
+      if (contact.kind === 'missing') return contact.result;
+      contactId = contact.contact.id;
+    }
+    const created = await this.deals.create(userId, {
+      name: details.name,
+      pipeline: details.pipelineId ?? details.pipelineName,
+      stage: details.pipelineStageId ?? details.pipelineStageName,
+      amount: details.monetaryValue,
+      ownerId: details.assignedTo,
+    });
+    if (contactId) {
+      await this.deals.associate(userId, created.id, 'contacts', contactId);
+    }
+    return {
+      response: `Done — the "${created.name}" deal is now in HubSpot.`,
+      status: 'success',
+      contextPatch: { lastOpportunityId: created.id, lastOpportunityName: created.name },
+    };
+  }
+
+  async updateDeal(
+    userId: string,
+    details: ReturnType<typeof extractOpportunityUpdateDetails>,
+  ): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveDeal(userId, {
+      id: details.opportunityId,
+      name: details.opportunityName ?? details.query ?? '',
+    });
+    if (resolved.kind === 'missing') return resolved.result;
+    const patch: Parameters<HubspotDealsService['update']>[2] = {};
+    if (details.name !== undefined) patch.name = details.name;
+    if (details.monetaryValue !== undefined) patch.amount = details.monetaryValue;
+    if (details.pipelineId || details.pipelineName) {
+      patch.pipeline = details.pipelineId ?? details.pipelineName;
+    }
+    if (details.pipelineStageId || details.pipelineStageName) {
+      patch.stage = details.pipelineStageId ?? details.pipelineStageName;
+    }
+    if (details.assignedTo !== undefined) patch.ownerId = details.assignedTo;
+    if (Object.keys(patch).length === 0) {
+      return { response: `What should I update on "${resolved.deal.name}"?`, status: 'error' };
+    }
+    const updated = await this.deals.update(userId, resolved.deal.id, patch);
+    return {
+      response: `All set — the "${updated.name}" deal is updated in HubSpot.`,
+      status: 'success',
+      contextPatch: { lastOpportunityId: updated.id, lastOpportunityName: updated.name },
+    };
+  }
+
+  async updateDealStatus(
+    userId: string,
+    details: ReturnType<typeof extractOpportunityStatusDetails>,
+  ): Promise<AssistantCommandResult> {
+    if (!details.status) {
+      return { response: 'Should this HubSpot deal be open, won, or lost?', status: 'error' };
+    }
+    const resolved = await this.resolveDeal(userId, {
+      id: details.opportunityId,
+      name: details.opportunityName ?? details.query ?? '',
+    });
+    if (resolved.kind === 'missing') return resolved.result;
+    const pipelines = await this.deals.listPipelines(userId);
+    const pipeline = pipelines.find((item) => item.id === resolved.deal.pipeline) ?? pipelines[0];
+    const stage = pipeline?.stages.find((candidate) => stageMatchesStatus(candidate, details.status!));
+    if (!pipeline || !stage) {
+      return {
+        response: `I couldn't find a ${details.status} stage in this HubSpot pipeline.`,
+        status: 'error',
+      };
+    }
+    const updated = await this.deals.update(userId, resolved.deal.id, {
+      pipeline: pipeline.id,
+      stage: stage.id,
+    });
+    return {
+      response: `The "${updated.name}" deal is now ${details.status} in HubSpot.`,
+      status: 'success',
+      contextPatch: { lastOpportunityId: updated.id, lastOpportunityName: updated.name },
+    };
+  }
+
+  async deleteDeal(userId: string, query: string): Promise<AssistantCommandResult> {
+    const trimmed = query?.trim();
+    const resolved = await this.resolveDeal(userId, {
+      id: /^\d+$/.test(trimmed) ? trimmed : undefined,
+      name: trimmed,
+    });
+    if (resolved.kind === 'missing') return resolved.result;
+    await this.deals.delete(userId, resolved.deal.id);
+    return { response: `Done — "${resolved.deal.name}" was removed from HubSpot.`, status: 'success' };
   }
 
   // ── Companies ──────────────────────────────────────────────────────────────
@@ -654,12 +792,7 @@ export class HubspotCommandService {
   }
 
   /**
-   * Resolve a deal by id (fast path) or by name (recent-deals scan).
-   *
-   * HubSpot has no deal-search method on our client yet, so name resolution
-   * falls back to listing the 25 most-recent deals and matching by case-
-   * insensitive substring. Good enough for the common "attach the Acme deal"
-   * follow-up; users with stale deals can always pass the explicit deal id.
+   * Resolve a deal by id (fast path) or HubSpot's server-side deal search.
    */
   private async resolveDeal(
     userId: string,
@@ -682,14 +815,12 @@ export class HubspotCommandService {
         },
       };
     }
-    const { results } = await this.deals.list(userId, { limit: 25 });
-    const needle = term.toLowerCase();
-    const matches = results.filter((d) => d.name.toLowerCase().includes(needle));
+    const { results: matches } = await this.deals.search(userId, { q: term, limit: 25 });
     if (matches.length === 0) {
       return {
         kind: 'missing',
         result: {
-          response: `No recent HubSpot deal matches "${term}". Try the deal id instead.`,
+          response: `No HubSpot deal matches "${term}". Try the deal id instead.`,
           status: 'error',
         },
       };
@@ -1047,10 +1178,10 @@ export class HubspotCommandService {
   private formatDeal(deal: HubspotDealSummary): string {
     const money =
       typeof deal.amount === 'number' && Number.isFinite(deal.amount)
-        ? ` — $${deal.amount.toLocaleString()}`
+        ? ` — ${formatDealMoney(deal.amount, deal.currency)}`
         : '';
-    const stage = deal.stage ? ` (${deal.stage})` : '';
-    return `· ${deal.name}${money}${stage}`;
+    const stage = deal.stageLabel ?? deal.stage;
+    return `· ${deal.name}${money}${stage ? ` (${stage})` : ''}`;
   }
 
   private formatCompany(company: HubspotCompanySummary): string {
@@ -1597,4 +1728,27 @@ function splitName(full: string): { firstName: string; lastName?: string } {
     firstName,
     lastName: rest.length > 0 ? rest.join(' ') : undefined,
   };
+}
+
+function stageMatchesStatus(
+  stage: { label: string; metadata?: { isClosed?: string | boolean; probability?: string | number } },
+  status: string,
+): boolean {
+  const label = stage.label.toLowerCase();
+  const closed = stage.metadata?.isClosed === true || stage.metadata?.isClosed === 'true';
+  const probability = Number(stage.metadata?.probability);
+  if (status === 'won') return probability === 1 || /\bwon\b/.test(label);
+  if (status === 'lost' || status === 'abandoned') {
+    return (closed && probability === 0) || /\b(lost|abandoned)\b/.test(label);
+  }
+  return !closed && probability !== 1 && !/\b(won|lost|abandoned)\b/.test(label);
+}
+
+function formatDealMoney(amount: number, currency?: string): string {
+  if (!currency) return amount.toLocaleString();
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+  } catch {
+    return `${amount.toLocaleString()} ${currency}`;
+  }
 }

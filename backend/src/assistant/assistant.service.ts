@@ -309,7 +309,13 @@ export class AssistantService {
     const conversation = await this.requireConversation(userId, conversationId);
     const source: AssistantMessageSource = dto.source === 'voice' ? 'voice' : 'text';
     const rawTranscript = dto.rawTranscript ?? (source === 'voice' ? dto.transcript || dto.text : undefined);
-    const correctedTranscript = dto.correctedTranscript ?? (source === 'voice' ? dto.text : undefined);
+    let correctedTranscript = dto.correctedTranscript?.trim() || undefined;
+    if (source === 'voice' && !correctedTranscript) {
+      correctedTranscript = await this.voice.correctTranscript(
+        userId,
+        rawTranscript ?? dto.transcript ?? dto.text,
+      );
+    }
     const text = (correctedTranscript || dto.text).trim();
 
     const pending = await this.prisma.assistantMessage.create({

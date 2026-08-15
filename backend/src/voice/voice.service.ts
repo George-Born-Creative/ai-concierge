@@ -14,8 +14,8 @@ import { GrammarCorrectorService } from './grammar-corrector.service';
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 // Force English transcription — avoids Whisper guessing Arabic/other locales on short clips.
 const VOICE_LANGUAGE = 'en';
-const WHISPER_PROMPT =
-  'English speech only. CRM voice commands about contacts, calendars, and appointments.';
+export const WHISPER_PROMPT =
+  'English CRM voice commands for GoHighLevel (GHL) and HubSpot. Vocabulary: contacts, companies, deals, opportunities, pipelines, stages, calendars, appointments, tickets, products, orders, conversations, notes, tasks, calls, properties, owners, associations, email addresses, phone numbers, amounts, dates, and times. Preserve proper names, CRM terms, identifiers, and values exactly.';
 
 // Subset of intents the assistant produces. New intents land here when we
 // add new CRM actions. `unknown` is the fallback so the assistant never
@@ -118,7 +118,13 @@ export type TranscribeResult = {
   correctedTranscript: string;
 };
 
-const NORMALIZER_SYSTEM_PROMPT = `You interpret casual spoken or typed commands for a GoHighLevel CRM assistant. Users speak in everyday English — not rigid command templates.
+export const NORMALIZER_SYSTEM_PROMPT = `You interpret casual spoken or typed commands for a CRM assistant that supports both GoHighLevel (GHL) and HubSpot. Users speak in everyday English — not rigid command templates.
+
+CRM provider rules (required):
+- Interpret commands using provider-neutral CRM language. A "deal" may be called an "opportunity"; map both to the opportunity intents listed below.
+- Preserve explicit provider names such as GoHighLevel, GHL, and HubSpot, but do not assume the connected provider from wording alone. The command executor selects the user's connected CRM.
+- Contacts, companies, deals/opportunities, pipelines/stages, tickets, products, orders, conversations, notes, tasks, calls, owners, properties, and associations are valid CRM vocabulary.
+- Calendar and appointment intents are supported only when the connected CRM exposes them; still classify the user's intent accurately so the executor can explain availability.
 
 Language (required):
 - Input is always English. Output must be English only.
@@ -471,6 +477,15 @@ export class VoiceService {
       rawTranscript,
       correctedTranscript: correctedTranscript || rawTranscript,
     };
+  }
+
+  /**
+   * Apply the same grammar and transcription cleanup used by the audio
+   * endpoint. Assistant command entry points call this when a voice payload
+   * has not already supplied a corrected transcript.
+   */
+  correctTranscript(userId: string, transcript: string): Promise<string> {
+    return this.grammarCorrector.correctGrammar(transcript, userId);
   }
 
   async interpret(userId: string, text: string): Promise<VoiceIntentPayload> {

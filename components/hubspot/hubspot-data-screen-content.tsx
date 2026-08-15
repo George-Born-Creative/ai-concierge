@@ -296,10 +296,14 @@ export function HubspotDataScreenContent() {
                 title={row.name}
                 subtitle={
                   typeof row.amount === 'number'
-                    ? `$${row.amount.toLocaleString()}`
+                    ? formatDealAmount(row.amount, row.currency)
                     : undefined
                 }
-                meta={[row.stage, row.pipeline].filter(Boolean).join(' · ') || undefined}
+                meta={
+                  [row.stageLabel ?? row.stage, row.pipelineLabel ?? row.pipeline]
+                    .filter(Boolean)
+                    .join(' · ') || undefined
+                }
                 onPress={() => handleCopy('Deal id', row.id)}
               />
             )}
@@ -397,6 +401,15 @@ export function HubspotDataScreenContent() {
       </ScrollView>
     </ScreenShell>
   );
+}
+
+function formatDealAmount(amount: number, currency?: string): string {
+  if (!currency) return amount.toLocaleString();
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+  } catch {
+    return `${amount.toLocaleString()} ${currency}`;
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

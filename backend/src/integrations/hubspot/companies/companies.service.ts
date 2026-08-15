@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { HubspotApiClient } from '../hubspot-api.client';
+import { HubspotAssociationsService } from '../hubspot-associations.service';
 import {
   HubspotCompanySummary,
   HubspotPagedResponse,
@@ -50,7 +51,10 @@ export type HubspotCompanyWriteInput = {
 
 @Injectable()
 export class HubspotCompaniesService {
-  constructor(private readonly api: HubspotApiClient) {}
+  constructor(
+    private readonly api: HubspotApiClient,
+    private readonly associations: HubspotAssociationsService,
+  ) {}
 
   async list(
     userId: string,
@@ -198,7 +202,7 @@ export class HubspotCompaniesService {
     companyId: string,
     contactId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, companyId, 'contacts', contactId);
+    return this.associations.associate(userId, 'companies', companyId, 'contacts', contactId);
   }
 
   async disassociateContact(
@@ -206,7 +210,7 @@ export class HubspotCompaniesService {
     companyId: string,
     contactId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, companyId, 'contacts', contactId);
+    return this.associations.disassociate(userId, 'companies', companyId, 'contacts', contactId);
   }
 
   async associateDeal(
@@ -214,7 +218,7 @@ export class HubspotCompaniesService {
     companyId: string,
     dealId: string,
   ): Promise<{ ok: true }> {
-    return this.associate(userId, companyId, 'deals', dealId);
+    return this.associations.associate(userId, 'companies', companyId, 'deals', dealId);
   }
 
   async disassociateDeal(
@@ -222,59 +226,7 @@ export class HubspotCompaniesService {
     companyId: string,
     dealId: string,
   ): Promise<{ ok: true }> {
-    return this.disassociate(userId, companyId, 'deals', dealId);
-  }
-
-  private async associate(
-    userId: string,
-    companyId: string,
-    toObjectType: 'contacts' | 'deals',
-    toObjectId: string,
-  ): Promise<{ ok: true }> {
-    const companyIdTrimmed = companyId?.trim();
-    const toIdTrimmed = toObjectId?.trim();
-    if (!companyIdTrimmed) {
-      throw new BadRequestException('Company id is required.');
-    }
-    if (!toIdTrimmed) {
-      throw new BadRequestException(
-        `${toObjectType === 'contacts' ? 'Contact' : 'Deal'} id is required.`,
-      );
-    }
-    await this.api.request<void>(
-      userId,
-      'PUT',
-      `/crm/v4/objects/companies/${encodeURIComponent(
-        companyIdTrimmed,
-      )}/associations/default/${toObjectType}/${encodeURIComponent(toIdTrimmed)}`,
-    );
-    return { ok: true };
-  }
-
-  private async disassociate(
-    userId: string,
-    companyId: string,
-    toObjectType: 'contacts' | 'deals',
-    toObjectId: string,
-  ): Promise<{ ok: true }> {
-    const companyIdTrimmed = companyId?.trim();
-    const toIdTrimmed = toObjectId?.trim();
-    if (!companyIdTrimmed) {
-      throw new BadRequestException('Company id is required.');
-    }
-    if (!toIdTrimmed) {
-      throw new BadRequestException(
-        `${toObjectType === 'contacts' ? 'Contact' : 'Deal'} id is required.`,
-      );
-    }
-    await this.api.request<void>(
-      userId,
-      'DELETE',
-      `/crm/v4/objects/companies/${encodeURIComponent(
-        companyIdTrimmed,
-      )}/associations/${toObjectType}/${encodeURIComponent(toIdTrimmed)}`,
-    );
-    return { ok: true };
+    return this.associations.disassociate(userId, 'companies', companyId, 'deals', dealId);
   }
 
   // ── Mappers ────────────────────────────────────────────────────────────────

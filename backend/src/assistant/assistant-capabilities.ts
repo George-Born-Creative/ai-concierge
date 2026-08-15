@@ -23,7 +23,7 @@ You can speak naturally and use follow-up requests. The assistant supports multi
 - Ask questions about CRM concepts or your CRM records.
 - Continue multi-step tasks with follow-up answers such as names, dates, times, pipelines, or stages.
 
-HubSpot deal editing, HubSpot pipelines, and HubSpot calendars or appointments are not currently available through the voice assistant.`;
+HubSpot calendars and appointments are not currently available through the voice assistant.`;
 
 export function looksLikeCapabilityQuestion(text: string): boolean {
   const normalized = text
