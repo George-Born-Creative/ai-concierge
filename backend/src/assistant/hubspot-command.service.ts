@@ -430,7 +430,7 @@ export class HubspotCommandService {
   // "attach Sarah to that company" resolve via session merge.
 
   async listLatestCompanies(userId: string): Promise<AssistantCommandResult> {
-    const { results } = await this.companies.list(userId, { limit: 10 });
+    const { results } = await this.companies.listRecent(userId, { limit: 10 });
     if (results.length === 0) {
       return { response: "You don't have any companies in HubSpot yet.", status: 'success' };
     }

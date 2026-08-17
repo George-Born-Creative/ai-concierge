@@ -567,11 +567,53 @@ export type HubspotCompanySummary = {
   id: string;
   name: string;
   domain?: string;
+  additionalDomains?: string[];
+  phone?: string;
   industry?: string;
   city?: string;
+  state?: string;
   country?: string;
+  numberOfEmployees?: number;
+  description?: string;
+  website?: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  pinnedEngagementId?: string;
+  lastActivityAt?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type HubspotCompanyAssociation = HubspotDealCreateAssociation;
+
+export type HubspotCompanyWriteInput = {
+  name?: string;
+  domain?: string;
+  additionalDomains?: string[];
+  phone?: string;
+  industry?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  numberOfEmployees?: number | null;
+  description?: string;
+  website?: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  pinnedEngagementId?: string;
+  associations?: HubspotCompanyAssociation[];
+};
+
+export type HubspotCompanyDetail = HubspotCompanySummary & {
+  properties: Record<string, string | null | undefined>;
+  propertiesWithHistory?: Record<string, unknown>;
+  associations?: Record<string, unknown>;
+};
+
+export type HubspotCompanyBatchResponse = {
+  status?: string;
+  results: HubspotCompanySummary[];
+  errors?: unknown[];
 };
 
 export type HubspotTicketSummary = {
@@ -620,6 +662,10 @@ export type ListHubspotParams = {
 };
 
 export type SearchHubspotContactsParams = ListHubspotParams & {
+  q: string;
+};
+
+export type SearchHubspotCompaniesParams = ListHubspotParams & {
   q: string;
 };
 

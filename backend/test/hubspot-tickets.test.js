@@ -192,7 +192,7 @@ test('ticket detail, properties, and custom association routes are forwarded', a
   );
 });
 
-test('ticket default associations delegate to the shared v4 service', async () => {
+test('ticket default associations delegate to the shared association service', async () => {
   const harness = createHarness();
   await harness.service.associateContact('user-1', 'ticket-1', 'contact-1');
   await harness.service.disassociateDeal('user-1', 'ticket-1', 'deal-1');

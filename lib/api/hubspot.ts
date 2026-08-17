@@ -2,6 +2,9 @@ import { apiRequest } from './client';
 import type {
   HubspotAuthUrlResponse,
   HubspotCompanySummary,
+  HubspotCompanyBatchResponse,
+  HubspotCompanyDetail,
+  HubspotCompanyWriteInput,
   HubspotContactSummary,
   HubspotContactWriteInput,
   HubspotDealCreateInput,
@@ -21,6 +24,7 @@ import type {
   HubspotTicketWriteInput,
   ListHubspotParams,
   SearchHubspotContactsParams,
+  SearchHubspotCompaniesParams,
   SearchHubspotDealsParams,
   SearchHubspotOrdersParams,
   SearchHubspotProductsParams,
@@ -254,9 +258,118 @@ export async function listCompanies(
   );
 }
 
-export async function getCompany(id: string): Promise<HubspotCompanySummary> {
+export async function listRecentCompanies(
+  params?: ListHubspotParams,
+): Promise<HubspotPaginated<HubspotCompanySummary>> {
+  return apiRequest(withQuery('/integrations/hubspot/companies/recent', params));
+}
+
+export async function searchCompanies(
+  params: SearchHubspotCompaniesParams,
+): Promise<HubspotPaginated<HubspotCompanySummary>> {
+  return apiRequest(withQuery('/integrations/hubspot/companies/search', params));
+}
+
+export async function getCompany(
+  id: string,
+  idProperty: string = 'id',
+): Promise<HubspotCompanySummary> {
   return apiRequest<HubspotCompanySummary>(
-    `/integrations/hubspot/companies/${encodeURIComponent(id)}`,
+    withQuery(`/integrations/hubspot/companies/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+  );
+}
+
+export async function getCompanyDetail(
+  id: string,
+  params?: {
+    idProperty?: string;
+    properties?: string;
+    propertiesWithHistory?: string;
+    associations?: string;
+  },
+): Promise<HubspotCompanyDetail> {
+  return apiRequest(
+    withQuery(`/integrations/hubspot/companies/${encodeURIComponent(id)}/detail`, params),
+  );
+}
+
+export async function createCompany(
+  input: HubspotCompanyWriteInput,
+): Promise<HubspotCompanySummary> {
+  return apiRequest('/integrations/hubspot/companies', { method: 'POST', body: input });
+}
+
+export async function updateCompany(
+  id: string,
+  input: HubspotCompanyWriteInput,
+  idProperty: string = 'id',
+): Promise<HubspotCompanySummary> {
+  return apiRequest(
+    withQuery(`/integrations/hubspot/companies/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+    { method: 'PATCH', body: input },
+  );
+}
+
+export async function deleteCompany(id: string): Promise<{ id: string; deleted: true }> {
+  return apiRequest(`/integrations/hubspot/companies/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function batchReadCompanies(input: {
+  ids: string[];
+  idProperty?: string;
+  properties?: string[];
+  propertiesWithHistory?: string[];
+}): Promise<HubspotCompanyBatchResponse> {
+  return apiRequest('/integrations/hubspot/companies/batch/read', { method: 'POST', body: input });
+}
+
+export async function batchUpdateCompanies(input: {
+  inputs: { id: string; idProperty?: string; properties: HubspotCompanyWriteInput }[];
+}): Promise<HubspotCompanyBatchResponse> {
+  return apiRequest('/integrations/hubspot/companies/batch/update', {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export async function batchArchiveCompanies(
+  ids: string[],
+): Promise<{ ids: string[]; archived: true }> {
+  return apiRequest('/integrations/hubspot/companies/batch/archive', {
+    method: 'POST',
+    body: { ids },
+  });
+}
+
+export async function associateCompany(
+  companyId: string,
+  toObjectType: string,
+  toObjectId: string,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    `/integrations/hubspot/companies/${encodeURIComponent(companyId)}/associations/${encodeURIComponent(
+      toObjectType,
+    )}/${encodeURIComponent(toObjectId)}`,
+    { method: 'PUT' },
+  );
+}
+
+export async function disassociateCompany(
+  companyId: string,
+  toObjectType: string,
+  toObjectId: string,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    `/integrations/hubspot/companies/${encodeURIComponent(companyId)}/associations/${encodeURIComponent(
+      toObjectType,
+    )}/${encodeURIComponent(toObjectId)}`,
+    { method: 'DELETE' },
   );
 }
 

@@ -51,6 +51,7 @@ export type HubspotCompanySummary = {
   id: string;
   name: string;
   domain?: string;
+  additionalDomains?: string[];
   phone?: string;
   industry?: string;
   city?: string;
@@ -60,6 +61,10 @@ export type HubspotCompanySummary = {
   numberOfEmployees?: number;
   description?: string;
   website?: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  pinnedEngagementId?: string;
+  lastActivityAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };

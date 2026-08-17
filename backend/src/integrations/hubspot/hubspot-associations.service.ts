@@ -17,7 +17,7 @@ export class HubspotAssociationsService {
     await this.api.request<void>(
       userId,
       'PUT',
-      `/crm/v4/objects/${encodeURIComponent(fromObjectType)}/${encodeURIComponent(
+      `/crm/objects/2026-03/${encodeURIComponent(fromObjectType)}/${encodeURIComponent(
         ids.fromId,
       )}/associations/default/${encodeURIComponent(toObjectType)}/${encodeURIComponent(
         ids.toId,
@@ -37,7 +37,7 @@ export class HubspotAssociationsService {
     await this.api.request<void>(
       userId,
       'DELETE',
-      `/crm/v4/objects/${encodeURIComponent(fromObjectType)}/${encodeURIComponent(
+      `/crm/objects/2026-03/${encodeURIComponent(fromObjectType)}/${encodeURIComponent(
         ids.fromId,
       )}/associations/${encodeURIComponent(toObjectType)}/${encodeURIComponent(ids.toId)}`,
     );
