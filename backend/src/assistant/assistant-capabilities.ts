@@ -16,7 +16,7 @@ You can speak naturally and use follow-up requests. The assistant supports multi
 - **Deals:** list recent deals.
 - **Companies:** list, find, create, update, and delete companies; attach or detach contacts and deals.
 - **Tickets:** list, find, create, update, and delete tickets; attach or detach contacts, companies, and deals.
-- **Products:** list, find, create, update, and delete products.
+- **Products:** list, find, create, update, and archive products; manage recurring or tiered pricing; and add products to deals as line items.
 - **Orders:** list, find, create, update, and delete orders; attach or detach contacts, companies, and deals.
 
 ### CRM assistance

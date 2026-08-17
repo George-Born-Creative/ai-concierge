@@ -100,6 +100,12 @@ export type HubspotProductSummary = {
   description?: string;
   /** Cost of goods sold — HubSpot's `hs_cost_of_goods_sold`. */
   cost?: number | null;
+  /** ISO-8601 month duration such as P12M. */
+  recurringBillingPeriod?: string;
+  pricingModel?: 'volume' | 'graduated' | 'stairstep';
+  tierRanges?: { start: number; end?: number }[];
+  tierPrices?: { index: number; price: number; currency?: string }[];
+  archived?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };

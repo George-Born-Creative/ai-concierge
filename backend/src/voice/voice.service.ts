@@ -73,6 +73,7 @@ const SUPPORTED_INTENTS = [
   'create_product',
   'update_product',
   'delete_product',
+  'add_product_to_deal',
   'list_orders',
   'find_order',
   'create_order',
@@ -201,6 +202,7 @@ Intent examples (informal → intent):
 - "create a product called Pro Plan for $99", "add a product named Onboarding Fee priced at 250 with SKU OB-1" → create_product
 - "raise the Pro Plan price to 129", "rename that product to Pro Plan Annual", "update the product SKU to PP-2", "change its cost to 40" → update_product
 - "delete the Pro Plan product", "remove that product", "delete product 12345" → delete_product
+- "add the Pro Plan product to the Website Redesign deal", "put 3 units of SKU ABC-123 on deal 12345" → add_product_to_deal
 - "list my orders", "show recent orders", "what orders do I have", "show my order history" → list_orders
 - "find the order for Acme", "look up order 12345", "show me the March renewal order" → find_order
 - "create an order called March Renewal for $499", "add an order named Q2 Hardware with status Packing", "open an order for 1200 dollars" → create_order
@@ -257,9 +259,10 @@ Entity rules:
 - pin_ticket_activity: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), plus "activityId" and "activityType" (for example notes, meetings, calls, emails). Include "associationTypeId" when the user supplied one. The backend associates the activity before pinning it.
 - For any ticket intent that refers to "it" / "that ticket", reuse lastTicketId/lastTicketSubject from session context.
 - list_products / find_product: for find_product put the search target (name or SKU) in "query"; also set "productName" or "productSku" when obvious.
-- create_product: "productName" (REQUIRED — extract from "called X", "named X"), optional "productPrice" (number — from "for $99", "priced at 250"), optional "productSku" (from "SKU X"), optional "productDescription", optional "productCost" (number — from "cost 40").
-- update_product: identify the product via "productId" or "productName" (or session lastProductId); plus any of "newProductName", "newProductPrice" (number), "newProductSku", "newProductDescription", "newProductCost" (number) to set. A bare "productName" identifies which product, not the new name.
+- create_product: "productName" (REQUIRED), optional "productPrice", "productSku", "productDescription", "productCost", "productRecurringBillingPeriod" (P#M, e.g. yearly→P12M), or tiered pricing fields. For tiered pricing emit "productPricingModel" as volume/graduated/stairstep and JSON strings in "productTierRanges" and "productTierPrices". Do not also emit productPrice for a tiered product.
+- update_product: identify via "productId" or "productName" (or session lastProductId); support "newProductName", "newProductPrice", "newProductSku", "newProductDescription", "newProductCost", "newProductRecurringBillingPeriod", and the tiered pricing fields above. A bare "productName" identifies which product.
 - delete_product: put the product name or SKU in "query" (or "productName"/"productId").
+- add_product_to_deal: identify the product with "productId"/"productName" and the deal with "dealId"/"dealName"; optional numeric "quantity" and "lineItemName". This creates a product-based line item because HubSpot products cannot be directly associated.
 - For any product intent that refers to "it" / "that product", reuse lastProductId/lastProductName from session context.
 - list_orders: no entities required.
 - find_order / delete_order: put the search target in "query" (order name or keyword). Also set "orderName" or "orderId" when obvious.

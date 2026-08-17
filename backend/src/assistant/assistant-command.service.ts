@@ -38,6 +38,7 @@ import {
   extractOrderDealAssociation,
   extractOrderUpdateDetails,
   extractProductCreateDetails,
+  extractProductDealLineItem,
   extractProductUpdateDetails,
   extractSearchQuery,
   extractSendMessageDetails,
@@ -102,6 +103,7 @@ export class AssistantCommandService {
     create_product: 'products',
     update_product: 'products',
     delete_product: 'products',
+    add_product_to_deal: 'products',
     create_order: 'orders',
     update_order: 'orders',
     delete_order: 'orders',
@@ -352,6 +354,7 @@ export class AssistantCommandService {
       case 'create_product':
       case 'update_product':
       case 'delete_product':
+      case 'add_product_to_deal':
         return {
           response:
             'Products are a HubSpot feature — your account is on GoHighLevel, which doesn\'t have a product catalog. Try "show my opportunities" instead.',
@@ -698,6 +701,11 @@ export class AssistantCommandService {
         );
       case 'delete_product':
         return this.hubspot.deleteProduct(userId, extractSearchQuery(intent.entities));
+      case 'add_product_to_deal':
+        return this.hubspot.addProductToDeal(
+          userId,
+          extractProductDealLineItem(intent.entities),
+        );
       case 'list_orders':
         return this.hubspot.listRecentOrders(userId);
       case 'find_order':

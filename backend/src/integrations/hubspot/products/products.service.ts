@@ -21,7 +21,13 @@ const PRODUCT_PROPERTIES = [
   'hs_sku',
   'description',
   'hs_cost_of_goods_sold',
+  'hs_recurring_billing_period',
+  'hs_pricing_model',
+  'hs_tier_ranges',
+  'hs_tier_prices',
 ] as const;
+
+const PRODUCTS_PATH = '/crm/objects/2026-03/products';
 
 /**
  * Shape accepted from controllers for create / update. CamelCase so the REST
@@ -39,11 +45,19 @@ export type HubspotProductWriteInput = {
   sku?: string;
   description?: string;
   cost?: number;
+  recurringBillingPeriod?: string;
+  pricingModel?: 'volume' | 'graduated' | 'stairstep';
+  tierRanges?: { start: number; end?: number }[];
+  tierPrices?: { index: number; price: number; currency?: string }[];
 };
 
 @Injectable()
 export class HubspotProductsService {
   constructor(private readonly api: HubspotApiClient) {}
+
+  listProperties(userId: string): Promise<unknown> {
+    return this.api.request(userId, 'GET', '/crm/properties/2026-03/products');
+  }
 
   async list(
     userId: string,
@@ -52,7 +66,7 @@ export class HubspotProductsService {
     const data = await this.api.request<HubspotPagedResponse>(
       userId,
       'GET',
-      '/crm/v3/objects/products',
+      PRODUCTS_PATH,
       {
         query: {
           limit: options.limit ?? 25,
@@ -80,7 +94,7 @@ export class HubspotProductsService {
     const data = await this.api.request<HubspotSearchResponse>(
       userId,
       'POST',
-      '/crm/v3/objects/products/search',
+      `${PRODUCTS_PATH}/search`,
       {
         body: {
           query,
@@ -108,12 +122,53 @@ export class HubspotProductsService {
     const data = await this.api.request<HubspotRawObject>(
       userId,
       'GET',
-      `/crm/v3/objects/products/${encodeURIComponent(trimmed)}`,
+      `${PRODUCTS_PATH}/${encodeURIComponent(trimmed)}`,
       {
         query: { properties: PRODUCT_PROPERTIES.join(',') },
       },
     );
     return this.toSummary(data);
+  }
+
+  /**
+   * Products cannot be associated directly. HubSpot's documented workflow is
+   * to create a product-based line item and associate that line item to one
+   * parent deal. The line item inherits catalog values from the product.
+   */
+  async createDealLineItem(
+    userId: string,
+    productId: string,
+    input: { dealId: string; quantity?: number; name?: string },
+  ): Promise<HubspotRawObject> {
+    const product = await this.getById(userId, productId);
+    const dealId = input.dealId?.trim();
+    if (!dealId) throw new BadRequestException('Deal id is required.');
+
+    return this.api.request<HubspotRawObject>(
+      userId,
+      'POST',
+      '/crm/objects/2026-03/line_items',
+      {
+        body: {
+          properties: {
+            quantity: input.quantity ?? 1,
+            hs_object_id: product.id,
+            name: input.name?.trim() || product.name,
+          },
+          associations: [
+            {
+              to: { id: dealId },
+              types: [
+                {
+                  associationCategory: 'HUBSPOT_DEFINED',
+                  associationTypeId: 20,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    );
   }
 
   // ── Writes ─────────────────────────────────────────────────────────────────
@@ -136,10 +191,10 @@ export class HubspotProductsService {
     const data = await this.api.request<HubspotRawObject>(
       userId,
       'POST',
-      '/crm/v3/objects/products',
+      PRODUCTS_PATH,
       { body: { properties } },
     );
-    return this.toSummary(data);
+    return data.id ? this.getById(userId, data.id) : this.toSummary(data);
   }
 
   async update(
@@ -158,13 +213,10 @@ export class HubspotProductsService {
     const data = await this.api.request<HubspotRawObject>(
       userId,
       'PATCH',
-      `/crm/v3/objects/products/${encodeURIComponent(trimmed)}`,
-      {
-        query: { properties: PRODUCT_PROPERTIES.join(',') },
-        body: { properties },
-      },
+      `${PRODUCTS_PATH}/${encodeURIComponent(trimmed)}`,
+      { body: { properties } },
     );
-    return this.toSummary(data);
+    return this.getById(userId, data.id || trimmed);
   }
 
   async delete(userId: string, id: string): Promise<void> {
@@ -175,7 +227,7 @@ export class HubspotProductsService {
     await this.api.request<void>(
       userId,
       'DELETE',
-      `/crm/v3/objects/products/${encodeURIComponent(trimmed)}`,
+      `${PRODUCTS_PATH}/${encodeURIComponent(trimmed)}`,
     );
   }
 
@@ -184,15 +236,66 @@ export class HubspotProductsService {
   private toHubspotProperties(
     input: HubspotProductWriteInput,
   ): Record<string, string> {
+    this.validateTieredPricing(input);
     const props: Record<string, string> = {};
-    if (input.name !== undefined) props.name = input.name;
+    if (input.name !== undefined) props.name = input.name.trim();
     if (input.price !== undefined) props.price = String(input.price);
     if (input.sku !== undefined) props.hs_sku = input.sku;
     if (input.description !== undefined) props.description = input.description;
     if (input.cost !== undefined) {
       props.hs_cost_of_goods_sold = String(input.cost);
     }
+    if (input.recurringBillingPeriod !== undefined) {
+      props.hs_recurring_billing_period = input.recurringBillingPeriod;
+    }
+    if (input.pricingModel !== undefined) props.hs_pricing_model = input.pricingModel;
+    if (input.tierRanges !== undefined) props.hs_tier_ranges = JSON.stringify(input.tierRanges);
+    if (input.tierPrices !== undefined) {
+      props.hs_tier_prices = JSON.stringify(
+        input.tierPrices.map((tier) => ({
+          ...tier,
+          ...(tier.currency ? { currency: tier.currency.toUpperCase() } : {}),
+        })),
+      );
+    }
     return props;
+  }
+
+  private validateTieredPricing(input: HubspotProductWriteInput): void {
+    const hasTierFields =
+      input.pricingModel !== undefined ||
+      input.tierRanges !== undefined ||
+      input.tierPrices !== undefined;
+    if (!hasTierFields) return;
+    if (input.price !== undefined) {
+      throw new BadRequestException('Use tier prices instead of price for a tiered product.');
+    }
+    if (!input.pricingModel || !input.tierRanges?.length || !input.tierPrices?.length) {
+      throw new BadRequestException(
+        'Tiered pricing requires pricingModel, tierRanges, and tierPrices.',
+      );
+    }
+    input.tierRanges.forEach((range, index) => {
+      if (range.end !== undefined && range.end < range.start) {
+        throw new BadRequestException(`Tier range ${index} ends before it starts.`);
+      }
+      if (index < input.tierRanges!.length - 1 && range.end === undefined) {
+        throw new BadRequestException('Only the final tier range can be open-ended.');
+      }
+    });
+    const currencies = new Set(input.tierPrices.map((tier) => tier.currency?.toUpperCase() ?? ''));
+    for (const currency of currencies) {
+      const indexes = new Set(
+        input.tierPrices
+          .filter((tier) => (tier.currency?.toUpperCase() ?? '') === currency)
+          .map((tier) => tier.index),
+      );
+      if (input.tierRanges.some((_, index) => !indexes.has(index))) {
+        throw new BadRequestException(
+          `Tier prices${currency ? ` for ${currency}` : ''} must cover every range.`,
+        );
+      }
+    }
   }
 
   private toSummary(row: HubspotRawObject): HubspotProductSummary {
@@ -204,6 +307,11 @@ export class HubspotProductsService {
       sku: clean(props.hs_sku),
       description: clean(props.description),
       cost: toNumber(props.hs_cost_of_goods_sold),
+      recurringBillingPeriod: clean(props.hs_recurring_billing_period),
+      pricingModel: toPricingModel(props.hs_pricing_model),
+      tierRanges: parseTierRanges(props.hs_tier_ranges),
+      tierPrices: parseTierPrices(props.hs_tier_prices),
+      archived: row.archived,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -220,4 +328,55 @@ function toNumber(value: string | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function toPricingModel(
+  value: string | null | undefined,
+): 'volume' | 'graduated' | 'stairstep' | undefined {
+  return value === 'volume' || value === 'graduated' || value === 'stairstep'
+    ? value
+    : undefined;
+}
+
+function parseTierRanges(
+  value: string | null | undefined,
+): { start: number; end?: number }[] | undefined {
+  const parsed = parseJsonArray(value);
+  if (!parsed) return undefined;
+  const ranges = parsed.filter(
+    (item): item is { start: number; end?: number } =>
+      isRecord(item) &&
+      typeof item.start === 'number' &&
+      (item.end === undefined || typeof item.end === 'number'),
+  );
+  return ranges.length === parsed.length ? ranges : undefined;
+}
+
+function parseTierPrices(
+  value: string | null | undefined,
+): { index: number; price: number; currency?: string }[] | undefined {
+  const parsed = parseJsonArray(value);
+  if (!parsed) return undefined;
+  const prices = parsed.filter(
+    (item): item is { index: number; price: number; currency?: string } =>
+      isRecord(item) &&
+      typeof item.index === 'number' &&
+      typeof item.price === 'number' &&
+      (item.currency === undefined || typeof item.currency === 'string'),
+  );
+  return prices.length === parsed.length ? prices : undefined;
+}
+
+function parseJsonArray(value: string | null | undefined): unknown[] | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

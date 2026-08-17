@@ -29,9 +29,9 @@ const TRY_SAYING_GHL = [
 
 const TRY_SAYING_HUBSPOT = [
   'Show my contacts',
-  'Create a ticket',
+  'Show my products',
   'Show my open deals',
-  'Add a new company',
+  'Add a product to a deal',
 ];
 
 function greetingForHour(hour: number): string {
