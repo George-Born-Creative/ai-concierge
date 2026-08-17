@@ -1,12 +1,54 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+
+export enum HubspotProductPricingModelDto {
+  VOLUME = 'volume',
+  GRADUATED = 'graduated',
+  STAIRSTEP = 'stairstep',
+}
+
+export class HubspotProductTierRangeDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  start!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  end?: number;
+}
+
+export class HubspotProductTierPriceDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  index!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  price!: number;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z]{3}$/, { message: 'currency must be a three-letter ISO code' })
+  currency?: string;
+}
 
 /**
  * Mirrors `HubspotProductWriteInput` in the service. Property names are
@@ -47,4 +89,28 @@ export class CreateHubspotProductDto {
   @IsNumber()
   @Min(0)
   cost?: number;
+
+  /** ISO-8601 month duration used by HubSpot, for example P12M. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^P[1-9]\d*M$/, { message: 'recurringBillingPeriod must use P#M (for example P12M)' })
+  recurringBillingPeriod?: string;
+
+  @IsOptional()
+  @IsEnum(HubspotProductPricingModelDto)
+  pricingModel?: HubspotProductPricingModelDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => HubspotProductTierRangeDto)
+  tierRanges?: HubspotProductTierRangeDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => HubspotProductTierPriceDto)
+  tierPrices?: HubspotProductTierPriceDto[];
 }

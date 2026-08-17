@@ -126,6 +126,7 @@ export function HubspotDataScreenContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMoreCompanies, setLoadingMoreCompanies] = useState(false);
   const [loadingMoreTickets, setLoadingMoreTickets] = useState(false);
+  const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
@@ -269,6 +270,29 @@ export function HubspotDataScreenContent() {
       show(error instanceof Error ? error.message : 'Could not load more companies.', 'error');
     } finally {
       setLoadingMoreCompanies(false);
+    }
+  }
+
+  async function loadMoreProducts() {
+    if (!products.after || loadingMoreProducts) return;
+    setLoadingMoreProducts(true);
+    try {
+      const page = await hubspotApi.listProducts({ limit, after: products.after });
+      const data = [
+        ...products.data,
+        ...page.results.filter(
+          (row) => !products.data.some((existing) => existing.id === row.id),
+        ),
+      ];
+      commit(
+        crmCacheKey('hubspot', 'products'),
+        { data, loading: false, error: null, after: page.after },
+        setProducts,
+      );
+    } catch (error) {
+      show(error instanceof Error ? error.message : 'Could not load more products.', 'error');
+    } finally {
+      setLoadingMoreProducts(false);
     }
   }
 
@@ -428,29 +452,34 @@ export function HubspotDataScreenContent() {
         )}
 
         {want('products') && (
-          <Section
-            icon="sell"
-            title="Products"
-            state={products}
-            emptyText="No products in your HubSpot portal yet."
-            renderRow={(row) => (
-              <RowCard
-                key={row.id}
-                title={row.name}
-                subtitle={
-                  typeof row.price === 'number'
-                    ? `$${row.price.toLocaleString()}`
-                    : undefined
-                }
-                meta={
-                  [row.sku ? `SKU ${row.sku}` : undefined, row.description]
-                    .filter(Boolean)
-                    .join(' · ') || undefined
-                }
-                onPress={() => handleCopy('Product id', row.id)}
-              />
-            )}
-          />
+          <View style={styles.paginatedSection}>
+            <Section
+              icon="sell"
+              title="Products"
+              state={products}
+              emptyText="No products in your HubSpot portal yet."
+              renderRow={(row) => (
+                <ProductCard
+                  key={row.id}
+                  product={row}
+                  onPress={() => handleCopy('Product id', row.id)}
+                />
+              )}
+            />
+            {active === 'products' && products.after ? (
+              <Pressable
+                disabled={loadingMoreProducts}
+                onPress={() => void loadMoreProducts()}
+                style={({ pressed }) => [
+                  styles.loadMoreButton,
+                  (pressed || loadingMoreProducts) && { opacity: 0.7 },
+                ]}>
+                <Text style={styles.loadMoreText}>
+                  {loadingMoreProducts ? 'Loading…' : 'Load more products'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         )}
 
         {want('orders') && (
@@ -476,8 +505,8 @@ export function HubspotDataScreenContent() {
         )}
 
         <Text style={styles.footnote}>
-          Read-only browse view. Use the chat assistant for search and conversational
-          queries against the same data.
+          Browse and copy record IDs here. Use the voice or chat assistant to search,
+          create, update, archive, or add a product to a deal as a line item.
         </Text>
       </ScrollView>
     </ScreenShell>
@@ -492,6 +521,41 @@ function formatDealAmount(amount: number, currency?: string): string {
     return `${amount.toLocaleString()} ${currency}`;
   }
 
+}
+
+function formatProductPricing(product: HubspotProductSummary): string | undefined {
+  if (product.pricingModel) {
+    const count = product.tierRanges?.length ?? 0;
+    return `${product.pricingModel} tier pricing${count ? ` · ${count} tiers` : ''}`;
+  }
+  return typeof product.price === 'number'
+    ? `Price ${product.price.toLocaleString()}`
+    : undefined;
+}
+
+function formatProductMeta(product: HubspotProductSummary): string | undefined {
+  return [
+    product.sku ? `SKU ${product.sku}` : undefined,
+    typeof product.cost === 'number' ? `Cost ${product.cost.toLocaleString()}` : undefined,
+    product.recurringBillingPeriod ? `Billing ${product.recurringBillingPeriod}` : undefined,
+    formatProductTiers(product),
+    product.description,
+  ]
+    .filter(Boolean)
+    .join(' · ') || undefined;
+}
+
+function formatProductTiers(product: HubspotProductSummary): string | undefined {
+  if (!product.tierRanges?.length || !product.tierPrices?.length) return undefined;
+  return product.tierPrices
+    .map((tier) => {
+      const range = product.tierRanges?.[tier.index];
+      if (!range) return undefined;
+      const label = range.end === undefined ? `${range.start}+` : `${range.start}–${range.end}`;
+      return `${label}: ${tier.price.toLocaleString()}${tier.currency ? ` ${tier.currency}` : ''}`;
+    })
+    .filter(Boolean)
+    .join('; ');
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -660,6 +724,56 @@ function CompanyCard({ company, onPress }: CompanyCardProps) {
         ))}
       </View>
 
+    </Pressable>
+  );
+}
+
+type ProductCardProps = {
+  product: HubspotProductSummary;
+  onPress?: () => void;
+};
+
+function ProductCard({ product, onPress }: ProductCardProps) {
+  const { colors } = useAppTheme();
+  const details = [
+    { label: 'Product ID', value: product.id },
+    { label: 'Price', value: formatProductPricing(product) ?? '—' },
+    { label: 'SKU', value: product.sku ?? '—' },
+    {
+      label: 'Cost of goods',
+      value: typeof product.cost === 'number' ? product.cost.toLocaleString() : '—',
+    },
+    { label: 'Billing period', value: product.recurringBillingPeriod ?? '—' },
+    { label: 'Pricing model', value: product.pricingModel ?? 'Standard' },
+    { label: 'Tier prices', value: formatProductTiers(product) ?? '—' },
+    { label: 'Description', value: product.description ?? '—' },
+    { label: 'Created', value: formatHubspotDate(product.createdAt) ?? '—' },
+    { label: 'Last updated', value: formatHubspotDate(product.updatedAt) ?? '—' },
+    { label: 'Status', value: product.archived ? 'Archived' : 'Active' },
+  ];
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.companyCard, pressed && { opacity: 0.85 }]}>
+      <View style={styles.companyHeader}>
+        <View style={styles.rowCopy}>
+          <Text style={styles.companyTitle}>{product.name}</Text>
+          <Text style={styles.rowSubtitle}>{formatProductMeta(product) ?? 'No additional details'}</Text>
+        </View>
+        <MaterialIcons name="content-copy" size={16} color={colors.icon} />
+      </View>
+
+      <View style={styles.companyDetails}>
+        {details.map((detail) => (
+          <View key={detail.label} style={styles.companyDetailRow}>
+            <Text style={styles.companyDetailLabel}>{detail.label}</Text>
+            <Text selectable style={styles.companyDetailValue}>
+              {detail.value}
+            </Text>
+          </View>
+        ))}
+      </View>
     </Pressable>
   );
 }

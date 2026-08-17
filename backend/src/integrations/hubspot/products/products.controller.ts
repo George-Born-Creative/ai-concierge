@@ -18,6 +18,7 @@ import {
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CreateHubspotProductDto } from './dto/create-product.dto';
+import { CreateProductLineItemDto } from './dto/create-product-line-item.dto';
 import { ListHubspotProductsQueryDto } from './dto/list-products.query.dto';
 import { SearchHubspotProductsQueryDto } from './dto/search-products.query.dto';
 import { UpdateHubspotProductDto } from './dto/update-product.dto';
@@ -52,6 +53,11 @@ export class HubspotProductsController {
     });
   }
 
+  @Get('properties')
+  listProperties(@CurrentUser() user: AuthenticatedUser) {
+    return this.products.listProperties(user.id);
+  }
+
   @Get(':id')
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.products.getById(user.id, id);
@@ -64,6 +70,16 @@ export class HubspotProductsController {
     @Body() body: CreateHubspotProductDto,
   ) {
     return this.products.create(user.id, body);
+  }
+
+  @Post(':id/line-items')
+  @HttpCode(201)
+  createDealLineItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: CreateProductLineItemDto,
+  ) {
+    return this.products.createDealLineItem(user.id, id, body);
   }
 
   @Patch(':id')

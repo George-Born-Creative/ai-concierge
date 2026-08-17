@@ -629,6 +629,7 @@ export function shouldRunIntent(intent?: VoiceIntentPayload): boolean {
     'create_product',
     'update_product',
     'delete_product',
+    'add_product_to_deal',
     'list_orders',
     'find_order',
     'create_order',
@@ -965,6 +966,15 @@ export function extractProductCreateDetails(
       'body',
     ),
     cost: entityNumber(entities, 'productCost', 'product_cost', 'cost'),
+    recurringBillingPeriod: entityString(
+      entities,
+      'productRecurringBillingPeriod',
+      'recurringBillingPeriod',
+      'billingPeriod',
+    ),
+    pricingModel: productPricingModel(entities),
+    tierRanges: productTierRanges(entities),
+    tierPrices: productTierPrices(entities),
   };
 }
 
@@ -998,7 +1008,63 @@ export function extractProductUpdateDetails(
       'description',
     ),
     cost: entityNumber(entities, 'newProductCost', 'new_product_cost', 'productCost', 'cost'),
+    recurringBillingPeriod: entityString(
+      entities,
+      'newProductRecurringBillingPeriod',
+      'productRecurringBillingPeriod',
+      'recurringBillingPeriod',
+    ),
+    pricingModel: productPricingModel(entities),
+    tierRanges: productTierRanges(entities),
+    tierPrices: productTierPrices(entities),
   };
+}
+
+export function extractProductDealLineItem(
+  entities: Record<string, string | number | boolean | null>,
+) {
+  return {
+    product: extractProductQuery(entities),
+    dealId: entityString(entities, 'dealId', 'deal_id'),
+    dealName: entityString(entities, 'dealName', 'deal_name'),
+    quantity: entityNumber(entities, 'quantity', 'productQuantity'),
+    lineItemName: entityString(entities, 'lineItemName', 'line_item_name'),
+  };
+}
+
+function productPricingModel(
+  entities: Record<string, string | number | boolean | null>,
+): 'volume' | 'graduated' | 'stairstep' | undefined {
+  const value = entityString(entities, 'productPricingModel', 'pricingModel')?.toLowerCase();
+  return value === 'volume' || value === 'graduated' || value === 'stairstep'
+    ? value
+    : undefined;
+}
+
+function productTierRanges(
+  entities: Record<string, string | number | boolean | null>,
+): { start: number; end?: number }[] | undefined {
+  return parseEntityJsonArray(entities, ['productTierRanges', 'tierRanges']);
+}
+
+function productTierPrices(
+  entities: Record<string, string | number | boolean | null>,
+): { index: number; price: number; currency?: string }[] | undefined {
+  return parseEntityJsonArray(entities, ['productTierPrices', 'tierPrices']);
+}
+
+function parseEntityJsonArray<T>(
+  entities: Record<string, string | number | boolean | null>,
+  keys: string[],
+): T[] | undefined {
+  const raw = entityString(entities, ...keys);
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // ── HubSpot orders extractors ───────────────────────────────────────────────

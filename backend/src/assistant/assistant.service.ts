@@ -32,6 +32,12 @@ import type {
 import { RunAssistantCommandDto } from './dto/run-command.dto';
 
 const HISTORY_LIMIT = 15;
+const PRESERVE_COMPLETE_RESPONSE_INTENTS = new Set([
+  'list_products',
+  'find_product',
+  'create_product',
+  'update_product',
+]);
 
 /**
  * Wire format for the SSE streaming endpoint. The `data` field of every
@@ -281,6 +287,7 @@ export class AssistantService {
       !prep.baseline.pendingIntent &&
       !!prep.intent &&
       prep.intent.intent !== 'unknown' &&
+      !PRESERVE_COMPLETE_RESPONSE_INTENTS.has(prep.intent.intent) &&
       !!prep.baseline.response?.trim()
     );
   }

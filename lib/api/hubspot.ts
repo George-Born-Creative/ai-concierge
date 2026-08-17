@@ -16,6 +16,7 @@ import type {
   HubspotOrderSummary,
   HubspotPaginated,
   HubspotProductSummary,
+  HubspotProductWriteInput,
   HubspotStatusResponse,
   HubspotTicketSummary,
   HubspotTicketBatchResponse,
@@ -528,6 +529,42 @@ export async function searchProducts(
 export async function getProduct(id: string): Promise<HubspotProductSummary> {
   return apiRequest<HubspotProductSummary>(
     `/integrations/hubspot/products/${encodeURIComponent(id)}`,
+  );
+}
+
+export async function listProductProperties(): Promise<unknown> {
+  return apiRequest('/integrations/hubspot/products/properties');
+}
+
+export async function createProduct(
+  input: HubspotProductWriteInput & { name: string },
+): Promise<HubspotProductSummary> {
+  return apiRequest('/integrations/hubspot/products', { method: 'POST', body: input });
+}
+
+export async function updateProduct(
+  id: string,
+  input: HubspotProductWriteInput,
+): Promise<HubspotProductSummary> {
+  return apiRequest(`/integrations/hubspot/products/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: input,
+  });
+}
+
+export async function deleteProduct(id: string): Promise<{ id: string; deleted: true }> {
+  return apiRequest(`/integrations/hubspot/products/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function addProductToDeal(
+  productId: string,
+  input: { dealId: string; quantity?: number; name?: string },
+): Promise<unknown> {
+  return apiRequest(
+    `/integrations/hubspot/products/${encodeURIComponent(productId)}/line-items`,
+    { method: 'POST', body: input },
   );
 }
 

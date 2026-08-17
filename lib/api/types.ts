@@ -638,8 +638,28 @@ export type HubspotProductSummary = {
   sku?: string;
   description?: string;
   cost?: number | null;
+  recurringBillingPeriod?: string;
+  pricingModel?: 'volume' | 'graduated' | 'stairstep';
+  tierRanges?: HubspotProductTierRange[];
+  tierPrices?: HubspotProductTierPrice[];
+  archived?: boolean;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type HubspotProductTierRange = { start: number; end?: number };
+export type HubspotProductTierPrice = { index: number; price: number; currency?: string };
+
+export type HubspotProductWriteInput = {
+  name?: string;
+  price?: number;
+  sku?: string;
+  description?: string;
+  cost?: number;
+  recurringBillingPeriod?: string;
+  pricingModel?: 'volume' | 'graduated' | 'stairstep';
+  tierRanges?: HubspotProductTierRange[];
+  tierPrices?: HubspotProductTierPrice[];
 };
 
 export type HubspotOrderSummary = {

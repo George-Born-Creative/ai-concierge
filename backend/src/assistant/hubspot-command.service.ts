@@ -43,6 +43,7 @@ import type {
   extractOpportunityStatusDetails,
   extractOpportunityUpdateDetails,
   extractProductCreateDetails,
+  extractProductDealLineItem,
   extractProductUpdateDetails,
   extractTicketCompanyAssociation,
   extractTicketContactAssociation,
@@ -1326,9 +1327,9 @@ export class HubspotCommandService {
     }
     return {
       response:
-        `Here are your most recent products in HubSpot:\n${results
+        `Here are your products in HubSpot, including their available catalog details:\n\n${results
           .map((p) => this.formatProduct(p))
-          .join('\n')}\n\n` +
+          .join('\n\n')}\n\n` +
         'Want to open one, change its price, or add a new product? Just say the word.',
       status: 'success',
       contextPatch: { lastProductId: results[0].id, lastProductName: results[0].name },
@@ -1375,16 +1376,14 @@ export class HubspotCommandService {
       sku: details.sku,
       description: details.description,
       cost: details.cost,
+      recurringBillingPeriod: details.recurringBillingPeriod,
+      pricingModel: details.pricingModel,
+      tierRanges: details.tierRanges,
+      tierPrices: details.tierPrices,
     });
-    const bits = [
-      typeof created.price === 'number' ? `$${created.price.toLocaleString()}` : null,
-      created.sku ? `SKU ${created.sku}` : null,
-    ]
-      .filter(Boolean)
-      .join(', ');
     return {
       response:
-        `Done — the "${created.name}" product is now in HubSpot${bits ? ` (${bits})` : ''}. ` +
+        `Done — the product is now in HubSpot:\n\n${this.formatProduct(created)}\n\n` +
         'I\'ll keep this product in mind, so you can say things like "raise its price" and I\'ll know which one you mean.',
       status: 'success',
       contextPatch: { lastProductId: created.id, lastProductName: created.name },
@@ -1404,10 +1403,14 @@ export class HubspotCommandService {
     if (details.sku) patch.sku = details.sku;
     if (details.description) patch.description = details.description;
     if (details.cost !== undefined) patch.cost = details.cost;
+    if (details.recurringBillingPeriod) patch.recurringBillingPeriod = details.recurringBillingPeriod;
+    if (details.pricingModel) patch.pricingModel = details.pricingModel;
+    if (details.tierRanges) patch.tierRanges = details.tierRanges;
+    if (details.tierPrices) patch.tierPrices = details.tierPrices;
 
     if (Object.keys(patch).length === 0) {
       return {
-        response: `What should I change on "${resolved.product.name}"? (name, price, SKU, description, or cost)`,
+        response: `What should I change on "${resolved.product.name}"? (name, price, SKU, description, cost, billing period, or tiered pricing)`,
         status: 'error',
       };
     }
@@ -1418,7 +1421,8 @@ export class HubspotCommandService {
       .join(', ');
     return {
       response:
-        `All set — the "${updated.name}" product is updated in HubSpot (${changed}). ` +
+        `All set — the "${updated.name}" product is updated in HubSpot (${changed}).\n\n` +
+        `${this.formatProduct(updated)}\n\n` +
         'Want me to change another field?',
       status: 'success',
       contextPatch: { lastProductId: updated.id, lastProductName: updated.name },
@@ -1435,6 +1439,48 @@ export class HubspotCommandService {
         `Done — the "${resolved.product.name}" product is removed from HubSpot. ` +
         "If that was a mistake, let me know and I can recreate it; otherwise, anything else you'd like me to tidy up?",
       status: 'success',
+    };
+  }
+
+  async addProductToDeal(
+    userId: string,
+    details: ReturnType<typeof extractProductDealLineItem>,
+  ): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveProduct(userId, details.product);
+    if (resolved.kind === 'missing') return resolved.result;
+
+    let dealId = details.dealId?.trim();
+    let dealName = details.dealName?.trim();
+    if (!dealId && dealName) {
+      const { results } = await this.deals.search(userId, { q: dealName, limit: 5 });
+      if (results.length !== 1) {
+        return {
+          response:
+            results.length === 0
+              ? `No HubSpot deal matches "${dealName}".`
+              : `More than one deal matches "${dealName}". Please use the deal ID.`,
+          status: 'error',
+        };
+      }
+      dealId = results[0].id;
+      dealName = results[0].name;
+    }
+    if (!dealId) {
+      return { response: 'Which deal should receive this product?', status: 'error' };
+    }
+
+    await this.products.createDealLineItem(userId, resolved.product.id, {
+      dealId,
+      quantity: details.quantity,
+      name: details.lineItemName,
+    });
+    return {
+      response:
+        `Added ${details.quantity ?? 1} × "${resolved.product.name}" to ` +
+        `${dealName ? `the "${dealName}" deal` : `deal ${dealId}`} as a new line item. ` +
+        'The catalog product itself was not changed.',
+      status: 'success',
+      contextPatch: { lastProductId: resolved.product.id, lastProductName: resolved.product.name },
     };
   }
 
@@ -1495,12 +1541,42 @@ export class HubspotCommandService {
   }
 
   private formatProduct(product: HubspotProductSummary): string {
-    const money =
+    const price =
       typeof product.price === 'number' && Number.isFinite(product.price)
-        ? ` — $${product.price.toLocaleString()}`
-        : '';
-    const sku = product.sku ? ` (SKU ${product.sku})` : '';
-    return `· ${product.name}${money}${sku}`;
+        ? product.price.toLocaleString()
+        : 'Not set';
+    const cost =
+      typeof product.cost === 'number' && Number.isFinite(product.cost)
+        ? product.cost.toLocaleString()
+        : 'Not set';
+    const tiers = this.formatProductTiers(product);
+    return [
+      `### ${product.name}`,
+      `- **Product ID:** \`${product.id}\``,
+      `- **Price:** ${price}`,
+      `- **SKU:** ${product.sku ? `\`${product.sku}\`` : 'Not set'}`,
+      `- **Cost of goods:** ${cost}`,
+      `- **Description:** ${product.description ?? 'Not set'}`,
+      `- **Billing period:** ${product.recurringBillingPeriod ?? 'Not set'}`,
+      `- **Pricing model:** ${product.pricingModel ?? 'standard'}`,
+      `- **Tier prices:** ${tiers ?? 'Not set'}`,
+      `- **Status:** ${product.archived ? 'Archived' : 'Active'}`,
+      `- **Created:** ${formatProductDate(product.createdAt)}`,
+      `- **Last updated:** ${formatProductDate(product.updatedAt)}`,
+    ].join('\n');
+  }
+
+  private formatProductTiers(product: HubspotProductSummary): string | undefined {
+    if (!product.tierRanges?.length || !product.tierPrices?.length) return undefined;
+    return product.tierPrices
+      .map((tier) => {
+        const range = product.tierRanges?.[tier.index];
+        if (!range) return undefined;
+        const rangeLabel = range.end === undefined ? `${range.start}+` : `${range.start}-${range.end}`;
+        return `${rangeLabel}: ${tier.price.toLocaleString()}${tier.currency ? ` ${tier.currency}` : ''}`;
+      })
+      .filter(Boolean)
+      .join('; ');
   }
 
   // ── Orders ─────────────────────────────────────────────────────────────────
@@ -1882,4 +1958,10 @@ function formatDealMoney(amount: number, currency?: string): string {
   } catch {
     return `${amount.toLocaleString()} ${currency}`;
   }
+}
+
+function formatProductDate(value?: string): string {
+  if (!value) return 'Not available';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
