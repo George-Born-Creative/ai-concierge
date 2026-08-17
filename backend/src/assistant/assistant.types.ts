@@ -27,6 +27,7 @@ export type AssistantSessionContext = {
   lastCompanyName?: string;
   lastTicketId?: string;
   lastTicketSubject?: string;
+  lastTicketAfter?: string;
   lastProductId?: string;
   lastProductName?: string;
   lastOrderId?: string;

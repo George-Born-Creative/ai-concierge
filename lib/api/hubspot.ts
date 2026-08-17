@@ -2,6 +2,9 @@ import { apiRequest } from './client';
 import type {
   HubspotAuthUrlResponse,
   HubspotCompanySummary,
+  HubspotCompanyBatchResponse,
+  HubspotCompanyDetail,
+  HubspotCompanyWriteInput,
   HubspotContactSummary,
   HubspotContactWriteInput,
   HubspotDealCreateInput,
@@ -15,8 +18,13 @@ import type {
   HubspotProductSummary,
   HubspotStatusResponse,
   HubspotTicketSummary,
+  HubspotTicketBatchResponse,
+  HubspotTicketCreateInput,
+  HubspotTicketDetail,
+  HubspotTicketWriteInput,
   ListHubspotParams,
   SearchHubspotContactsParams,
+  SearchHubspotCompaniesParams,
   SearchHubspotDealsParams,
   SearchHubspotOrdersParams,
   SearchHubspotProductsParams,
@@ -250,9 +258,118 @@ export async function listCompanies(
   );
 }
 
-export async function getCompany(id: string): Promise<HubspotCompanySummary> {
+export async function listRecentCompanies(
+  params?: ListHubspotParams,
+): Promise<HubspotPaginated<HubspotCompanySummary>> {
+  return apiRequest(withQuery('/integrations/hubspot/companies/recent', params));
+}
+
+export async function searchCompanies(
+  params: SearchHubspotCompaniesParams,
+): Promise<HubspotPaginated<HubspotCompanySummary>> {
+  return apiRequest(withQuery('/integrations/hubspot/companies/search', params));
+}
+
+export async function getCompany(
+  id: string,
+  idProperty: string = 'id',
+): Promise<HubspotCompanySummary> {
   return apiRequest<HubspotCompanySummary>(
-    `/integrations/hubspot/companies/${encodeURIComponent(id)}`,
+    withQuery(`/integrations/hubspot/companies/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+  );
+}
+
+export async function getCompanyDetail(
+  id: string,
+  params?: {
+    idProperty?: string;
+    properties?: string;
+    propertiesWithHistory?: string;
+    associations?: string;
+  },
+): Promise<HubspotCompanyDetail> {
+  return apiRequest(
+    withQuery(`/integrations/hubspot/companies/${encodeURIComponent(id)}/detail`, params),
+  );
+}
+
+export async function createCompany(
+  input: HubspotCompanyWriteInput,
+): Promise<HubspotCompanySummary> {
+  return apiRequest('/integrations/hubspot/companies', { method: 'POST', body: input });
+}
+
+export async function updateCompany(
+  id: string,
+  input: HubspotCompanyWriteInput,
+  idProperty: string = 'id',
+): Promise<HubspotCompanySummary> {
+  return apiRequest(
+    withQuery(`/integrations/hubspot/companies/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+    { method: 'PATCH', body: input },
+  );
+}
+
+export async function deleteCompany(id: string): Promise<{ id: string; deleted: true }> {
+  return apiRequest(`/integrations/hubspot/companies/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function batchReadCompanies(input: {
+  ids: string[];
+  idProperty?: string;
+  properties?: string[];
+  propertiesWithHistory?: string[];
+}): Promise<HubspotCompanyBatchResponse> {
+  return apiRequest('/integrations/hubspot/companies/batch/read', { method: 'POST', body: input });
+}
+
+export async function batchUpdateCompanies(input: {
+  inputs: { id: string; idProperty?: string; properties: HubspotCompanyWriteInput }[];
+}): Promise<HubspotCompanyBatchResponse> {
+  return apiRequest('/integrations/hubspot/companies/batch/update', {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export async function batchArchiveCompanies(
+  ids: string[],
+): Promise<{ ids: string[]; archived: true }> {
+  return apiRequest('/integrations/hubspot/companies/batch/archive', {
+    method: 'POST',
+    body: { ids },
+  });
+}
+
+export async function associateCompany(
+  companyId: string,
+  toObjectType: string,
+  toObjectId: string,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    `/integrations/hubspot/companies/${encodeURIComponent(companyId)}/associations/${encodeURIComponent(
+      toObjectType,
+    )}/${encodeURIComponent(toObjectId)}`,
+    { method: 'PUT' },
+  );
+}
+
+export async function disassociateCompany(
+  companyId: string,
+  toObjectType: string,
+  toObjectId: string,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    `/integrations/hubspot/companies/${encodeURIComponent(companyId)}/associations/${encodeURIComponent(
+      toObjectType,
+    )}/${encodeURIComponent(toObjectId)}`,
+    { method: 'DELETE' },
   );
 }
 
@@ -277,6 +394,116 @@ export async function searchTickets(
 export async function getTicket(id: string): Promise<HubspotTicketSummary> {
   return apiRequest<HubspotTicketSummary>(
     `/integrations/hubspot/tickets/${encodeURIComponent(id)}`,
+  );
+}
+
+export async function getTicketDetail(
+  id: string,
+  params?: {
+    idProperty?: string;
+    properties?: string;
+    propertiesWithHistory?: string;
+    associations?: string;
+    archived?: boolean;
+  },
+): Promise<HubspotTicketDetail> {
+  return apiRequest(
+    withQuery(`/integrations/hubspot/tickets/${encodeURIComponent(id)}/detail`, params),
+  );
+}
+
+export async function listTicketPipelines(): Promise<HubspotPipeline[]> {
+  return apiRequest('/integrations/hubspot/tickets/pipelines');
+}
+
+export async function listTicketProperties(): Promise<unknown> {
+  return apiRequest('/integrations/hubspot/tickets/properties');
+}
+
+export async function createTicket(input: HubspotTicketCreateInput): Promise<HubspotTicketSummary> {
+  return apiRequest('/integrations/hubspot/tickets', { method: 'POST', body: input });
+}
+
+export async function updateTicket(
+  id: string,
+  input: HubspotTicketWriteInput,
+  idProperty = 'id',
+): Promise<HubspotTicketSummary> {
+  return apiRequest(
+    withQuery(`/integrations/hubspot/tickets/${encodeURIComponent(id)}`, {
+      idProperty: idProperty === 'id' ? undefined : idProperty,
+    }),
+    { method: 'PATCH', body: input },
+  );
+}
+
+export async function archiveTicket(id: string): Promise<{ id: string; archived: true }> {
+  return apiRequest(`/integrations/hubspot/tickets/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function batchReadTickets(input: {
+  ids: string[];
+  idProperty?: string;
+  properties?: string[];
+  propertiesWithHistory?: string[];
+}): Promise<HubspotTicketBatchResponse> {
+  return apiRequest('/integrations/hubspot/tickets/batch/read', { method: 'POST', body: input });
+}
+
+export async function batchUpdateTickets(input: {
+  inputs: { id: string; idProperty?: string; properties: HubspotTicketWriteInput }[];
+}): Promise<HubspotTicketBatchResponse> {
+  return apiRequest('/integrations/hubspot/tickets/batch/update', { method: 'POST', body: input });
+}
+
+export async function batchArchiveTickets(
+  ids: string[],
+): Promise<{ ids: string[]; archived: true }> {
+  return apiRequest('/integrations/hubspot/tickets/batch/archive', {
+    method: 'POST',
+    body: { ids },
+  });
+}
+
+export async function associateTicket(
+  ticketId: string,
+  toObjectType: string,
+  toObjectId: string,
+  associationTypeId?: number,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    withQuery(
+      `/integrations/hubspot/tickets/${encodeURIComponent(ticketId)}/associations/${encodeURIComponent(
+        toObjectType,
+      )}/${encodeURIComponent(toObjectId)}`,
+      { associationTypeId },
+    ),
+    { method: 'PUT' },
+  );
+}
+
+export async function disassociateTicket(
+  ticketId: string,
+  toObjectType: string,
+  toObjectId: string,
+  associationTypeId?: number,
+): Promise<{ ok: true }> {
+  return apiRequest(
+    withQuery(
+      `/integrations/hubspot/tickets/${encodeURIComponent(ticketId)}/associations/${encodeURIComponent(
+        toObjectType,
+      )}/${encodeURIComponent(toObjectId)}`,
+      { associationTypeId },
+    ),
+    { method: 'DELETE' },
+  );
+}
+
+export async function listTicketAssociationLabels(toObjectType: string): Promise<unknown> {
+  return apiRequest(
+    `/integrations/hubspot/tickets/associations/${encodeURIComponent(toObjectType)}/labels`,
   );
 }
 

@@ -200,9 +200,9 @@ export class HubspotOrdersService {
     );
   }
 
-  // ── Associations (v4) ──────────────────────────────────────────────────────
+  // ── Associations ───────────────────────────────────────────────────────────
   //
-  // HubSpot's v4 associations API. The `/default/` path lets HubSpot pick the
+  // HubSpot's current associations API. The `/default/` path lets HubSpot pick the
   // standard association label for the pair so we don't have to hard-code
   // numeric association-type ids that vary per portal. Delete drops every
   // association between the two objects regardless of label — idempotent.

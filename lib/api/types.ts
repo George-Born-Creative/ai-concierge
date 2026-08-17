@@ -469,6 +469,7 @@ export type HubspotStatusResponse = {
 export type HubspotPaginated<T> = {
   results: T[];
   after: string | null;
+  total?: number;
 };
 
 export type HubspotContactSummary = {
@@ -566,11 +567,53 @@ export type HubspotCompanySummary = {
   id: string;
   name: string;
   domain?: string;
+  additionalDomains?: string[];
+  phone?: string;
   industry?: string;
   city?: string;
+  state?: string;
   country?: string;
+  numberOfEmployees?: number;
+  description?: string;
+  website?: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  pinnedEngagementId?: string;
+  lastActivityAt?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type HubspotCompanyAssociation = HubspotDealCreateAssociation;
+
+export type HubspotCompanyWriteInput = {
+  name?: string;
+  domain?: string;
+  additionalDomains?: string[];
+  phone?: string;
+  industry?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  numberOfEmployees?: number | null;
+  description?: string;
+  website?: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  pinnedEngagementId?: string;
+  associations?: HubspotCompanyAssociation[];
+};
+
+export type HubspotCompanyDetail = HubspotCompanySummary & {
+  properties: Record<string, string | null | undefined>;
+  propertiesWithHistory?: Record<string, unknown>;
+  associations?: Record<string, unknown>;
+};
+
+export type HubspotCompanyBatchResponse = {
+  status?: string;
+  results: HubspotCompanySummary[];
+  errors?: unknown[];
 };
 
 export type HubspotTicketSummary = {
@@ -579,8 +622,11 @@ export type HubspotTicketSummary = {
   content?: string;
   priority?: string;
   pipeline?: string;
+  pipelineLabel?: string;
   stage?: string;
+  stageLabel?: string;
   ownerId?: string;
+  pinnedEngagementId?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -619,12 +665,55 @@ export type SearchHubspotContactsParams = ListHubspotParams & {
   q: string;
 };
 
+export type SearchHubspotCompaniesParams = ListHubspotParams & {
+  q: string;
+};
+
+export type HubspotTicketWriteInput = {
+  subject?: string;
+  content?: string | null;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | null;
+  pipeline?: string;
+  stage?: string;
+  ownerId?: string | null;
+  pinnedEngagementId?: string | null;
+  properties?: Record<string, string | null>;
+};
+
+export type HubspotTicketCreateInput = HubspotTicketWriteInput & {
+  subject: string;
+  associations?: {
+    toId: string;
+    types: {
+      associationCategory: 'HUBSPOT_DEFINED' | 'USER_DEFINED' | 'INTEGRATOR_DEFINED';
+      associationTypeId: number;
+    }[];
+  }[];
+};
+
+export type HubspotTicketDetail = HubspotTicketSummary & {
+  properties: Record<string, string | null | undefined>;
+  propertiesWithHistory?: Record<string, unknown>;
+  associations?: Record<string, unknown>;
+};
+
+export type HubspotTicketBatchResponse = {
+  status?: string;
+  results: HubspotTicketSummary[];
+  errors?: unknown[];
+};
+
 export type SearchHubspotDealsParams = ListHubspotParams & {
   q: string;
 };
 
 export type SearchHubspotTicketsParams = ListHubspotParams & {
-  q: string;
+  q?: string;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  pipeline?: string;
+  stage?: string;
+  ownerId?: string;
+  sort?: 'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc';
 };
 
 export type SearchHubspotProductsParams = ListHubspotParams & {

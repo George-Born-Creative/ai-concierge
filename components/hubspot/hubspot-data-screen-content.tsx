@@ -42,13 +42,14 @@ type LoadState<T> = {
   data: T[];
   loading: boolean;
   error: string | null;
+  after?: string | null;
 };
 
 // Seed a section from the CRM cache: show cached rows instantly (no skeleton)
 // when present, otherwise start in the loading state until the first fetch.
 function seedState<T>(key: string): LoadState<T> {
   const data = getCrmCache<T>(key);
-  return { data: data ?? [], loading: data === undefined, error: null };
+  return { data: data ?? [], loading: data === undefined, error: null, after: null };
 }
 
 // Persist a successful fetch to the cache, then apply it to component state.
@@ -123,6 +124,8 @@ export function HubspotDataScreenContent() {
     seedState(crmCacheKey('hubspot', 'orders')),
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMoreCompanies, setLoadingMoreCompanies] = useState(false);
+  const [loadingMoreTickets, setLoadingMoreTickets] = useState(false);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
@@ -223,6 +226,52 @@ export function HubspotDataScreenContent() {
     }
   }
 
+  async function loadMoreTickets() {
+    if (!tickets.after || loadingMoreTickets) return;
+    setLoadingMoreTickets(true);
+    try {
+      const page = await hubspotApi.listTickets({ limit, after: tickets.after });
+      const data = [
+        ...tickets.data,
+        ...page.results.filter(
+          (row) => !tickets.data.some((existing) => existing.id === row.id),
+        ),
+      ];
+      commit(
+        crmCacheKey('hubspot', 'tickets'),
+        { data, loading: false, error: null, after: page.after },
+        setTickets,
+      );
+    } catch (error) {
+      show(error instanceof Error ? error.message : 'Could not load more tickets.', 'error');
+    } finally {
+      setLoadingMoreTickets(false);
+    }
+  }
+
+  async function loadMoreCompanies() {
+    if (!companies.after || loadingMoreCompanies) return;
+    setLoadingMoreCompanies(true);
+    try {
+      const page = await hubspotApi.listCompanies({ limit, after: companies.after });
+      const data = [
+        ...companies.data,
+        ...page.results.filter(
+          (row) => !companies.data.some((existing) => existing.id === row.id),
+        ),
+      ];
+      commit(
+        crmCacheKey('hubspot', 'companies'),
+        { data, loading: false, error: null, after: page.after },
+        setCompanies,
+      );
+    } catch (error) {
+      show(error instanceof Error ? error.message : 'Could not load more companies.', 'error');
+    } finally {
+      setLoadingMoreCompanies(false);
+    }
+  }
+
   function handleCopy(label: string, value?: string) {
     if (!value) return;
     void Clipboard.setStringAsync(value).then(() =>
@@ -311,39 +360,71 @@ export function HubspotDataScreenContent() {
         )}
 
         {want('companies') && (
-          <Section
-            icon="business"
-            title="Companies"
-            state={companies}
-            emptyText="No companies in your HubSpot portal yet."
-            renderRow={(row) => (
-              <RowCard
-                key={row.id}
-                title={row.name}
-                subtitle={row.domain}
-                meta={[row.industry, row.city, row.country].filter(Boolean).join(' · ') || undefined}
-                onPress={() => handleCopy('Company id', row.id)}
-              />
-            )}
-          />
+          <View style={styles.paginatedSection}>
+            <Section
+              icon="business"
+              title="Companies"
+              state={companies}
+              emptyText="No companies in your HubSpot portal yet."
+              renderRow={(row) => (
+                <CompanyCard
+                  key={row.id}
+                  company={row}
+                  onPress={() => handleCopy('Company id', row.id)}
+                />
+              )}
+            />
+            {active === 'companies' && companies.after ? (
+              <Pressable
+                disabled={loadingMoreCompanies}
+                onPress={() => void loadMoreCompanies()}
+                style={({ pressed }) => [
+                  styles.loadMoreButton,
+                  (pressed || loadingMoreCompanies) && { opacity: 0.7 },
+                ]}>
+                <Text style={styles.loadMoreText}>
+                  {loadingMoreCompanies ? 'Loading…' : 'Load more companies'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         )}
 
         {want('tickets') && (
-          <Section
-            icon="confirmation-number"
-            title="Tickets"
-            state={tickets}
-            emptyText="No tickets in your HubSpot portal yet."
-            renderRow={(row) => (
-              <RowCard
-                key={row.id}
-                title={row.subject}
-                subtitle={row.content}
-                meta={[row.priority, row.stage].filter(Boolean).join(' · ') || undefined}
-                onPress={() => handleCopy('Ticket id', row.id)}
-              />
-            )}
-          />
+          <View style={styles.paginatedSection}>
+            <Section
+              icon="confirmation-number"
+              title="Tickets"
+              state={tickets}
+              emptyText="No tickets in your HubSpot portal yet."
+              renderRow={(row) => (
+                <RowCard
+                  key={row.id}
+                  title={row.subject}
+                  subtitle={row.content}
+                  meta={
+                    [row.priority, row.pipelineLabel, row.stageLabel ?? row.stage]
+                      .filter(Boolean)
+                      .join(' · ') || undefined
+                  }
+                  onPress={() => handleCopy('Ticket id', row.id)}
+                />
+              )}
+            />
+            {active === 'tickets' && tickets.after ? (
+              <Pressable
+                disabled={loadingMoreTickets}
+                onPress={() => void loadMoreTickets()}
+                style={({ pressed }) => [
+                  styles.loadMoreButton,
+                  (pressed || loadingMoreTickets) && { opacity: 0.7 },
+                ]}>
+                <Text style={styles.loadMoreText}>
+                  {loadingMoreTickets ? 'Loading…' : 'Load more tickets'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         )}
 
         {want('products') && (
@@ -410,6 +491,7 @@ function formatDealAmount(amount: number, currency?: string): string {
   } catch {
     return `${amount.toLocaleString()} ${currency}`;
   }
+
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -425,7 +507,12 @@ function stateFor<T>(
   settled: PromiseSettledResult<{ results: T[]; after: string | null }>,
 ): LoadState<T> {
   if (settled.status === 'fulfilled') {
-    return { data: settled.value.results, loading: false, error: null };
+    return {
+      data: settled.value.results,
+      loading: false,
+      error: null,
+      after: settled.value.after,
+    };
   }
   const reason = settled.reason;
   const message =
@@ -434,7 +521,7 @@ function stateFor<T>(
       : reason instanceof Error
         ? reason.message
         : 'Could not load from HubSpot.';
-  return { data: [], loading: false, error: message };
+  return { data: [], loading: false, error: message, after: null };
 }
 
 // ─── Section ──────────────────────────────────────────────────────────────────
@@ -531,6 +618,64 @@ function RowCard({ title, subtitle, meta, onPress }: RowCardProps) {
   );
 }
 
+type CompanyCardProps = {
+  company: HubspotCompanySummary;
+  onPress?: () => void;
+};
+
+function CompanyCard({ company, onPress }: CompanyCardProps) {
+  const { colors } = useAppTheme();
+  const details = [
+    { label: 'Company owner', value: displayCompanyValue(company.ownerId) },
+    { label: 'Created date', value: formatHubspotDate(company.createdAt) ?? '—' },
+    { label: 'Phone number', value: displayCompanyValue(company.phone) },
+    {
+      label: 'Last activity date',
+      value: formatHubspotDate(company.lastActivityAt) ?? '—',
+    },
+    { label: 'City', value: displayCompanyValue(company.city) },
+    { label: 'Country/region', value: displayCompanyValue(company.country) },
+    { label: 'Industry', value: displayCompanyValue(company.industry) },
+  ];
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.companyCard, pressed && { opacity: 0.85 }]}>
+      <View style={styles.companyHeader}>
+        <View style={styles.rowCopy}>
+          <Text style={styles.companyTitle}>{company.name}</Text>
+        </View>
+        <MaterialIcons name="content-copy" size={16} color={colors.icon} />
+      </View>
+
+      <View style={styles.companyDetails}>
+        {details.map((detail) => (
+          <View key={detail.label} style={styles.companyDetailRow}>
+            <Text style={styles.companyDetailLabel}>{detail.label}</Text>
+            <Text selectable style={styles.companyDetailValue}>
+              {detail.value}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+    </Pressable>
+  );
+}
+
+function formatHubspotDate(value?: string): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function displayCompanyValue(value?: string): string {
+  const normalized = value?.trim();
+  return normalized || '—';
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -550,6 +695,18 @@ const styles = StyleSheet.create({
     borderRadius: UiRadii.card,
     borderWidth: 1,
     overflow: 'hidden',
+  },
+  paginatedSection: { gap: UiSpacing.sm },
+  loadMoreButton: {
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    borderRadius: UiRadii.card,
+    paddingVertical: UiSpacing.sm,
+  },
+  loadMoreText: {
+    color: '#1967D2',
+    fontSize: UiTypography.label.fontSize,
+    fontWeight: '600',
   },
   sectionHeader: {
     alignItems: 'center',
@@ -604,6 +761,49 @@ const styles = StyleSheet.create({
   rowSubtitle: { color: '#5F6368', fontSize: UiTypography.label.fontSize, lineHeight: UiTypography.label.lineHeight },
   rowMeta: { color: '#80868B', fontSize: UiTypography.caption.fontSize, lineHeight: UiTypography.caption.lineHeight },
 
+  companyCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E3E7ED',
+    borderRadius: UiRadii.card,
+    borderWidth: 1,
+    gap: UiSpacing.md,
+    padding: UiSpacing.md,
+  },
+  companyHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
+  },
+  companyTitle: {
+    color: '#202124',
+    fontSize: UiTypography.bodySmall.fontSize,
+    fontWeight: '700',
+    lineHeight: UiTypography.bodySmall.lineHeight,
+  },
+  companyDetails: {
+    borderTopColor: '#EEF0F3',
+    borderTopWidth: 1,
+    gap: UiSpacing.xs,
+    paddingTop: UiSpacing.sm,
+  },
+  companyDetailRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: UiSpacing.md,
+  },
+  companyDetailLabel: {
+    color: '#80868B',
+    fontSize: UiTypography.caption.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.caption.lineHeight,
+    width: 112,
+  },
+  companyDetailValue: {
+    color: '#3C4043',
+    flex: 1,
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+  },
   emptyCard: {
     alignItems: 'center',
     backgroundColor: '#F8FAFF',

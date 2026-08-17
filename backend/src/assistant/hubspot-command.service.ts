@@ -53,6 +53,7 @@ import type {
   ProductQuery,
   TicketQuery,
 } from './assistant-command.helpers';
+import { isPositiveConfirmation, pendingIntentExpiry } from './assistant-command.helpers';
 import type { AssistantCommandResult } from './assistant.types';
 
 /**
@@ -429,7 +430,7 @@ export class HubspotCommandService {
   // "attach Sarah to that company" resolve via session merge.
 
   async listLatestCompanies(userId: string): Promise<AssistantCommandResult> {
-    const { results } = await this.companies.list(userId, { limit: 10 });
+    const { results } = await this.companies.listRecent(userId, { limit: 10 });
     if (results.length === 0) {
       return { response: "You don't have any companies in HubSpot yet.", status: 'success' };
     }
@@ -859,8 +860,8 @@ export class HubspotCommandService {
   // `contextPatch.lastTicketId/Subject` so follow-ups like "close it" or
   // "attach it to Acme" resolve via session merge.
 
-  async listRecentTickets(userId: string): Promise<AssistantCommandResult> {
-    const { results } = await this.tickets.list(userId, { limit: 10 });
+  async listRecentTickets(userId: string, after?: string): Promise<AssistantCommandResult> {
+    const { results, after: nextAfter } = await this.tickets.list(userId, { limit: 10, after });
     if (results.length === 0) {
       return { response: "You don't have any tickets in HubSpot yet.", status: 'success' };
     }
@@ -869,9 +870,15 @@ export class HubspotCommandService {
         `Here are your most recent tickets in HubSpot:\n${results
           .map((t) => this.formatTicket(t))
           .join('\n')}\n\n` +
-        "Want to open one, change its priority, or attach it to a contact or company? Just say the word.",
+        (nextAfter
+          ? 'There are more tickets. Say "show more tickets" to continue.'
+          : 'Want to open one, change its priority, or attach it to a contact or company?'),
       status: 'success',
-      contextPatch: { lastTicketId: results[0].id, lastTicketSubject: results[0].subject },
+      contextPatch: {
+        lastTicketId: results[0].id,
+        lastTicketSubject: results[0].subject,
+        lastTicketAfter: nextAfter ?? undefined,
+      },
     };
   }
 
@@ -907,7 +914,27 @@ export class HubspotCommandService {
     details: ReturnType<typeof extractTicketCreateDetails>,
   ): Promise<AssistantCommandResult> {
     if (!details.subject) {
-      return { response: 'What should the ticket be about? Give me a subject.', status: 'error' };
+      const question = 'What should the ticket be about? Give me a subject.';
+      return {
+        response: question,
+        status: 'error',
+        pendingIntent: {
+          intent: 'create_ticket',
+          entities: {
+            ...(details.content !== undefined ? { ticketContent: details.content } : {}),
+            ...(details.priority !== undefined ? { ticketPriority: details.priority } : {}),
+            ...(details.pipeline ? { ticketPipeline: details.pipeline } : {}),
+            ...(details.stage ? { ticketStage: details.stage } : {}),
+            ...(details.ownerId !== undefined ? { ticketOwnerId: details.ownerId } : {}),
+            ...(details.pinnedEngagementId !== undefined
+              ? { pinnedEngagementId: details.pinnedEngagementId }
+              : {}),
+          },
+          missing: ['ticketSubject'],
+          question,
+          expiresAt: pendingIntentExpiry(),
+        },
+      };
     }
     const created = await this.tickets.create(userId, {
       subject: details.subject,
@@ -915,6 +942,8 @@ export class HubspotCommandService {
       priority: details.priority,
       pipeline: details.pipeline,
       stage: details.stage,
+      ownerId: details.ownerId,
+      pinnedEngagementId: details.pinnedEngagementId,
     });
     const bits = [
       created.priority ? `priority ${created.priority}` : null,
@@ -940,10 +969,14 @@ export class HubspotCommandService {
 
     const patch: HubspotTicketWriteInput = {};
     if (details.subject) patch.subject = details.subject;
-    if (details.content) patch.content = details.content;
-    if (details.priority) patch.priority = details.priority;
+    if (details.content !== undefined) patch.content = details.content;
+    if (details.priority !== undefined) patch.priority = details.priority;
     if (details.pipeline) patch.pipeline = details.pipeline;
     if (details.stage) patch.stage = details.stage;
+    if (details.ownerId !== undefined) patch.ownerId = details.ownerId;
+    if (details.pinnedEngagementId !== undefined) {
+      patch.pinnedEngagementId = details.pinnedEngagementId;
+    }
 
     if (Object.keys(patch).length === 0) {
       return {
@@ -966,15 +999,97 @@ export class HubspotCommandService {
     };
   }
 
-  async deleteTicket(userId: string, query: string): Promise<AssistantCommandResult> {
-    const resolved = await this.resolveTicket(userId, { subject: query });
+  async deleteTicket(
+    userId: string,
+    query: TicketQuery,
+    confirmation?: string,
+  ): Promise<AssistantCommandResult> {
+    const resolved = await this.resolveTicket(userId, query);
     if (resolved.kind === 'missing') return resolved.result;
-    await this.tickets.delete(userId, resolved.ticket.id);
+    if (!confirmation || !isPositiveConfirmation(confirmation)) {
+      const question =
+        `Archive the "${resolved.ticket.subject}" ticket? ` +
+        'It will move to the HubSpot recycling bin and can be restored there.';
+      return {
+        response: question,
+        status: 'error',
+        pendingIntent: {
+          intent: 'delete_ticket',
+          entities: { ticketId: resolved.ticket.id, ticketSubject: resolved.ticket.subject },
+          missing: ['confirmation'],
+          question,
+          expiresAt: pendingIntentExpiry(),
+        },
+      };
+    }
+    await this.tickets.archive(userId, resolved.ticket.id);
     return {
       response:
-        `Done — the "${resolved.ticket.subject}" ticket is removed from HubSpot. ` +
-        "If that was a mistake, let me know and I can recreate it; otherwise, anything else you'd like me to tidy up?",
+        `Done — the "${resolved.ticket.subject}" ticket is archived in HubSpot. ` +
+        'It can be restored from the recycling bin.',
       status: 'success',
+      clearPendingIntent: true,
+    };
+  }
+
+  async pinTicketActivity(
+    userId: string,
+    details: {
+      ticket: TicketQuery;
+      activityId?: string;
+      activityType?: string;
+      associationTypeId?: number;
+    },
+  ): Promise<AssistantCommandResult> {
+    const ticket = await this.resolveTicket(userId, details.ticket);
+    if (ticket.kind === 'missing') return ticket.result;
+    if (!details.activityId) {
+      const question = 'What is the HubSpot activity or engagement ID to pin?';
+      return {
+        response: question,
+        status: 'error',
+        pendingIntent: {
+          intent: 'pin_ticket_activity',
+          entities: { ticketId: ticket.ticket.id, ticketSubject: ticket.ticket.subject },
+          missing: ['activityId'],
+          question,
+          expiresAt: pendingIntentExpiry(),
+        },
+      };
+    }
+    if (!details.activityType) {
+      const question = 'What type of activity is it—for example, a note, meeting, call, or email?';
+      return {
+        response: question,
+        status: 'error',
+        pendingIntent: {
+          intent: 'pin_ticket_activity',
+          entities: {
+            ticketId: ticket.ticket.id,
+            ticketSubject: ticket.ticket.subject,
+            activityId: details.activityId,
+          },
+          missing: ['activityType'],
+          question,
+          expiresAt: pendingIntentExpiry(),
+        },
+      };
+    }
+    await this.tickets.associate(
+      userId,
+      ticket.ticket.id,
+      normalizeActivityType(details.activityType),
+      details.activityId,
+      details.associationTypeId,
+    );
+    const updated = await this.tickets.update(userId, ticket.ticket.id, {
+      pinnedEngagementId: details.activityId,
+    });
+    return {
+      response: `Pinned activity ${details.activityId} on the "${updated.subject}" ticket in HubSpot.`,
+      status: 'success',
+      contextPatch: { lastTicketId: updated.id, lastTicketSubject: updated.subject },
+      clearPendingIntent: true,
     };
   }
 
@@ -1190,7 +1305,9 @@ export class HubspotCommandService {
   }
 
   private formatTicket(ticket: HubspotTicketSummary): string {
-    const trailing = [ticket.priority, ticket.stage].filter(Boolean).join(' · ');
+    const trailing = [ticket.priority, ticket.stageLabel ?? ticket.stage]
+      .filter(Boolean)
+      .join(' · ');
     return `· ${ticket.subject}${trailing ? ` — ${trailing}` : ''}`;
   }
 
@@ -1741,7 +1858,21 @@ function stageMatchesStatus(
   if (status === 'lost' || status === 'abandoned') {
     return (closed && probability === 0) || /\b(lost|abandoned)\b/.test(label);
   }
+
   return !closed && probability !== 1 && !/\b(won|lost|abandoned)\b/.test(label);
+}
+
+function normalizeActivityType(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '_');
+  const aliases: Record<string, string> = {
+    note: 'notes',
+    meeting: 'meetings',
+    call: 'calls',
+    email: 'emails',
+    task: 'tasks',
+    communication: 'communications',
+  };
+  return aliases[normalized] ?? (normalized.endsWith('s') ? normalized : `${normalized}s`);
 }
 
 function formatDealMoney(amount: number, currency?: string): string {

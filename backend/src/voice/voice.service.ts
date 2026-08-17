@@ -67,6 +67,7 @@ const SUPPORTED_INTENTS = [
   'detach_ticket_from_company',
   'attach_ticket_to_deal',
   'detach_ticket_from_deal',
+  'pin_ticket_activity',
   'list_products',
   'find_product',
   'create_product',
@@ -183,7 +184,7 @@ Intent examples (informal → intent):
 - "detach John Smith from Acme", "unlink Sarah from Globex", "remove the contact association from Initech" → detach_contact_from_company
 - "attach the Website Redesign deal to Acme", "link deal 12345 to Globex", "associate that opportunity with Initech" → attach_deal_to_company
 - "detach the Website Redesign deal from Acme", "unlink deal 12345 from Globex" → detach_deal_from_company
-- "list my tickets", "show recent tickets", "what support tickets do I have", "any open tickets" → list_tickets
+- "list my tickets", "show recent tickets", "what support tickets do I have", "any open tickets", "show more tickets" → list_tickets
 - "find the login bug ticket", "look up the ticket about billing", "show me ticket 12345" → find_ticket
 - "create a ticket titled Login bug", "open a ticket about the checkout crash with high priority", "log a support ticket called Refund request" → create_ticket
 - "set the Login bug ticket priority to urgent", "rename that ticket to Payment failure", "move the ticket to stage Waiting on us", "change its priority to low" → update_ticket
@@ -194,6 +195,7 @@ Intent examples (informal → intent):
 - "detach the Login bug ticket from Acme", "unlink that ticket from Globex" → detach_ticket_from_company
 - "attach the Login bug ticket to the Website Redesign deal", "link that ticket to deal 12345" → attach_ticket_to_deal
 - "detach the Login bug ticket from the Website Redesign deal" → detach_ticket_from_deal
+- "pin note 123 to the Login bug ticket", "pin engagement 456 on that ticket" → pin_ticket_activity
 - "list my products", "show my product catalog", "what products do I sell", "show recent products" → list_products
 - "find the Pro Plan product", "look up the product with SKU ABC-123", "show me product 12345" → find_product
 - "create a product called Pro Plan for $99", "add a product named Onboarding Fee priced at 250 with SKU OB-1" → create_product
@@ -244,13 +246,15 @@ Entity rules:
 - attach_contact_to_company / detach_contact_from_company: identify the company via "companyName"/"companyDomain"/"companyId" (or session lastCompanyId), and the contact via "contactName"/"contactId"/"contactEmail"/"contactPhone".
 - attach_deal_to_company / detach_deal_from_company: identify the company via "companyName"/"companyDomain"/"companyId" (or session lastCompanyId), and the deal via "dealName" or "dealId".
 - For any company intent that refers to "it" / "that company" / "the account", reuse lastCompanyId/lastCompanyName from session context.
-- list_tickets: no entities required.
+- list_tickets: no entities required. For "show more", preserve the session ticketAfter cursor as "ticketAfter".
 - find_ticket / delete_ticket: put the search target in "query" (ticket subject or keyword). Also set "ticketSubject" or "ticketId" when obvious.
-- create_ticket: "ticketSubject" (REQUIRED — extract from "titled X", "called X", "about X"), optional "ticketContent" (the description/body), optional "ticketPriority" (must be LOW/MEDIUM/HIGH/URGENT — map "urgent"→URGENT, "high"→HIGH, "normal"/"medium"→MEDIUM, "low"→LOW), optional "ticketPipeline", "ticketStage". If only "subject"/"name" is given, that is the ticket subject.
-- update_ticket: identify the ticket via "ticketId" or "ticketSubject" (or session lastTicketId); plus any of "newTicketSubject", "newTicketContent", "newTicketPriority" (LOW/MEDIUM/HIGH/URGENT), "newTicketStage" to set.
+- create_ticket: "ticketSubject" (REQUIRED — extract from "titled X", "called X", "about X"), optional "ticketContent" (the description/body), optional "ticketPriority" (must be LOW/MEDIUM/HIGH/URGENT — map "urgent"→URGENT, "high"→HIGH, "normal"/"medium"→MEDIUM, "low"→LOW), optional "ticketPipeline", "ticketStage", "ticketOwnerId", and "pinnedEngagementId". Pipeline and stage may be spoken labels; the backend resolves their internal IDs. If only "subject"/"name" is given, that is the ticket subject.
+- update_ticket: identify the ticket via "ticketId" or "ticketSubject" (or session lastTicketId); plus any of "newTicketSubject", "newTicketContent", "newTicketPriority" (LOW/MEDIUM/HIGH/URGENT), "newTicketPipeline", "newTicketStage", "newTicketOwnerId", or "newPinnedEngagementId". Emit null for a field when the user explicitly asks to clear/unassign/unpin it.
+- delete_ticket archives to HubSpot's recycling bin. Do not treat the first request as confirmation; after the assistant asks, put the user's affirmative reply in "confirmation".
 - attach_ticket_to_contact / detach_ticket_from_contact: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the contact via "contactName"/"contactId"/"contactEmail"/"contactPhone".
 - attach_ticket_to_company / detach_ticket_from_company: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the company via "companyName"/"companyDomain"/"companyId".
 - attach_ticket_to_deal / detach_ticket_from_deal: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), and the deal via "dealName" or "dealId".
+- pin_ticket_activity: identify the ticket via "ticketSubject"/"ticketId" (or session lastTicketId), plus "activityId" and "activityType" (for example notes, meetings, calls, emails). Include "associationTypeId" when the user supplied one. The backend associates the activity before pinning it.
 - For any ticket intent that refers to "it" / "that ticket", reuse lastTicketId/lastTicketSubject from session context.
 - list_products / find_product: for find_product put the search target (name or SKU) in "query"; also set "productName" or "productSku" when obvious.
 - create_product: "productName" (REQUIRED — extract from "called X", "named X"), optional "productPrice" (number — from "for $99", "priced at 250"), optional "productSku" (from "SKU X"), optional "productDescription", optional "productCost" (number — from "cost 40").

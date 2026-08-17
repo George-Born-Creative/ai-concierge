@@ -251,7 +251,7 @@ test('deal-side associations delegate to the shared association service', async 
   ]);
 });
 
-test('shared association service validates IDs and builds encoded v4 routes', async () => {
+test('shared association service validates IDs and builds current encoded routes', async () => {
   const calls = [];
   const service = new HubspotAssociationsService({
     request: async (...args) => calls.push(args),
@@ -260,7 +260,7 @@ test('shared association service validates IDs and builds encoded v4 routes', as
   await service.associate('user-1', 'deals', 'deal/1', 'contacts', 'contact/1');
   assert.equal(
     calls[0][2],
-    '/crm/v4/objects/deals/deal%2F1/associations/default/contacts/contact%2F1',
+    '/crm/objects/2026-03/deals/deal%2F1/associations/default/contacts/contact%2F1',
   );
   await assert.rejects(
     service.disassociate('user-1', 'deals', '', 'contacts', 'contact-1'),

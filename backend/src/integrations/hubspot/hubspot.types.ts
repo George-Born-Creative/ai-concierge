@@ -4,6 +4,7 @@
 
 export type HubspotPaginated<T> = {
   results: T[];
+  total?: number;
   /**
    * Cursor for the next page. Pass back to the same endpoint as `?after=...`
    * to fetch the next batch. `null` means there is no more data.
@@ -50,6 +51,7 @@ export type HubspotCompanySummary = {
   id: string;
   name: string;
   domain?: string;
+  additionalDomains?: string[];
   phone?: string;
   industry?: string;
   city?: string;
@@ -59,6 +61,10 @@ export type HubspotCompanySummary = {
   numberOfEmployees?: number;
   description?: string;
   website?: string;
+  lifecycleStage?: string;
+  ownerId?: string;
+  pinnedEngagementId?: string;
+  lastActivityAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -73,9 +79,12 @@ export type HubspotTicketSummary = {
   priority?: string;
   /** Pipeline id (HubSpot uses ids like `0` for the default support pipeline). */
   pipeline?: string;
+  pipelineLabel?: string;
   /** Pipeline stage id (HubSpot uses ids like `1` for "New"). */
   stage?: string;
+  stageLabel?: string;
   ownerId?: string;
+  pinnedEngagementId?: string;
   createdAt?: string;
   updatedAt?: string;
 };

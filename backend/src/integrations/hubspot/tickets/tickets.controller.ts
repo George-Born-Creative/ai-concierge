@@ -19,8 +19,15 @@ import {
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { CreateHubspotTicketDto } from './dto/create-ticket.dto';
+import {
+  BatchArchiveHubspotTicketsDto,
+  BatchReadHubspotTicketsDto,
+  BatchUpdateHubspotTicketsDto,
+} from './dto/batch-tickets.dto';
 import { ListHubspotTicketsQueryDto } from './dto/list-tickets.query.dto';
 import { SearchHubspotTicketsQueryDto } from './dto/search-tickets.query.dto';
+import { HubspotTicketAssociationQueryDto } from './dto/ticket-association.dto';
+import { HubspotTicketReadQueryDto } from './dto/ticket-read.query.dto';
 import { UpdateHubspotTicketDto } from './dto/update-ticket.dto';
 import { HubspotTicketsService } from './tickets.service';
 
@@ -37,6 +44,10 @@ export class HubspotTicketsController {
     return this.tickets.list(user.id, {
       limit: query.limit,
       after: query.after,
+      archived: query.archived,
+      properties: splitCsv(query.properties),
+      propertiesWithHistory: splitCsv(query.propertiesWithHistory),
+      associations: splitCsv(query.associations),
     });
   }
 
@@ -50,6 +61,67 @@ export class HubspotTicketsController {
       q: query.q,
       limit: query.limit,
       after: query.after,
+      priority: query.priority,
+      pipeline: query.pipeline,
+      stage: query.stage,
+      ownerId: query.ownerId,
+      sort: query.sort,
+    });
+  }
+
+  @Get('pipelines')
+  pipelines(@CurrentUser() user: AuthenticatedUser) {
+    return this.tickets.listPipelines(user.id);
+  }
+
+  @Get('properties')
+  properties(@CurrentUser() user: AuthenticatedUser) {
+    return this.tickets.listProperties(user.id);
+  }
+
+  @Post('batch/read')
+  batchRead(@CurrentUser() user: AuthenticatedUser, @Body() body: BatchReadHubspotTicketsDto) {
+    return this.tickets.batchRead(user.id, body);
+  }
+
+  @Post('batch/update')
+  batchUpdate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BatchUpdateHubspotTicketsDto,
+  ) {
+    return this.tickets.batchUpdate(user.id, body.inputs);
+  }
+
+  @Post('batch/archive')
+  @HttpCode(200)
+  async batchArchive(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BatchArchiveHubspotTicketsDto,
+  ) {
+    await this.tickets.batchArchive(user.id, body.ids);
+    return { ids: body.ids, archived: true };
+  }
+
+  @Get('associations/:toObjectType/labels')
+  associationLabels(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('toObjectType') toObjectType: string,
+  ) {
+    return this.tickets.listAssociationLabels(user.id, toObjectType);
+  }
+
+  @Get(':id/detail')
+  detail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: HubspotTicketReadQueryDto,
+  ) {
+    return this.tickets.getDetail(user.id, id, {
+      idProperty: query.idProperty,
+      archived: query.archived,
+      properties: splitCsv(query.properties),
+      propertiesWithHistory: splitCsv(query.propertiesWithHistory),
+      associations: splitCsv(query.associations),
     });
   }
 
@@ -57,8 +129,9 @@ export class HubspotTicketsController {
   getById(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
+    @Query() query: HubspotTicketReadQueryDto,
   ) {
-    return this.tickets.getById(user.id, id);
+    return this.tickets.getById(user.id, id, query.idProperty);
   }
 
   @Post()
@@ -75,9 +148,10 @@ export class HubspotTicketsController {
   update(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
+    @Query() query: HubspotTicketReadQueryDto,
     @Body() body: UpdateHubspotTicketDto,
   ) {
-    return this.tickets.update(user.id, id, body);
+    return this.tickets.update(user.id, id, body, query.idProperty);
   }
 
   @Delete(':id')
@@ -86,8 +160,36 @@ export class HubspotTicketsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ) {
-    await this.tickets.delete(user.id, id);
-    return { id, deleted: true };
+    await this.tickets.archive(user.id, id);
+    return { id, archived: true };
+  }
+
+  @Put(':id/associations/:toObjectType/:toObjectId')
+  associate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('toObjectType') toObjectType: string,
+    @Param('toObjectId') toObjectId: string,
+    @Query() query: HubspotTicketAssociationQueryDto,
+  ) {
+    return this.tickets.associate(user.id, id, toObjectType, toObjectId, query.associationTypeId);
+  }
+
+  @Delete(':id/associations/:toObjectType/:toObjectId')
+  disassociate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('toObjectType') toObjectType: string,
+    @Param('toObjectId') toObjectId: string,
+    @Query() query: HubspotTicketAssociationQueryDto,
+  ) {
+    return this.tickets.disassociate(
+      user.id,
+      id,
+      toObjectType,
+      toObjectId,
+      query.associationTypeId,
+    );
   }
 
   // ── Associations (Ticket ↔ Contact) ────────────────────────────────────────
@@ -155,4 +257,10 @@ export class HubspotTicketsController {
   ) {
     return this.tickets.disassociateDeal(user.id, id, dealId);
   }
+}
+
+function splitCsv(value?: string): string[] | undefined {
+  if (!value) return undefined;
+  const values = [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
+  return values.length ? values : undefined;
 }

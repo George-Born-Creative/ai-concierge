@@ -1,5 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -7,7 +11,37 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+
+class CompanyAssociationTypeDto {
+  @IsIn(['HUBSPOT_DEFINED', 'USER_DEFINED', 'INTEGRATOR_DEFINED'])
+  associationCategory!: 'HUBSPOT_DEFINED' | 'USER_DEFINED' | 'INTEGRATOR_DEFINED';
+
+  @IsInt()
+  @Min(1)
+  associationTypeId!: number;
+}
+
+class CompanyAssociationTargetDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  id!: string;
+}
+
+export class CompanyCreateAssociationDto {
+  @ValidateNested()
+  @Type(() => CompanyAssociationTargetDto)
+  to!: CompanyAssociationTargetDto;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => CompanyAssociationTypeDto)
+  types!: CompanyAssociationTypeDto[];
+}
 
 /**
  * Mirrors `HubspotCompanyWriteInput` in the service. We keep the property
@@ -32,6 +66,12 @@ export class CreateHubspotCompanyDto {
   @IsString()
   @MaxLength(200)
   domain?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  additionalDomains?: string[];
 
   @IsOptional()
   @IsString()
@@ -73,4 +113,26 @@ export class CreateHubspotCompanyDto {
   @IsUrl({ require_protocol: false })
   @MaxLength(500)
   website?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  lifecycleStage?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  ownerId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  pinnedEngagementId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => CompanyCreateAssociationDto)
+  associations?: CompanyCreateAssociationDto[];
 }
