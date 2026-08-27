@@ -2,6 +2,8 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, UseGu
 import { AuthenticatedUser, CurrentUser } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { CalendarFreeSlotsQueryDto } from '../dto/calendar-free-slots.query.dto';
 import { CalendarV3PayloadDto, CalendarV3QueryDto } from '../dto/calendar-v3.dto';
 import { CreateGhlCalendarDto } from '../dto/create-calendar.dto';
@@ -9,6 +11,7 @@ import { UpdateGhlCalendarDto } from '../dto/update-calendar.dto';
 import { CalendarsService } from './calendars.service';
 
 @Controller('integrations/ghl')
+@RequireCrmPlan(CrmProvider.GHL)
 export class CalendarsController {
   constructor(private readonly calendars: CalendarsService) {}
 

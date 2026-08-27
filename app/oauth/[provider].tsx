@@ -1,9 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ScreenShell } from '@/components/screen';
-import { buildConnectRouteParams, type OAuthProvider } from '@/lib/oauth';
+import {
+  buildConnectRouteParams,
+  consumeOAuthReturnFrom,
+  type OAuthProvider,
+} from '@/lib/oauth';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 /**
@@ -21,13 +25,20 @@ export default function OAuthReturnRoute() {
     reason?: string;
   }>();
 
+  const consumedFrom = useRef<'crm' | null | undefined>(undefined);
+
   useEffect(() => {
     const crm: OAuthProvider =
       provider === 'hubspot' ? 'hubspot' : provider === 'ghl' ? 'ghl' : 'ghl';
 
+    if (consumedFrom.current === undefined) {
+      consumedFrom.current = consumeOAuthReturnFrom();
+    }
+    const returnFrom = consumedFrom.current;
+    const params = buildConnectRouteParams(crm, status ?? '', reason ?? '');
     router.replace({
       pathname: '/connect',
-      params: buildConnectRouteParams(crm, status ?? '', reason ?? ''),
+      params: returnFrom === 'crm' ? { ...params, from: 'crm' } : params,
     });
   }, [provider, reason, router, status]);
 

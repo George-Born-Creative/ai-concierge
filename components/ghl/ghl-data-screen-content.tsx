@@ -233,8 +233,15 @@ export function GhlDataScreenContent() {
           <Text style={styles.notForTitle}>{CRM_LABELS.ghl} only</Text>
           <Text style={styles.notForText}>
             This view shows {CRM_LABELS.ghl} contacts, opportunities, and calendars. Your
-            account is on {getCrmLabel(provider)} — open Settings to switch CRMs.
+            account is on {getCrmLabel(provider)} — switch CRMs in Settings.
           </Text>
+          <Pressable
+            style={[styles.notForButton, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/settings/crm')}>
+            <Text style={[styles.notForButtonText, { color: colors.onPrimary }]}>
+              Open CRM provider
+            </Text>
+          </Pressable>
         </View>
       </ScreenShell>
     );
@@ -555,6 +562,17 @@ const styles = StyleSheet.create({
     lineHeight: UiTypography.bodySmall.lineHeight,
     maxWidth: 280,
     textAlign: 'center',
+  },
+  notForButton: {
+    borderRadius: UiRadii.control,
+    marginTop: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.lg,
+    paddingVertical: UiSpacing.sm,
+  },
+  notForButtonText: {
+    fontSize: UiTypography.button.fontSize,
+    fontWeight: '600',
+    lineHeight: UiTypography.button.lineHeight,
   },
 
   footnote: {

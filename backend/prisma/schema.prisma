@@ -83,10 +83,13 @@ model User {
   stripeCustomerId String?  @unique
   expoPushToken    String?
   timezone         String?
+  // Which CRM Home / assistant currently use. Distinct from "connected"
+  // (IntegrationConnection.enabled) and "entitled" (an active plan for that CRM).
+  activeCrmProvider CrmProvider?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  subscription Subscription?
+  subscriptions Subscription[]
   integrations IntegrationConnection[]
   openaiKey               OpenAIKey?
   auditLogs               AuditLog[]
@@ -133,7 +136,8 @@ model PasswordReset {
   @@index([userId, createdAt])
 }
 
-// Per client spec: one subscription = one CRM integration.
+// Each Plan SKU is tied to one CRM. A user may hold both ghl-pro and
+// hubspot-pro at once (one Subscription row per plan).
 //
 // `monthlyPrice` is the Stripe / web price (used for Android PaymentSheet and
 // the iOS Stripe-via-web Checkout option). `applePrice` is the Apple IAP
@@ -157,8 +161,7 @@ model Plan {
   subscriptions Subscription[]
 }
 
-// userId is unique so a user has at most one subscription at a time.
-// When the plan changes we update the existing row in place.
+// One row per (user, plan). A user can hold ghl-pro and hubspot-pro together.
 //
 // `paymentProvider` discriminates which set of billing identifiers is live:
 //   STRIPE → stripeSubscriptionId is set, Apple fields null
@@ -166,7 +169,7 @@ model Plan {
 //            still be present from a prior Stripe sub but isn't authoritative
 model Subscription {
   id                          String             @id @default(cuid())
-  userId                      String             @unique
+  userId                      String
   planId                      String
   paymentProvider             PaymentProvider    @default(STRIPE)
   stripeSubscriptionId        String?            @unique
@@ -179,11 +182,13 @@ model Subscription {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
+
+  @@unique([userId, planId])
+  @@index([userId, status])
 }
 
 // All third-party tokens are encrypted with AES-256-GCM before being stored.
-// `enabled` is flipped to false by the Stripe webhook when the user's
-// subscription becomes inactive.
+// `enabled` is flipped to false when that CRM's subscription becomes inactive.
 model IntegrationConnection {
   id           String      @id @default(cuid())
   userId       String

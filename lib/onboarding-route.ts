@@ -1,14 +1,40 @@
 import type { Href } from 'expo-router';
 
-import type { User, UserPlan } from './api/types';
+import type { CrmProvider, PlanCode, User, UserPlan } from './api/types';
 
 // Stripe statuses we consider "subscribed". Anything else — incomplete,
 // past_due, canceled, unpaid — sends the user back to /plan to finish or
 // re-subscribe.
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing']);
 
+export const PLAN_CODE_FOR_PROVIDER: Record<CrmProvider, PlanCode> = {
+  ghl: 'ghl-pro',
+  hubspot: 'hubspot-pro',
+};
+
 export function isActiveSubscription(plan?: UserPlan | null): boolean {
   return !!plan && ACTIVE_SUBSCRIPTION_STATUSES.has(plan.status);
+}
+
+export function providerForPlanCode(code: PlanCode): CrmProvider {
+  return code === 'hubspot-pro' ? 'hubspot' : 'ghl';
+}
+
+export function hasCrmEntitlement(
+  user: User | null | undefined,
+  provider: CrmProvider,
+): boolean {
+  if (user?.entitlements?.[provider]) return true;
+  if (user?.plans?.some((plan) => plan.provider === provider && isActiveSubscription(plan))) {
+    return true;
+  }
+  return user?.plan?.provider === provider && isActiveSubscription(user.plan);
+}
+
+export function hasAnyActivePlan(user: User | null | undefined): boolean {
+  if (user?.entitlements?.ghl || user?.entitlements?.hubspot) return true;
+  if (user?.plans?.some((plan) => isActiveSubscription(plan))) return true;
+  return isActiveSubscription(user?.plan);
 }
 
 // Centralized "where should this user go next?" logic. Used by:
@@ -31,12 +57,15 @@ export function routeForUser(user: User): Href {
   if (user.emailVerified === false) {
     return '/verify-email' as Href;
   }
-  if (!isActiveSubscription(user.plan)) {
+  if (!hasAnyActivePlan(user)) {
     return '/plan';
   }
   if (!user.hasIntegration) {
-    // user.plan is guaranteed non-null here by isActiveSubscription.
-    return { pathname: '/connect', params: { provider: user.plan!.provider } };
+    const provider =
+      user.provider ??
+      user.plan?.provider ??
+      (user.entitlements?.hubspot ? 'hubspot' : 'ghl');
+    return { pathname: '/connect', params: { provider } };
   }
   if (!user.hasOpenAIKey) {
     return '/openai-key';

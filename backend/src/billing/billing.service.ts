@@ -4,9 +4,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PaymentProvider, Plan, Subscription, SubscriptionStatus } from '@prisma/client';
+import { CrmProvider, PaymentProvider, Plan, Subscription, SubscriptionStatus } from '@prisma/client';
 import Stripe from 'stripe';
 
+import {
+  fallbackActiveCrmProvider,
+  isActiveSubscriptionStatus,
+  setActiveCrmProviderIfNull,
+} from '../common/crm-account';
 import { PlansService } from '../plans/plans.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { STRIPE_API_VERSION, StripeProvider } from './stripe.provider';
@@ -27,6 +32,8 @@ type PaymentSheetParams = {
   publishableKey: string;
 };
 
+type SubscriptionWithPlan = Subscription & { plan: Plan };
+
 // Surfaced to the mobile app when it tries to cancel an Apple sub. Apple
 // universal link — iOS routes it straight to the Manage Subscriptions sheet,
 // no Safari hop.
@@ -45,17 +52,15 @@ export class BillingService {
   // Creates a Stripe subscription in `incomplete` state and returns the
   // PaymentSheet parameters the mobile SDK needs to collect a payment method.
   //
-  // One subscription per user (enforced by Subscription.userId @unique):
-  //   - already ACTIVE/TRIALING on the same plan → reject (no double-charge)
-  //   - already ACTIVE/TRIALING on a different plan → cancel it, disable the
-  //     linked CRM integration, then create the new one (CRM switch)
-  //   - any other lingering sub (INCOMPLETE/PAST_DUE/etc) → cancel before
-  //     creating a fresh one so we never leave orphans in Stripe
+  // One subscription per (user, plan) — a user may hold ghl-pro and hubspot-pro:
+  //   - already ACTIVE/TRIALING on this plan → reject (no double-charge)
+  //   - lingering INCOMPLETE/PAST_DUE on this plan → cancel that Stripe sub only
+  //   - an active subscription on the *other* CRM plan is left untouched
   async createPaymentSheet(userId: string, planCode: string): Promise<PaymentSheetParams> {
     const plan = await this.plans.findByCode(planCode);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { subscription: { include: { plan: true } } },
+      include: { subscriptions: { include: { plan: true } } },
     });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -64,19 +69,12 @@ export class BillingService {
     const stripe = this.stripeProvider.client;
     const customerId = await this.ensureStripeCustomer(stripe, userId, user.email, user.stripeCustomerId);
 
-    if (user.subscription) {
-      const samePlan = user.subscription.planId === plan.id;
-      const active = isActive(user.subscription.status);
-
-      if (samePlan && active) {
-        throw new BadRequestException('You already have this plan active.');
-      }
-
-      await this.cancelStripeSubscription(stripe, user.subscription.stripeSubscriptionId);
-
-      if (!samePlan) {
-        await this.disableIntegrationsForUser(userId);
-      }
+    const existingForPlan = user.subscriptions.find((sub) => sub.planId === plan.id);
+    if (existingForPlan && isActiveSubscriptionStatus(existingForPlan.status)) {
+      throw new BadRequestException('You already have this plan active.');
+    }
+    if (existingForPlan?.stripeSubscriptionId) {
+      await this.cancelStripeSubscription(stripe, existingForPlan.stripeSubscriptionId);
     }
 
     const stripeSub = await stripe.subscriptions.create({
@@ -111,29 +109,35 @@ export class BillingService {
     };
   }
 
-  // Pulls the live status of the user's Stripe subscription and reconciles
-  // the local row. Lets the mobile app force the row out of INCOMPLETE right
+  // Pulls the live status of the user's Stripe subscription(s) and reconciles
+  // the local rows. Lets the mobile app force a row out of INCOMPLETE right
   // after PaymentSheet succeeds, even when Stripe webhooks aren't wired in
   // local dev (whsec_replace_me).
   async syncSubscriptionFromStripe(userId: string): Promise<{ status: SubscriptionStatus }> {
-    const sub = await this.prisma.subscription.findUnique({ where: { userId } });
-    if (!sub || !sub.stripeSubscriptionId) {
+    const subs = await this.prisma.subscription.findMany({
+      where: { userId, stripeSubscriptionId: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (subs.length === 0) {
       throw new NotFoundException('No Stripe subscription to refresh');
     }
-    const stripeSub = await this.stripeProvider.client.subscriptions.retrieve(
-      sub.stripeSubscriptionId,
-      { expand: ['latest_invoice.payment_intent'] },
-    );
-    // metadata is set when we create the sub; if a manual sub is missing it,
-    // backfill so handleSubscriptionEvent can find the user.
-    if (!stripeSub.metadata?.userId) {
-      await this.stripeProvider.client.subscriptions.update(stripeSub.id, {
-        metadata: { ...stripeSub.metadata, userId },
-      });
-      stripeSub.metadata = { ...stripeSub.metadata, userId };
+
+    let lastStatus: SubscriptionStatus = SubscriptionStatus.INCOMPLETE;
+    for (const sub of subs) {
+      const stripeSub = await this.stripeProvider.client.subscriptions.retrieve(
+        sub.stripeSubscriptionId!,
+        { expand: ['latest_invoice.payment_intent'] },
+      );
+      if (!stripeSub.metadata?.userId) {
+        await this.stripeProvider.client.subscriptions.update(stripeSub.id, {
+          metadata: { ...stripeSub.metadata, userId },
+        });
+        stripeSub.metadata = { ...stripeSub.metadata, userId };
+      }
+      await this.handleSubscriptionEvent(stripeSub);
+      lastStatus = mapStripeStatus(stripeSub.status);
     }
-    await this.handleSubscriptionEvent(stripeSub);
-    return { status: mapStripeStatus(stripeSub.status) };
+    return { status: lastStatus };
   }
 
   // Stripe subs cancel here; Apple subs return a deep link instead because
@@ -141,42 +145,43 @@ export class BillingService {
   // Stripe (the webhook will reconcile anyway) but never for Apple — Apple
   // will only release the entitlement at the end of the billing period and
   // its EXPIRED notification is what actually transitions the row.
+  //
+  // With two CRM plans, cancel targets the active CRM's Stripe sub. Apple
+  // still returns the manage URL (App Store owns both products).
   async cancelActiveSubscription(userId: string): Promise<CancelSubscriptionResult> {
-    const sub = await this.prisma.subscription.findUnique({ where: { userId } });
-    if (!sub) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { subscriptions: { include: { plan: true } } },
+    });
+    const target = pickSubscriptionToCancel(user?.subscriptions ?? [], user?.activeCrmProvider ?? null);
+    if (!target) {
       return { canceled: false };
     }
 
-    if (sub.paymentProvider === PaymentProvider.APPLE) {
+    if (target.paymentProvider === PaymentProvider.APPLE) {
       return { canceled: false, manageUrl: APPLE_MANAGE_SUBSCRIPTIONS_URL };
     }
 
-    if (!sub.stripeSubscriptionId) {
+    if (!target.stripeSubscriptionId) {
       return { canceled: false };
     }
 
-    await this.cancelStripeSubscription(this.stripeProvider.client, sub.stripeSubscriptionId);
+    await this.cancelStripeSubscription(this.stripeProvider.client, target.stripeSubscriptionId);
     await this.prisma.subscription.update({
-      where: { userId },
+      where: { id: target.id },
       data: { status: SubscriptionStatus.CANCELED },
     });
-    await this.disableIntegrationsForUser(userId);
+    await this.disableIntegrationsForUser(userId, target.plan.provider);
     return { canceled: true };
   }
 
-  // Used by AppleBillingService when a user who already had a Stripe sub
-  // (e.g. on ghl-pro) buys a different CRM plan via Apple IAP. We can't keep
-  // both rows around — Subscription.userId is unique — and we need to flip
-  // the CRM integration off so we don't keep talking to the old CRM.
-  async cancelStripeAndDisableIntegrations(
-    userId: string,
-    subscription: Subscription,
-  ): Promise<void> {
+  // Same CRM, Stripe → Apple: cancel only that plan's Stripe sub. Does not
+  // disable the CRM connection and does not touch the other CRM's plan.
+  async cancelStripeSubscriptionForPlan(subscription: Subscription): Promise<void> {
     await this.cancelStripeSubscription(
       this.stripeProvider.client,
       subscription.stripeSubscriptionId,
     );
-    await this.disableIntegrationsForUser(userId);
   }
 
   // ── Webhook handlers ────────────────────────────────────────────────────────
@@ -196,10 +201,10 @@ export class BillingService {
 
     const status = mapStripeStatus(stripeSub.status);
     await this.prisma.subscription.upsert({
-      where: { userId },
+      where: { userId_planId: { userId, planId: plan.id } },
       update: {
-        planId: plan.id,
         stripeSubscriptionId: stripeSub.id,
+        paymentProvider: PaymentProvider.STRIPE,
         status,
         currentPeriodEnd: stripeSub.current_period_end
           ? new Date(stripeSub.current_period_end * 1000)
@@ -209,6 +214,7 @@ export class BillingService {
         userId,
         planId: plan.id,
         stripeSubscriptionId: stripeSub.id,
+        paymentProvider: PaymentProvider.STRIPE,
         status,
         currentPeriodEnd: stripeSub.current_period_end
           ? new Date(stripeSub.current_period_end * 1000)
@@ -216,8 +222,10 @@ export class BillingService {
       },
     });
 
-    if (!isActive(status)) {
-      await this.disableIntegrationsForUser(userId);
+    if (isActiveSubscriptionStatus(status)) {
+      await setActiveCrmProviderIfNull(this.prisma, userId, plan.provider);
+    } else {
+      await this.disableIntegrationsForUser(userId, plan.provider);
     }
   }
 
@@ -252,14 +260,14 @@ export class BillingService {
     }
   }
 
-  // Exposed (not private) so AppleBillingService can call it from the
-  // notifications path — REFUND / REVOKE / EXPIRED all need the same CRM
-  // teardown behaviour as a Stripe cancel.
-  async disableIntegrationsForUser(userId: string) {
+  // Exposed so AppleBillingService can call it from REFUND / REVOKE / EXPIRED.
+  // Only the lapsed CRM is disconnected; the other plan stays up.
+  async disableIntegrationsForUser(userId: string, provider: CrmProvider) {
     await this.prisma.integrationConnection.updateMany({
-      where: { userId, enabled: true },
+      where: { userId, provider, enabled: true },
       data: { enabled: false },
     });
+    await fallbackActiveCrmProvider(this.prisma, userId);
   }
 
   private async upsertSubscriptionRecord(
@@ -269,16 +277,17 @@ export class BillingService {
   ) {
     const status = mapStripeStatus(stripeSub.status);
     await this.prisma.subscription.upsert({
-      where: { userId },
+      where: { userId_planId: { userId, planId: plan.id } },
       update: {
-        planId: plan.id,
         stripeSubscriptionId: stripeSub.id,
+        paymentProvider: PaymentProvider.STRIPE,
         status,
       },
       create: {
         userId,
         planId: plan.id,
         stripeSubscriptionId: stripeSub.id,
+        paymentProvider: PaymentProvider.STRIPE,
         status,
       },
     });
@@ -312,6 +321,16 @@ function mapStripeStatus(status: Stripe.Subscription.Status): SubscriptionStatus
   }
 }
 
-function isActive(status: SubscriptionStatus): boolean {
-  return status === SubscriptionStatus.ACTIVE || status === SubscriptionStatus.TRIALING;
+function pickSubscriptionToCancel(
+  subscriptions: SubscriptionWithPlan[],
+  activeCrmProvider: CrmProvider | null,
+): SubscriptionWithPlan | undefined {
+  if (activeCrmProvider) {
+    const match = subscriptions.find((sub) => sub.plan.provider === activeCrmProvider);
+    if (match) return match;
+  }
+  return (
+    subscriptions.find((sub) => isActiveSubscriptionStatus(sub.status)) ??
+    subscriptions[0]
+  );
 }

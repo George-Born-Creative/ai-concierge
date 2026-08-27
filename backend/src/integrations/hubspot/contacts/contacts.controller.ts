@@ -17,6 +17,8 @@ import {
 } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { HubspotContactsService } from './contacts.service';
 import { HubspotContactIdentifierQueryDto } from './dto/contact-identifier.query.dto';
 import { CreateHubspotContactDto } from './dto/create-contact.dto';
@@ -25,6 +27,7 @@ import { SearchHubspotContactsQueryDto } from './dto/search-contacts.query.dto';
 import { UpdateHubspotContactDto } from './dto/update-contact.dto';
 
 @Controller('integrations/hubspot/contacts')
+@RequireCrmPlan(CrmProvider.HUBSPOT)
 @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
 export class HubspotContactsController {
   constructor(private readonly contacts: HubspotContactsService) {}

@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,8 +29,15 @@ import {
   verifyAppleReceipt,
 } from '@/lib/api/payment';
 import { listPlans } from '@/lib/api/plans';
-import type { PlanCode, PlanListItem } from '@/lib/api/types';
-import { isActiveSubscription, routeForUser } from '@/lib/onboarding-route';
+import type { CrmProvider, PlanCode, PlanListItem } from '@/lib/api/types';
+import { setOAuthReturnFrom } from '@/lib/oauth';
+import {
+  PLAN_CODE_FOR_PROVIDER,
+  hasAnyActivePlan,
+  hasCrmEntitlement,
+  providerForPlanCode,
+  routeForUser,
+} from '@/lib/onboarding-route';
 import { getUser, refreshUser } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 
@@ -88,9 +95,25 @@ export function PlanSelectionScreen() {
   const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
+  const { from, provider } = useLocalSearchParams<{
+    from?: string;
+    provider?: string;
+  }>();
+  const fromCrm = from === 'crm';
+  const lockedProvider: CrmProvider | null =
+    fromCrm && (provider === 'ghl' || provider === 'hubspot') ? provider : null;
+  const lockedPlan: PlanCode | null = lockedProvider
+    ? PLAN_CODE_FOR_PROVIDER[lockedProvider]
+    : null;
   const stripeSheet = useStripePaymentSheet();
   const appleIap = useAppleIap();
-  const [selectedPlan, setSelectedPlan] = useState<PlanCode>('ghl-pro');
+  const [selectedPlan, setSelectedPlan] = useState<PlanCode>(
+    lockedPlan ?? 'ghl-pro',
+  );
+
+  useEffect(() => {
+    if (lockedPlan) setSelectedPlan(lockedPlan);
+  }, [lockedPlan]);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [plans, setPlans] = useState<PlanListItem[] | null>(null);
@@ -202,9 +225,18 @@ export function PlanSelectionScreen() {
       } catch {
         if (!profile) return;
       }
+      if (fromCrm) {
+        const nextProvider = lockedProvider ?? providerForPlanCode(selectedPlan);
+        setOAuthReturnFrom('crm');
+        router.replace({
+          pathname: '/connect',
+          params: { from: 'crm', provider: nextProvider },
+        });
+        return;
+      }
       router.replace(routeForUser(profile));
     },
-    [router],
+    [fromCrm, lockedProvider, router, selectedPlan],
   );
 
   // Subscribe button entry point. iOS opens the payment-method sheet so the
@@ -245,7 +277,15 @@ export function PlanSelectionScreen() {
         // Fall back to cached profile if the network hiccups.
       }
 
-      if (user && isActiveSubscription(user.plan)) {
+      if (fromCrm) {
+        if (user && hasCrmEntitlement(user, providerForPlanCode(active.id))) {
+          const planName = active.name;
+          show(`You already have an active subscription (${planName}).`, 'info');
+          setPaymentSheetVisible(false);
+          await continueAfterPlan(user);
+          return;
+        }
+      } else if (user && hasAnyActivePlan(user)) {
         const planName = user.plan?.name ?? 'your plan';
         show(`You already have an active subscription (${planName}).`, 'info');
         setPaymentSheetVisible(false);
@@ -433,7 +473,11 @@ export function PlanSelectionScreen() {
 
   return (
     <ScreenShell>
-      <PageHeader title="Choose plan" showBack onBack={() => router.replace('/signup')} />
+      <PageHeader
+        title="Choose plan"
+        showBack
+        onBack={() => router.replace(fromCrm ? '/settings/crm' : '/signup')}
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -442,21 +486,32 @@ export function PlanSelectionScreen() {
         <View style={styles.headerIcon}>
           <MaterialIcons name="workspace-premium" size={28} color={colors.primary} />
         </View>
-        <Text style={styles.title}>Choose your CRM plan</Text>
+        <Text style={styles.title}>{fromCrm ? 'Add a CRM plan' : 'Choose your CRM plan'}</Text>
         <Text style={styles.subtitle}>
-          One subscription = one CRM integration. Pick the CRM you want your voice AI to drive.
+          {fromCrm
+            ? 'Adding this plan does not cancel your existing CRM subscription. After you pay, you will connect this CRM next.'
+            : 'One subscription = one CRM. Adding a second plan later does not cancel the first.'}
         </Text>
 
         <View style={styles.planList}>
           {displayPlans.map((card) => {
             const isSelected = selectedPlan === card.id;
             const live = card.live;
+            const lockedOut = Boolean(lockedPlan && card.id !== lockedPlan);
 
             return (
               <Pressable
                 key={card.id}
-                style={[styles.planCard, isSelected && styles.selectedPlanCard]}
-                onPress={() => setSelectedPlan(card.id)}>
+                style={[
+                  styles.planCard,
+                  isSelected && styles.selectedPlanCard,
+                  lockedOut && styles.lockedPlanCard,
+                ]}
+                onPress={() => {
+                  if (lockedOut) return;
+                  setSelectedPlan(card.id);
+                }}
+                disabled={lockedOut}>
                 <View style={styles.planHeader}>
                   <View style={styles.planTitleRow}>
                     <View style={styles.planIcon}>
@@ -624,6 +679,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
+  },
+  lockedPlanCard: {
+    opacity: 0.55,
   },
   planHeader: {
     alignItems: 'flex-start',

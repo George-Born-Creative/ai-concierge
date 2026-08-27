@@ -33,6 +33,9 @@ export function SupportArticleScreenContent({ slug }: { slug: string }) {
       case 'settings':
         router.push('/settings' as Href);
         return;
+      case 'crm-settings':
+        router.push('/settings/crm' as Href);
+        return;
       case 'openai-key':
         router.push({
           pathname: '/openai-key',

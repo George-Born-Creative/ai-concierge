@@ -22,10 +22,11 @@ import {
   type ResolvedTheme,
   type ThemeColors,
 } from '@/constants/theme';
-import { ghlApi, hubspotApi, openaiApi, remindersApi } from '@/lib/api';
+import { openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
 import type { CrmProvider, User } from '@/lib/api/types';
-import { getCrmLabel, getCrmLabelList } from '@/lib/crm/labels';
+import { CRM_LABELS } from '@/lib/crm/labels';
+import { isActiveSubscription } from '@/lib/onboarding-route';
 import { clearPushTokenCache } from '@/lib/push/register-push-token';
 import { clearSession, getUser, refreshUser } from '@/lib/session';
 import { useAppTheme } from '@/lib/theme/theme-provider';
@@ -77,20 +78,9 @@ const upcomingFeatures = [
     title: 'Pipeline insights',
     description: 'Ask "how many calls this week?" and get summarized analytics.',
   },
-  {
-    icon: 'hub' as const,
-    title: 'Multi-CRM support',
-    description: `Connect ${getCrmLabelList(' and ')} and switch between them.`,
-  },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type CrmStatus = {
-  provider: CrmProvider;
-  connected: boolean;
-  detail?: string;
-};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -101,7 +91,6 @@ export function ProfileScreenContent() {
   const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
 
   const [user, setUser] = useState<User | null>(() => getUser());
-  const [crmStatus, setCrmStatus] = useState<CrmStatus | null>(null);
   const [openAIKeyLast4, setOpenAIKeyLast4] = useState<string | null>(null);
   const [openAIConnected, setOpenAIConnected] = useState<boolean | null>(null);
   const [loadingStatuses, setLoadingStatuses] = useState(true);
@@ -113,11 +102,9 @@ export function ProfileScreenContent() {
   const loadEverything = useCallback(async () => {
     setLoadingStatuses(true);
     try {
-      const [meResult, openaiResult, ghlResult, hubspotResult] = await Promise.allSettled([
+      const [meResult, openaiResult] = await Promise.allSettled([
         getMe(),
         openaiApi.getStatus(),
-        ghlApi.getStatus(),
-        hubspotApi.getStatus(),
       ]);
 
       if (meResult.status === 'fulfilled') {
@@ -130,39 +117,6 @@ export function ProfileScreenContent() {
         setOpenAIKeyLast4(openaiResult.value.last4 ?? null);
       } else {
         setOpenAIConnected(null);
-      }
-
-      // Pick the CRM the user is actually on. Fall back to whichever provider
-      // reports connected, then GHL as a default.
-      const meProvider = meResult.status === 'fulfilled' ? meResult.value.provider : null;
-      const ghlConnected = ghlResult.status === 'fulfilled' && ghlResult.value.connected;
-      const hubspotConnected = hubspotResult.status === 'fulfilled' && hubspotResult.value.connected;
-
-      let resolvedProvider: CrmProvider | null = meProvider ?? null;
-      if (!resolvedProvider) {
-        if (ghlConnected) resolvedProvider = 'ghl';
-        else if (hubspotConnected) resolvedProvider = 'hubspot';
-        else resolvedProvider = 'ghl';
-      }
-
-      if (resolvedProvider === 'ghl') {
-        setCrmStatus({
-          provider: 'ghl',
-          connected: ghlConnected,
-          detail:
-            ghlResult.status === 'fulfilled' && ghlResult.value.locationId
-              ? `Location ${ghlResult.value.locationId}`
-              : undefined,
-        });
-      } else {
-        setCrmStatus({
-          provider: 'hubspot',
-          connected: hubspotConnected,
-          detail:
-            hubspotResult.status === 'fulfilled' && hubspotResult.value.portalId
-              ? `Portal ${hubspotResult.value.portalId}`
-              : undefined,
-        });
       }
     } finally {
       setLoadingStatuses(false);
@@ -204,12 +158,32 @@ export function ProfileScreenContent() {
 
   const initials = getInitials(user?.name, user?.email);
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'AI-Concierge';
-  const planLabel = user?.plan ? formatPlanLabel(user.plan.name, user.plan.status) : null;
-  const crmLabel = getCrmLabel(crmStatus?.provider ?? null);
-  const planBadgeStyle = getTonePillStyle(
-    user?.plan ? planTone(user.plan.status) : 'muted',
-    colors,
-  );
+  const connectedProvider: CrmProvider | null =
+    user?.provider && user.integrations?.[user.provider]
+      ? user.provider
+      : user?.integrations?.ghl
+        ? 'ghl'
+        : user?.integrations?.hubspot
+          ? 'hubspot'
+          : user?.provider && user.hasIntegration
+            ? user.provider
+            : null;
+  const connectedPlan =
+    (user?.plans?.length ? user.plans : user?.plan ? [user.plan] : []).find(
+      (plan) =>
+        connectedProvider != null &&
+        plan.provider === connectedProvider &&
+        isActiveSubscription(plan),
+    ) ??
+    (user?.plan?.provider === connectedProvider && isActiveSubscription(user.plan)
+      ? user.plan
+      : null);
+  const crmBadgeLabel = connectedProvider
+    ? connectedPlan
+      ? formatPlanLabel(CRM_LABELS[connectedProvider], connectedPlan.status)
+      : `${CRM_LABELS[connectedProvider]} · Connected`
+    : null;
+  const crmBadgeStyle = getTonePillStyle(connectedProvider ? 'success' : 'muted', colors);
 
   return (
     <ScreenShell edges={[]}>
@@ -241,17 +215,17 @@ export function ProfileScreenContent() {
                   {user.email}
                 </Text>
               ) : null}
-              {planLabel ? (
+              {crmBadgeLabel ? (
                 <View
                   style={[
                     styles.planBadge,
-                    { backgroundColor: planBadgeStyle.bg, borderColor: planBadgeStyle.border },
+                    { backgroundColor: crmBadgeStyle.bg, borderColor: crmBadgeStyle.border },
                   ]}>
-                  <View style={[styles.planDot, { backgroundColor: planBadgeStyle.fg }]} />
+                  <View style={[styles.planDot, { backgroundColor: crmBadgeStyle.fg }]} />
                   <Text
-                    style={[styles.planBadgeText, { color: planBadgeStyle.fg }]}
+                    style={[styles.planBadgeText, { color: crmBadgeStyle.fg }]}
                     numberOfLines={1}>
-                    {planLabel}
+                    {crmBadgeLabel}
                   </Text>
                 </View>
               ) : null}
@@ -263,26 +237,13 @@ export function ProfileScreenContent() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Connections</Text>
 
-          {loadingStatuses && !crmStatus && openAIConnected == null ? (
+          {loadingStatuses && openAIConnected == null ? (
             <>
-              <ConnectionRowSkeleton />
               <ConnectionRowSkeleton />
               <ConnectionRowSkeleton />
             </>
           ) : (
             <>
-              <ConnectionRow
-                icon="hub"
-                title={crmLabel}
-                value={
-                  crmStatus?.connected
-                    ? crmStatus.detail ?? 'Contacts & calendars enabled'
-                    : 'Open Settings to connect'
-                }
-                statusLabel={crmLabel}
-                tone={crmStatus?.connected ? 'success' : 'muted'}
-              />
-
               <ConnectionRow
                 icon="vpn-key"
                 title="OpenAI API key"
@@ -301,12 +262,12 @@ export function ProfileScreenContent() {
                 icon="workspace-premium"
                 title="Subscription"
                 value={
-                  user?.plan
-                    ? `${user.plan.name} plan is active`
-                    : 'No active plan — pick one in Plans'
+                  connectedPlan
+                    ? `${connectedPlan.name} plan is active`
+                    : 'No active plan for the connected CRM'
                 }
-                statusLabel={user?.plan ? user.plan.name : 'No plan'}
-                tone={user?.plan ? planTone(user.plan.status) : 'muted'}
+                statusLabel={connectedPlan ? connectedPlan.name : 'No plan'}
+                tone={connectedPlan ? planTone(connectedPlan.status) : 'muted'}
               />
             </>
           )}

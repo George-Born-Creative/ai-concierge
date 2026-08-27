@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CrmProvider, SubscriptionStatus } from '@prisma/client';
+import { CrmProvider, PaymentProvider, SubscriptionStatus } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -12,6 +12,25 @@ const ACTIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.TRIALING,
 ];
 
+type DiagnosticsUser = {
+  emailVerified: boolean;
+  timezone: string | null;
+  expoPushToken: string | null;
+  activeCrmProvider: CrmProvider | null;
+  subscriptions: Array<{
+    status: SubscriptionStatus;
+    paymentProvider: PaymentProvider;
+    currentPeriodEnd: Date | null;
+    plan: { provider: CrmProvider };
+  }>;
+  integrations: Array<{
+    provider: CrmProvider;
+    enabled: boolean;
+    scopes: string[];
+  }>;
+  openaiKey: { id: string } | null;
+};
+
 @Injectable()
 export class SupportDiagnosticsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -19,13 +38,14 @@ export class SupportDiagnosticsService {
   async getDiagnostics(userId: string): Promise<SupportDiagnosticsResponse> {
     // Keep this query deliberately narrow. In particular, never select OAuth
     // tokens, the encrypted OpenAI key, key last-four, or CRM identifiers.
-    const user = await this.prisma.user.findUnique({
+    const user = (await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         emailVerified: true,
         timezone: true,
         expoPushToken: true,
-        subscription: {
+        activeCrmProvider: true,
+        subscriptions: {
           select: {
             status: true,
             paymentProvider: true,
@@ -42,13 +62,17 @@ export class SupportDiagnosticsService {
         },
         openaiKey: { select: { id: true } },
       },
-    });
+    })) as DiagnosticsUser | null;
     if (!user) throw new NotFoundException('User not found');
 
-    const selectedProvider = user.subscription?.plan.provider ?? null;
+    const selectedProvider = user.activeCrmProvider ?? null;
     const integration = selectedProvider
       ? user.integrations.find((item) => item.provider === selectedProvider)
       : null;
+    const selectedSubscription =
+      user.subscriptions.find((row) => row.plan.provider === selectedProvider) ??
+      user.subscriptions[0] ??
+      null;
 
     return {
       generatedAt: new Date().toISOString(),
@@ -77,7 +101,7 @@ export class SupportDiagnosticsService {
               status: user.emailVerified ? 'ok' : 'warning',
               value: user.emailVerified ? 'Verified' : 'Not verified',
             },
-            this.subscriptionItem(user.subscription),
+            this.subscriptionItem(selectedSubscription),
           ],
         },
         {

@@ -21,16 +21,27 @@ import {
 } from '@/constants/theme';
 import { useAppTheme } from '@/lib/theme/theme-provider';
 import { ghlApi, hubspotApi } from '@/lib/api';
+import { ApiError } from '@/lib/api/client';
 import { CRM_LABELS } from '@/lib/crm/labels';
-import { useCrmOAuth, type CrmOAuthApi, type OAuthProvider } from '@/lib/oauth';
+import {
+  getOAuthReturnUrl,
+  setOAuthReturnFrom,
+  useCrmOAuth,
+  type CrmOAuthApi,
+  type OAuthProvider,
+} from '@/lib/oauth';
 import { useToast } from '@/lib/toast';
+
+type IntegrationApi = CrmOAuthApi & {
+  reconnect: (returnUrl: string) => Promise<{ url: string; state: string }>;
+};
 
 type IntegrationCard = {
   id: OAuthProvider;
   name: string;
   description: string;
   icon: keyof typeof MaterialIcons.glyphMap;
-  api: CrmOAuthApi;
+  api: IntegrationApi;
 };
 
 const INTEGRATIONS: Record<OAuthProvider, IntegrationCard> = {
@@ -55,11 +66,14 @@ export function ConnectIntegrationScreen() {
   const { colors } = useAppTheme();
   const router = useRouter();
   const { show } = useToast();
-  const { provider, oauthStatus, oauthReason } = useLocalSearchParams<{
+  const { provider, oauthStatus, oauthReason, from, reconnect } = useLocalSearchParams<{
     provider?: OAuthProvider;
     oauthStatus?: string;
     oauthReason?: string;
+    from?: string;
+    reconnect?: string;
   }>();
+  const fromCrm = from === 'crm';
 
   const activeProvider: OAuthProvider =
     provider === 'hubspot' ? 'hubspot' : provider === 'ghl' ? 'ghl' : 'ghl';
@@ -69,6 +83,7 @@ export function ConnectIntegrationScreen() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connected, setConnected] = useState(false);
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
+  const [reconnectPending, setReconnectPending] = useState(reconnect === '1');
 
   const onStatusChange = useCallback((isConnected: boolean, detail: string | null) => {
     setConnected(isConnected);
@@ -93,13 +108,41 @@ export function ConnectIntegrationScreen() {
     }, [loadConnectionStatus]),
   );
 
-  function continueToOpenAIKey() {
+  function continueAfterConnect() {
+    if (fromCrm) {
+      router.replace('/settings/crm');
+      return;
+    }
     router.replace({ pathname: '/openai-key', params: { provider: integration.id } });
+  }
+
+  async function handleStartConnect() {
+    setOAuthReturnFrom(fromCrm ? 'crm' : null);
+    if (reconnectPending) {
+      try {
+        setSubmitting(true);
+        await integration.api.reconnect(getOAuthReturnUrl(activeProvider));
+      } catch (err) {
+        setSubmitting(false);
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : `Could not start ${integration.name} reconnect.`;
+        show(message, 'error');
+        return;
+      }
+    }
+    await startOAuthConnect();
+    setReconnectPending(false);
   }
 
   return (
     <ScreenShell>
-      <PageHeader title={`Connect ${integration.name}`} showBack onBack={() => router.replace('/plan')} />
+      <PageHeader
+        title={`Connect ${integration.name}`}
+        showBack
+        onBack={() => router.replace(fromCrm ? '/settings/crm' : '/plan')}
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -141,22 +184,26 @@ export function ConnectIntegrationScreen() {
           </View>
         </View>
 
-        {connected ? (
-          <Pressable style={styles.primaryButton} onPress={continueToOpenAIKey}>
+        {connected && !reconnectPending ? (
+          <Pressable style={styles.primaryButton} onPress={continueAfterConnect}>
             <MaterialIcons name="arrow-forward" size={22} color={colors.onPrimary} />
-            <Text style={styles.primaryButtonText}>Continue to OpenAI key</Text>
+            <Text style={styles.primaryButtonText}>
+              {fromCrm ? 'Return to CRM settings' : 'Continue to OpenAI key'}
+            </Text>
           </Pressable>
         ) : (
           <Pressable
             style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
-            onPress={startOAuthConnect}
+            onPress={() => void handleStartConnect()}
             disabled={submitting}>
             {submitting ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
               <>
                 <MaterialIcons name="link" size={22} color={colors.onPrimary} />
-                <Text style={styles.primaryButtonText}>Connect with OAuth</Text>
+                <Text style={styles.primaryButtonText}>
+                  {reconnectPending ? 'Reconnect with OAuth' : 'Connect with OAuth'}
+                </Text>
               </>
             )}
           </Pressable>
@@ -164,8 +211,10 @@ export function ConnectIntegrationScreen() {
 
         <Text style={styles.helperText}>
           After you approve in {integration.name}, you will see a success page in the browser, then
-          return here via aiconcierge://oauth/{integration.id}?status=ok. You can disconnect later
-          from Profile.
+          return here via aiconcierge://oauth/{integration.id}?status=ok.
+          {fromCrm
+            ? ' You can disconnect later from CRM settings.'
+            : ' You can disconnect later from Settings.'}
         </Text>
       </ScrollView>
     </ScreenShell>

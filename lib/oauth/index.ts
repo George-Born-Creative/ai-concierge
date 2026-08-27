@@ -7,4 +7,5 @@ export {
   type OAuthProvider,
   type ParsedOAuthReturn,
 } from './deep-link';
+export { consumeOAuthReturnFrom, setOAuthReturnFrom } from './return-context';
 export { useCrmOAuth, type CrmOAuthApi } from './use-crm-oauth';

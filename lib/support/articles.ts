@@ -13,6 +13,7 @@ export type SupportTopic =
 
 export type SupportArticleAction =
   | { type: 'settings'; label: string }
+  | { type: 'crm-settings'; label: string }
   | { type: 'openai-key'; label: string }
   | { type: 'reminders'; label: string }
   | { type: 'diagnostics'; label: string }
@@ -116,12 +117,12 @@ export const SUPPORT_ARTICLES: readonly SupportArticle[] = [
     summary: 'Restore access to GoHighLevel contacts, opportunities, and calendar data.',
     keywords: ['ghl', 'go high level', 'gohighlevel', 'location', 'oauth', 'reconnect'],
     steps: [
-      { title: 'Open integration settings', body: 'Open Settings and find GoHighLevel under Integrations.' },
+      { title: 'Open CRM provider', body: 'Open Settings, tap CRM provider, and find GoHighLevel.' },
       { title: 'Choose Connect or Reconnect', body: 'The app opens the secure GoHighLevel authorization screen.' },
       { title: 'Select the correct location', body: 'Approve access for the business location you want AI Concierge to use.' },
       { title: 'Return to the app', body: 'Wait for the connection confirmation before opening CRM data.' },
     ],
-    actions: [{ type: 'settings', label: 'Open integration settings' }],
+    actions: [{ type: 'crm-settings', label: 'Open CRM provider' }],
     escalationCategory: 'CRM_GHL',
   },
   {
@@ -131,12 +132,12 @@ export const SUPPORT_ARTICLES: readonly SupportArticle[] = [
     summary: 'Reconnect when contacts work but calendars or appointments are unavailable.',
     keywords: ['ghl calendar', 'appointments', 'calendar scope', 'permission', 'missing calendar'],
     steps: [
-      { title: 'Review the connection', body: 'In Settings, check whether GoHighLevel shows a calendar permissions warning.' },
+      { title: 'Review the connection', body: 'In Settings → CRM provider, check whether GoHighLevel shows a calendar permissions warning.' },
       { title: 'Enable calendar scopes', body: 'Confirm the required calendar permissions in the GoHighLevel Marketplace.' },
-      { title: 'Reconnect the integration', body: 'Return to AI Concierge and choose Reconnect GoHighLevel.' },
+      { title: 'Reconnect the integration', body: 'Return to AI Concierge and tap Reconnect on the GoHighLevel card.' },
       { title: 'Approve every requested scope', body: 'Finish authorization, then retry the calendar or appointment action.' },
     ],
-    actions: [{ type: 'settings', label: 'Open integration settings' }],
+    actions: [{ type: 'crm-settings', label: 'Open CRM provider' }],
     escalationCategory: 'CRM_GHL',
   },
   {
@@ -146,12 +147,12 @@ export const SUPPORT_ARTICLES: readonly SupportArticle[] = [
     summary: 'Restore access to HubSpot contacts, companies, and deals.',
     keywords: ['hubspot', 'portal', 'oauth', 'reconnect', 'contacts', 'deals'],
     steps: [
-      { title: 'Open integration settings', body: 'Open Settings and find HubSpot under Integrations.' },
+      { title: 'Open CRM provider', body: 'Open Settings, tap CRM provider, and find HubSpot.' },
       { title: 'Choose Connect or Reconnect', body: 'Sign in to HubSpot in the secure authorization window.' },
       { title: 'Select the correct account', body: 'Choose the HubSpot portal that contains the records you need.' },
       { title: 'Approve access', body: 'Complete authorization and return to AI Concierge before retrying.' },
     ],
-    actions: [{ type: 'settings', label: 'Open integration settings' }],
+    actions: [{ type: 'crm-settings', label: 'Open CRM provider' }],
     escalationCategory: 'CRM_HUBSPOT',
   },
   {

@@ -3,7 +3,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,25 +15,21 @@ import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  UiControlHeights,
   UiRadii,
   UiSpacing,
   UiTypography,
 } from '@/constants/theme';
 import { ghlApi, hubspotApi, openaiApi } from '@/lib/api';
-import { ApiError } from '@/lib/api/client';
 import type {
   CrmProvider,
   GhlStatusResponse,
   HubspotStatusResponse,
   OpenAIKeyStatus,
 } from '@/lib/api/types';
-import { CRM_LABELS, getCrmLabelList } from '@/lib/crm/labels';
-import { getOAuthReturnUrl, useCrmOAuth } from '@/lib/oauth';
+import { CRM_LABELS } from '@/lib/crm/labels';
 import { getUser } from '@/lib/session';
 import { getRuntimeVersion } from '@/lib/support/version';
 import { useAppTheme } from '@/lib/theme/theme-provider';
-import { useToast } from '@/lib/toast';
 
 // Provider-aware copy + the api module + which `getStatus()` shape we expect.
 // Labels come from the shared CRM_LABELS map so the only thing this screen
@@ -42,20 +37,16 @@ import { useToast } from '@/lib/toast';
 type ProviderMeta = {
   label: string;
   api: typeof ghlApi | typeof hubspotApi;
-  /** Where the user goes to change OAuth scopes / rotate the app. */
-  scopeManagementLocation: string;
 };
 
 const PROVIDER_META: Record<CrmProvider, ProviderMeta> = {
   ghl: {
     label: CRM_LABELS.ghl,
     api: ghlApi,
-    scopeManagementLocation: `the ${CRM_LABELS.ghl} Marketplace`,
   },
   hubspot: {
     label: CRM_LABELS.hubspot,
     api: hubspotApi,
-    scopeManagementLocation: `${CRM_LABELS.hubspot}'s connected-app settings`,
   },
 };
 
@@ -63,7 +54,6 @@ type CrmStatus = GhlStatusResponse | HubspotStatusResponse;
 
 export function SettingsScreenContent() {
   const router = useRouter();
-  const { show } = useToast();
   const { colors, preference, setPreference } = useAppTheme();
 
   const currentUser = getUser();
@@ -74,30 +64,11 @@ export function SettingsScreenContent() {
   const meta = PROVIDER_META[provider];
 
   const [loadingStatus, setLoadingStatus] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<CrmStatus | null>(null);
   const [openaiStatus, setOpenaiStatus] = useState<OpenAIKeyStatus | null>(null);
   const [loadingOpenai, setLoadingOpenai] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  const onStatusChange = useCallback((isConnected: boolean) => {
-    setConnected(isConnected);
-  }, []);
-
-  // useCrmOAuth is provider-agnostic — we just feed it the right `api` and
-  // let the existing deep-link plumbing do the rest. Settings is its own
-  // OAuth surface (separate from /connect onboarding), so it doesn't need to
-  // pass `oauthStatus` / `oauthReason` route params here.
-  const { startOAuthConnect } = useCrmOAuth({
-    provider,
-    api: meta.api,
-    integrationName: meta.label,
-    show,
-    onStatusChange: (isConnected) => onStatusChange(isConnected),
-    setLoadingStatus,
-    setSubmitting,
-  });
 
   const refreshStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -138,44 +109,6 @@ export function SettingsScreenContent() {
     }, [refreshStatus, refreshOpenaiStatus]),
   );
 
-  async function handleDisconnect() {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      await meta.api.disconnect();
-      await refreshStatus();
-      show(`${meta.label} disconnected.`, 'success');
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : `Could not disconnect ${meta.label}.`;
-      show(message, 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleReconnect() {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const returnUrl = getOAuthReturnUrl(provider);
-      // Eagerly invalidate the existing token row so the OAuth screen always
-      // re-prompts for consent (e.g. after we add new scopes server-side).
-      await meta.api.reconnect(returnUrl);
-      setSubmitting(false);
-      await startOAuthConnect();
-    } catch (err) {
-      setSubmitting(false);
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : `Could not start ${meta.label} reconnect.`;
-      show(message, 'error');
-    }
-  }
-
   function handleManageOpenaiKey() {
     router.push({
       pathname: '/openai-key',
@@ -183,8 +116,8 @@ export function SettingsScreenContent() {
     });
   }
 
-  function handleSwitchCrm() {
-    show('CRM switching will be available once both providers are wired.', 'info');
+  function handleOpenCrmProvider() {
+    router.push('/settings/crm');
   }
 
   // GHL has a precomputed `calendarScopesGranted` flag; HubSpot does not.
@@ -192,7 +125,6 @@ export function SettingsScreenContent() {
     provider === 'ghl'
       ? (status as GhlStatusResponse | null)?.calendarScopesGranted
       : undefined;
-  const calendarReady = calendarScopesGranted !== false;
 
   const hasOpenaiKey = openaiStatus?.exists === true;
 
@@ -200,7 +132,7 @@ export function SettingsScreenContent() {
   // (locationId for GHL, portalId for HubSpot) when connected.
   const integrationSubtitle = useMemo(() => {
     if (loadingStatus) return 'Checking…';
-    if (!connected) return 'Tap to connect your account';
+    if (!connected) return 'Tap to connect, reconnect, or switch';
 
     if (provider === 'ghl') {
       const ghlStatus = status as GhlStatusResponse | null;
@@ -311,7 +243,7 @@ export function SettingsScreenContent() {
             icon="hub"
             iconBg={colors.primaryMuted}
             iconColor={colors.primary}
-            title={meta.label}
+            title={connected ? meta.label : 'CRM'}
             subtitle={integrationSubtitle}
             right={
               loadingStatus ? (
@@ -323,23 +255,8 @@ export function SettingsScreenContent() {
                 />
               )
             }
-            onPress={() => void handleReconnect()}
-            disabled={submitting || loadingStatus}
-            showChevron={false}
-          />
-          <Divider />
-          <Row
-            icon="swap-horiz"
-            iconBg={colors.primaryMuted}
-            iconColor={colors.primary}
-            title="CRM provider"
-            subtitle={`Switch between ${getCrmLabelList(' and ')}`}
-            right={
-              <Text style={styles.rowValue} numberOfLines={1}>
-                {meta.label}
-              </Text>
-            }
-            onPress={handleSwitchCrm}
+            onPress={handleOpenCrmProvider}
+            showChevron
           />
         </Group>
 
@@ -347,37 +264,12 @@ export function SettingsScreenContent() {
           <InfoBanner
             tone="warning"
             icon="warning"
-            text="Calendar scopes are missing on this token. Tap Reconnect to approve calendar access."
+            text="Calendar scopes are missing on this token. Open the CRM to reconnect and approve calendar access."
           />
-        ) : connected && calendarReady && !loadingStatus ? null : null}
-
-        {/* ── Integration actions ───────────────────────────────────────────── */}
-        <View style={styles.actionStack}>
-          <Pressable
-            style={[styles.primaryButton, submitting && styles.buttonDisabled]}
-            onPress={() => void handleReconnect()}
-            disabled={submitting || loadingStatus}>
-            {submitting ? (
-              <ActivityIndicator color={colors.onPrimary} />
-            ) : (
-              <Text style={styles.primaryButtonText}>
-                {connected ? `Reconnect ${meta.label}` : `Connect ${meta.label}`}
-              </Text>
-            )}
-          </Pressable>
-
-          {connected ? (
-            <Pressable
-              style={[styles.dangerButton, submitting && styles.buttonDisabled]}
-              onPress={() => void handleDisconnect()}
-              disabled={submitting || loadingStatus}>
-              <Text style={styles.dangerButtonText}>Disconnect</Text>
-            </Pressable>
-          ) : null}
-        </View>
+        ) : null}
 
         <Text style={styles.helpText}>
-          {`Reconnect after enabling new scopes in ${meta.scopeManagementLocation}. This clears the old token and opens the authorisation screen again.`}
+          Only one CRM can be connected at a time. Open it to reconnect, disconnect, or switch.
         </Text>
 
         {/* ── About ─────────────────────────────────────────────────────────── */}
@@ -682,43 +574,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: UiTypography.label.fontSize,
     lineHeight: UiTypography.label.lineHeight,
-  },
-
-  // ── Action buttons ──
-  actionStack: {
-    gap: UiSpacing.sm,
-    marginTop: UiSpacing.md,
-  },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#1A73E8',
-    borderRadius: UiRadii.control,
-    justifyContent: 'center',
-    minHeight: UiControlHeights.button,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: UiTypography.button.fontSize,
-    fontWeight: '600',
-    lineHeight: UiTypography.button.lineHeight,
-  },
-  dangerButton: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#FAD2CF',
-    borderRadius: UiRadii.control,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: UiControlHeights.button,
-  },
-  dangerButtonText: {
-    color: '#EA4335',
-    fontSize: UiTypography.button.fontSize,
-    fontWeight: '600',
-    lineHeight: UiTypography.button.lineHeight,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
   },
 
   helpText: {

@@ -11,6 +11,7 @@ import { CrmProvider } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 import { decryptSecret, encryptSecret } from '../../common/crypto';
+import { disableOtherCrmConnections, setActiveCrmProvider } from '../../common/crm-account';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const OAUTH_AUTHORIZE_URL = 'https://app.hubspot.com/oauth/authorize';
@@ -191,6 +192,8 @@ export class HubspotService {
     });
 
     await this.audit(userId, 'hubspot.connect', 'success', { portalId, scopes });
+    await disableOtherCrmConnections(this.prisma, userId, CrmProvider.HUBSPOT);
+    await setActiveCrmProvider(this.prisma, userId, CrmProvider.HUBSPOT);
 
     return { userId, returnUrl };
   }

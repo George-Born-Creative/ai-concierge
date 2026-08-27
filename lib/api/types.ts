@@ -49,6 +49,11 @@ export type CrmProvider = 'ghl' | 'hubspot';
 // purchased through StoreKit / Apple IAP.
 export type PaymentProvider = 'stripe' | 'apple';
 
+export type CrmEntitlements = {
+  ghl: boolean;
+  hubspot: boolean;
+};
+
 export type UserPlan = {
   id: string;
   name: string;
@@ -77,6 +82,11 @@ export type User = {
   // True iff the backend has a non-null `expoPushToken` for this user.
   hasPushToken?: boolean;
   plan?: UserPlan | null;
+  plans?: UserPlan[];
+  entitlements?: CrmEntitlements;
+  integrations?: CrmEntitlements;
+  // Currently selected CRM (User.activeCrmProvider). Distinct from whether
+  // that CRM is connected or paid.
   provider?: CrmProvider | null;
   hasIntegration?: boolean;
   hasOpenAIKey?: boolean;

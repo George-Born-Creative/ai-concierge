@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import { PaymentProvider, SubscriptionStatus } from '@prisma/client';
 
+import { isActiveSubscriptionStatus, setActiveCrmProviderIfNull } from '../../common/crm-account';
 import { PlansService } from '../../plans/plans.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BillingService } from '../billing.service';
@@ -75,9 +76,9 @@ export class AppleBillingService {
   //   - the originalTransactionId must not belong to a different user — App
   //     Store accounts can't be repurposed across our user IDs.
   //
-  // If the user previously had a Stripe sub on a different plan, we cancel
-  // the Stripe one and drop the related CRM integration before writing the
-  // Apple sub (CRM switch, identical behaviour to Stripe → Stripe).
+  // If the user previously had a Stripe sub on this same plan, we cancel
+  // that Stripe sub only (same-CRM Stripe → Apple). A subscription on the
+  // other CRM plan is left untouched.
   async verifyAndUpsert(
     userId: string,
     planCode: string,
@@ -119,52 +120,54 @@ export class AppleBillingService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { subscription: { include: { plan: true } } },
+      select: { id: true },
     });
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    // If the user is switching CRM plans (e.g. previously Stripe-subscribed
-    // to ghl-pro and now buying hubspot-pro via Apple), tear down the old
-    // Stripe sub + CRM connection. Same plan + same provider just refreshes
-    // the row in place.
+    // Same CRM, Stripe → Apple: cancel only this plan's Stripe sub. Buying
+    // HubSpot via Apple must not tear down an existing Stripe GHL plan.
+    const existingForPlan = await this.prisma.subscription.findFirst({
+      where: { userId, planId: plan.id },
+    });
     if (
-      user.subscription &&
-      user.subscription.planId !== plan.id &&
-      user.subscription.paymentProvider === PaymentProvider.STRIPE
+      existingForPlan?.paymentProvider === PaymentProvider.STRIPE &&
+      existingForPlan.stripeSubscriptionId
     ) {
-      await this.billing.cancelStripeAndDisableIntegrations(userId, user.subscription);
+      await this.billing.cancelStripeSubscriptionForPlan(existingForPlan);
     }
 
     const status = appleStatusFromTransaction(transaction);
     const expiresAt = transaction.expiresDate ? new Date(transaction.expiresDate) : null;
     const environment = appleEnvironmentToString(transaction.environment);
+    const appleFields = {
+      paymentProvider: PaymentProvider.APPLE,
+      status,
+      appleOriginalTransactionId: transaction.originalTransactionId,
+      appleEnvironment: environment,
+      currentPeriodEnd: expiresAt,
+      stripeSubscriptionId: null,
+    };
 
-    await this.prisma.subscription.upsert({
-      where: { userId },
-      update: {
-        planId: plan.id,
-        paymentProvider: PaymentProvider.APPLE,
-        status,
-        appleOriginalTransactionId: transaction.originalTransactionId,
-        appleEnvironment: environment,
-        currentPeriodEnd: expiresAt,
-        // Apple subs don't ride on a Stripe id — clear any stale leftover
-        // from a previous Stripe subscription on the same userId so the row
-        // is unambiguous about who owns the billing relationship.
-        stripeSubscriptionId: null,
-      },
-      create: {
-        userId,
-        planId: plan.id,
-        paymentProvider: PaymentProvider.APPLE,
-        status,
-        appleOriginalTransactionId: transaction.originalTransactionId,
-        appleEnvironment: environment,
-        currentPeriodEnd: expiresAt,
-      },
-    });
+    if (existingForPlan) {
+      await this.prisma.subscription.update({
+        where: { id: existingForPlan.id },
+        data: appleFields,
+      });
+    } else {
+      await this.prisma.subscription.create({
+        data: {
+          userId,
+          planId: plan.id,
+          ...appleFields,
+        },
+      });
+    }
+
+    if (isActiveSubscriptionStatus(status)) {
+      await setActiveCrmProviderIfNull(this.prisma, userId, plan.provider);
+    }
 
     return {
       paymentProvider: 'apple',
@@ -216,6 +219,7 @@ export class AppleBillingService {
 
     const subscription = await this.prisma.subscription.findUnique({
       where: { appleOriginalTransactionId: originalTransactionId },
+      include: { plan: true },
     });
     if (!subscription) {
       // First time we hear about this transaction — usually a race where the
@@ -236,7 +240,7 @@ export class AppleBillingService {
     const expiresAt = transaction.expiresDate ? new Date(transaction.expiresDate) : subscription.currentPeriodEnd;
 
     await this.prisma.subscription.update({
-      where: { userId: subscription.userId },
+      where: { id: subscription.id },
       data: {
         status: nextStatus,
         currentPeriodEnd: expiresAt,
@@ -244,7 +248,7 @@ export class AppleBillingService {
     });
 
     if (shouldDisableIntegrations(payload.notificationType as NotificationTypeV2 | undefined, nextStatus)) {
-      await this.billing.disableIntegrationsForUser(subscription.userId);
+      await this.billing.disableIntegrationsForUser(subscription.userId, subscription.plan.provider);
     }
 
     return { received: true };
