@@ -268,7 +268,7 @@ export function SettingsScreenContent() {
           />
         ) : null}
 
-        <Text style={styles.helpText}>
+        <Text style={[styles.helpText, { color: colors.textMuted }]}>
           Only one CRM can be connected at a time. Open it to reconnect, disconnect, or switch.
         </Text>
 
@@ -293,7 +293,7 @@ export function SettingsScreenContent() {
             iconColor={colors.icon}
             title="AI Concierge"
             subtitle="Voice & text CRM assistant"
-            right={<Text style={styles.rowValue}>{getRuntimeVersion()}</Text>}
+            right={<Text style={[styles.rowValue, { color: colors.textSecondary }]}>{getRuntimeVersion()}</Text>}
             showChevron={false}
             disabled
           />
@@ -306,15 +306,30 @@ export function SettingsScreenContent() {
 // ─── Reusable row primitives ──────────────────────────────────────────────────
 
 function SectionLabel({ children }: { children: string }) {
-  return <Text style={styles.sectionLabel}>{children.toUpperCase()}</Text>;
+  const { colors } = useAppTheme();
+  return (
+    <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+      {children.toUpperCase()}
+    </Text>
+  );
 }
 
 function Group({ children }: { children: React.ReactNode }) {
-  return <View style={styles.group}>{children}</View>;
+  const { colors } = useAppTheme();
+  return (
+    <View
+      style={[
+        styles.group,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}>
+      {children}
+    </View>
+  );
 }
 
 function Divider() {
-  return <View style={styles.divider} />;
+  const { colors } = useAppTheme();
+  return <View style={[styles.divider, { backgroundColor: colors.divider }]} />;
 }
 
 type RowProps = {
@@ -351,8 +366,13 @@ function Row({
       }
       style={({ pressed }) => [
         styles.row,
-        selected ? { backgroundColor: colors.surfaceSelected } : null,
-        pressed && !disabled ? styles.rowPressed : null,
+        {
+          backgroundColor: selected
+            ? colors.surfaceSelected
+            : pressed && !disabled
+              ? colors.surfacePressed
+              : colors.surface,
+        },
         disabled ? styles.rowDisabled : null,
       ]}
       onPress={onPress}
@@ -361,11 +381,11 @@ function Row({
         <MaterialIcons name={icon} size={20} color={iconColor} />
       </View>
       <View style={styles.rowCopy}>
-        <Text style={styles.rowTitle} numberOfLines={1}>
+        <Text style={[styles.rowTitle, { color: colors.textPrimary }]} numberOfLines={1}>
           {title}
         </Text>
         {subtitle ? (
-          <Text style={styles.rowSubtitle} numberOfLines={2}>
+          <Text style={[styles.rowSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
             {subtitle}
           </Text>
         ) : null}
@@ -465,7 +485,6 @@ const styles = StyleSheet.create({
 
   // ── Section labels & groups ──
   sectionLabel: {
-    color: '#80868B',
     fontSize: UiTypography.caption.fontSize,
     fontWeight: '700',
     letterSpacing: 1.1,
@@ -475,14 +494,11 @@ const styles = StyleSheet.create({
     marginTop: UiSpacing.xl,
   },
   group: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EAED',
     borderRadius: UiRadii.card,
     borderWidth: 1,
     overflow: 'hidden',
   },
   divider: {
-    backgroundColor: '#EEF0F3',
     height: 1,
     marginLeft: 56,
   },
@@ -490,15 +506,11 @@ const styles = StyleSheet.create({
   // ── Row ──
   row: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     gap: UiSpacing.md,
     minHeight: 56,
     paddingHorizontal: UiSpacing.md,
     paddingVertical: UiSpacing.sm,
-  },
-  rowPressed: {
-    backgroundColor: '#F6F8FB',
   },
   rowDisabled: {
     opacity: 0.85,
@@ -514,13 +526,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rowTitle: {
-    color: '#202124',
     fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '600',
     lineHeight: UiTypography.bodySmall.lineHeight,
   },
   rowSubtitle: {
-    color: '#5F6368',
     fontSize: UiTypography.label.fontSize,
     lineHeight: UiTypography.label.lineHeight,
     marginTop: UiSpacing.xxs,
@@ -533,7 +543,6 @@ const styles = StyleSheet.create({
     maxWidth: 160,
   },
   rowValue: {
-    color: '#5F6368',
     fontSize: UiTypography.bodySmall.fontSize,
     fontWeight: '500',
     lineHeight: UiTypography.bodySmall.lineHeight,
@@ -577,7 +586,6 @@ const styles = StyleSheet.create({
   },
 
   helpText: {
-    color: '#80868B',
     fontSize: UiTypography.caption.fontSize,
     lineHeight: UiTypography.caption.lineHeight,
     marginTop: UiSpacing.sm,
