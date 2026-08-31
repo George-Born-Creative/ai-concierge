@@ -18,6 +18,17 @@ import {
 
 WebBrowser.maybeCompleteAuthSession();
 
+// Survives Connect screen unmount/remount during the /oauth/[provider] hop.
+let lastConnectSuccessAt = 0;
+const CONNECT_SUCCESS_DEBOUNCE_MS = 5000;
+
+function showConnectSuccess(show: ToastFn, message: string) {
+  const now = Date.now();
+  if (now - lastConnectSuccessAt < CONNECT_SUCCESS_DEBOUNCE_MS) return;
+  lastConnectSuccessAt = now;
+  show(message, 'success');
+}
+
 export type CrmOAuthApi = {
   getAuthUrl: (returnUrl: string) => Promise<{ url: string; state: string }>;
   getStatus: () => Promise<GhlStatusResponse | HubspotStatusResponse>;
@@ -72,6 +83,20 @@ export function useCrmOAuth({
 }: UseCrmOAuthOptions) {
   const oauthHandled = useRef(false);
   const oauthSessionActive = useRef(false);
+  // Browser close, deep link, and /oauth/[provider] can all complete the same
+  // handshake. Share one in-flight apply and only toast once per attempt.
+  const applyInFlight = useRef<Promise<boolean> | null>(null);
+  const succeeded = useRef(false);
+  const outcomeShown = useRef(false);
+
+  const showOutcomeOnce = useCallback(
+    (message: string, type: 'success' | 'error') => {
+      if (outcomeShown.current) return;
+      outcomeShown.current = true;
+      show(message, type);
+    },
+    [show],
+  );
 
   const loadConnectionStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -93,25 +118,40 @@ export function useCrmOAuth({
   }, [api, onStatusChange, setLoadingStatus]);
 
   const applyConnectedState = useCallback(async () => {
-    try {
-      const status = await api.getStatus();
-      if (!status.connected) return false;
+    if (succeeded.current) return true;
+    if (applyInFlight.current) return applyInFlight.current;
 
+    const attempt = (async () => {
       try {
-        const me = await getMe();
-        await refreshUser(me);
-      } catch {
-        // Profile refresh is best-effort after OAuth.
-      }
+        const status = await api.getStatus();
+        if (!status.connected) return false;
 
-      await loadConnectionStatus();
-      show(`${integrationName} connected and saved.`, 'success');
-      return true;
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 0) {
-        show(err.message, 'error');
+        try {
+          const me = await getMe();
+          await refreshUser(me);
+        } catch {
+          // Profile refresh is best-effort after OAuth.
+        }
+
+        await loadConnectionStatus();
+        succeeded.current = true;
+        oauthSessionActive.current = false;
+        oauthHandled.current = true;
+        showConnectSuccess(show, `${integrationName} connected and saved.`);
+        return true;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 0) {
+          showOutcomeOnce(err.message, 'error');
+        }
+        return false;
       }
-      return false;
+    })();
+
+    applyInFlight.current = attempt;
+    try {
+      return await attempt;
+    } finally {
+      if (applyInFlight.current === attempt) applyInFlight.current = null;
     }
   }, [api, integrationName, loadConnectionStatus, show]);
 
@@ -123,7 +163,8 @@ export function useCrmOAuth({
       oauthSessionActive.current = false;
 
       if (parsed.status === 'error') {
-        show(
+        oauthHandled.current = true;
+        showOutcomeOnce(
           parsed.reason ? `Connection failed: ${parsed.reason}` : 'Connection failed.',
           'error',
         );
@@ -133,12 +174,12 @@ export function useCrmOAuth({
       if (parsed.status !== 'ok') return false;
 
       const ok = await applyConnectedState();
-      if (!ok) {
-        show('Connection was not saved. Please try again.', 'error');
+      if (!ok && !succeeded.current) {
+        showOutcomeOnce('Connection was not saved. Please try again.', 'error');
       }
       return true;
     },
-    [applyConnectedState, provider, show],
+    [applyConnectedState, provider, showOutcomeOnce],
   );
 
   const syncAfterBrowser = useCallback(async () => {
@@ -150,7 +191,12 @@ export function useCrmOAuth({
 
   const startOAuthConnect = useCallback(async () => {
     setSubmitting(true);
+    succeeded.current = false;
+    outcomeShown.current = false;
+    oauthHandled.current = false;
+    applyInFlight.current = null;
     oauthSessionActive.current = true;
+    lastConnectSuccessAt = 0;
     try {
       const returnUrl = getOAuthReturnUrl(provider);
       const { url } = await fetchAuthUrlWithRetry(api, returnUrl);
@@ -171,11 +217,11 @@ export function useCrmOAuth({
           : err instanceof Error
             ? err.message
             : 'Could not start the connection. Please try again.';
-      show(message, 'error');
+      showOutcomeOnce(message, 'error');
     } finally {
       setSubmitting(false);
     }
-  }, [api, finishOAuthReturn, provider, setSubmitting, show, syncAfterBrowser]);
+  }, [api, finishOAuthReturn, provider, setSubmitting, showOutcomeOnce, syncAfterBrowser]);
 
   // Deep link query params from app/oauth/[provider] → /connect
   useEffect(() => {
@@ -184,12 +230,12 @@ export function useCrmOAuth({
     if (oauthStatus === 'ok') {
       void applyConnectedState();
     } else if (oauthStatus === 'error') {
-      show(
+      showOutcomeOnce(
         oauthReason ? `Connection failed: ${oauthReason}` : 'Connection failed.',
         'error',
       );
     }
-  }, [applyConnectedState, oauthReason, oauthStatus, show]);
+  }, [applyConnectedState, oauthReason, oauthStatus, showOutcomeOnce]);
 
   // aiconcierge://oauth/ghl?status=ok (or exp:// in Expo Go)
   useEffect(() => {
