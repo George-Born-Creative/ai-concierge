@@ -18,6 +18,8 @@ import {
 } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { HubspotCompaniesService } from './companies.service';
 import {
   BatchArchiveHubspotCompaniesDto,
@@ -31,6 +33,7 @@ import { SearchHubspotCompaniesQueryDto } from './dto/search-companies.query.dto
 import { UpdateHubspotCompanyDto } from './dto/update-company.dto';
 
 @Controller('integrations/hubspot/companies')
+@RequireCrmPlan(CrmProvider.HUBSPOT)
 @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
 export class HubspotCompaniesController {
   constructor(private readonly companies: HubspotCompaniesService) {}

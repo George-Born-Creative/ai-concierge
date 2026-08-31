@@ -13,6 +13,7 @@ import { CrmProvider } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 import { decryptSecret, encryptSecret } from '../../../common/crypto';
+import { disableOtherCrmConnections, setActiveCrmProvider } from '../../../common/crm-account';
 import { PrismaService } from '../../../prisma/prisma.service';
 import type { GhlAppointmentSummary, GhlAppointmentsListResult } from '../appointments/appointments.type';
 import type { GhlCalendarSummary, GhlCalendarsListResult } from '../calendars/calendars.type';
@@ -348,6 +349,8 @@ export class GhlApiService {
       locationId: tokens.locationId ?? null,
       scopes,
     });
+    await disableOtherCrmConnections(this.prisma, userId, CrmProvider.GHL);
+    await setActiveCrmProvider(this.prisma, userId, CrmProvider.GHL);
 
     this.logger.log(
       `GHL connected for user ${userId} (locationId=${tokens.locationId ?? 'none'}, tokenScope=${tokens.scope ?? 'none'}, storedScopes=${scopes.length})`,

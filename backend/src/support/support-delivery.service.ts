@@ -243,7 +243,8 @@ export class SupportDeliveryService {
             id: true,
             email: true,
             name: true,
-            subscription: {
+            activeCrmProvider: true,
+            subscriptions: {
               select: {
                 status: true,
                 plan: { select: { provider: true } },
@@ -270,17 +271,22 @@ export class SupportDeliveryService {
     id: string;
     email: string;
     name: string;
-    subscription: {
+    activeCrmProvider: string | null;
+    subscriptions: {
       status: string;
       plan: { provider: string };
-    } | null;
+    }[];
   }): SupportMailUser {
+    const selected =
+      user.subscriptions.find((row) => row.plan.provider === user.activeCrmProvider) ??
+      user.subscriptions[0] ??
+      null;
     return {
       id: user.id,
       email: user.email,
       name: user.name,
-      provider: user.subscription?.plan.provider.toLowerCase() ?? null,
-      subscriptionStatus: user.subscription?.status.toLowerCase() ?? null,
+      provider: selected?.plan.provider.toLowerCase() ?? null,
+      subscriptionStatus: selected?.status.toLowerCase() ?? null,
     };
   }
 

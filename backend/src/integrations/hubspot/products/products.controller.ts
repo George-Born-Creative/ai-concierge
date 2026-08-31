@@ -17,6 +17,8 @@ import {
 } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { CreateHubspotProductDto } from './dto/create-product.dto';
 import { CreateProductLineItemDto } from './dto/create-product-line-item.dto';
 import { ListHubspotProductsQueryDto } from './dto/list-products.query.dto';
@@ -25,6 +27,7 @@ import { UpdateHubspotProductDto } from './dto/update-product.dto';
 import { HubspotProductsService } from './products.service';
 
 @Controller('integrations/hubspot/products')
+@RequireCrmPlan(CrmProvider.HUBSPOT)
 @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
 export class HubspotProductsController {
   constructor(private readonly products: HubspotProductsService) {}

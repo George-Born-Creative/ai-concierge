@@ -4,11 +4,14 @@ import { Request, Response } from 'express';
 import { AuthenticatedUser, CurrentUser } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { GhlCallbackQueryDto } from '../dto/callback.query.dto';
 import { handleGhlOAuthCallback, handleGhlOAuthFinish } from './ghl-oauth-callback.handler';
 import { GhlService } from '../ghl.service';
 
 @Controller('integrations/ghl')
+@RequireCrmPlan(CrmProvider.GHL)
 export class GhlIntegrationController {
   constructor(private readonly ghl: GhlService) {}
 

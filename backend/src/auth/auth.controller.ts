@@ -9,6 +9,7 @@ import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SigninDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
+import { UpdateActiveProviderDto } from './dto/update-active-provider.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 
@@ -86,5 +87,14 @@ export class AuthController {
   @Patch('me')
   updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateProfileDto) {
     return this.users.updateProfile(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/active-provider')
+  setActiveProvider(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateActiveProviderDto,
+  ) {
+    return this.users.setActiveProvider(user.id, dto);
   }
 }

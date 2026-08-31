@@ -5,6 +5,8 @@ import {
 import { AuthenticatedUser, CurrentUser } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { HubspotDealsService } from './deals.service';
 import {
   BatchArchiveHubspotDealsDto,
@@ -18,6 +20,7 @@ import { SearchHubspotDealsQueryDto } from './dto/search-deals.query.dto';
 import { UpdateHubspotDealDto } from './dto/update-deal.dto';
 
 @Controller('integrations/hubspot/deals')
+@RequireCrmPlan(CrmProvider.HUBSPOT)
 @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
 export class HubspotDealsController {
   constructor(private readonly deals: HubspotDealsService) {}

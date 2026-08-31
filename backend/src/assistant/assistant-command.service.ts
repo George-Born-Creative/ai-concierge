@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { CrmProvider } from '@prisma/client';
 
 import { CRM_LABELS, crmLabel, crmLabelList } from '../common/crm-labels';
+import { resolveActiveCrmProvider } from '../common/crm-account';
 import type { GhlAppointmentSummary } from '../integrations/ghl/appointments/appointments.type';
 import type { GhlOpportunitySummary } from '../integrations/ghl/opportunities/opportunities.type';
 import type { GhlPipelineSummary } from '../integrations/ghl/pipelines/pipelines.type';
@@ -205,26 +206,13 @@ export class AssistantCommandService {
   }
 
   /**
-   * Look up which CRM provider this user is on. Source of truth is the
-   * enabled IntegrationConnection row (set up by OAuth). Falls back to the
-   * subscription plan provider. Returns null when neither exists so callers
-   * can render a CRM-agnostic message instead of guessing GHL — picking the
-   * wrong CRM here is what made the "Hook up GoHighLevel" prompt show for
-   * users who actually wanted HubSpot.
+   * Look up which CRM the user currently has selected. Source of truth is
+   * User.activeCrmProvider — not "first enabled connection", which is
+   * undefined when both CRMs are connected.
    */
   private async loadProvider(userId: string): Promise<CrmProvider | null> {
     try {
-      const enabled = await this.prisma.integrationConnection.findFirst({
-        where: { userId, enabled: true },
-        select: { provider: true },
-      });
-      if (enabled?.provider) return enabled.provider;
-
-      const subscription = await this.prisma.subscription.findUnique({
-        where: { userId },
-        select: { plan: { select: { provider: true } } },
-      });
-      return subscription?.plan?.provider ?? null;
+      return await resolveActiveCrmProvider(this.prisma, userId);
     } catch (err) {
       this.logger.warn(
         `loadProvider failed for user ${userId}: ${(err as Error).message}`,

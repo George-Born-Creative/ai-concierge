@@ -34,3 +34,7 @@ export function getCrmLabel(provider: CrmProvider | null | undefined): string {
 export function getCrmLabelList(separator = ' or '): string {
   return CRM_PROVIDERS.map((p) => CRM_LABELS[p]).join(separator);
 }
+
+export function otherCrmProvider(provider: CrmProvider): CrmProvider {
+  return provider === 'hubspot' ? 'ghl' : 'hubspot';
+}

@@ -12,10 +12,13 @@ import { Response } from 'express';
 import { AuthenticatedUser, CurrentUser } from '../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { HubspotCallbackQueryDto } from './dto/callback.query.dto';
 import { HubspotService } from './hubspot.service';
 
 @Controller('integrations/hubspot')
+@RequireCrmPlan(CrmProvider.HUBSPOT)
 export class HubspotController {
   constructor(private readonly hubspot: HubspotService) {}
 

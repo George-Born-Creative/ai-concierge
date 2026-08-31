@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, UseGuards } f
 import { AuthenticatedUser, CurrentUser } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { ListConversationMessagesQueryDto } from './dto/list-conversation-messages.query.dto';
 import { ListConversationsQueryDto } from './dto/list-conversations.query.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -9,6 +11,7 @@ import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ConversationsService } from './conversations.service';
 
 @Controller('integrations/ghl')
+@RequireCrmPlan(CrmProvider.GHL)
 export class ConversationsController {
   constructor(private readonly conversations: ConversationsService) {}
 

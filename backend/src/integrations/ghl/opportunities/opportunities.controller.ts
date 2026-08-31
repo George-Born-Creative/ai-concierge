@@ -2,6 +2,8 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, UseGu
 import { AuthenticatedUser, CurrentUser } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { CreateGhlOpportunityDto } from '../dto/create-opportunity.dto';
 import { ListGhlOpportunitiesQueryDto } from '../dto/list-opportunities.query.dto';
 import { UpdateGhlOpportunityDto } from '../dto/update-opportunity.dto';
@@ -15,6 +17,7 @@ import {
 import { OpportunitiesService } from './opportunities.service';
 
 @Controller('integrations/ghl')
+@RequireCrmPlan(CrmProvider.GHL)
 export class OpportunitiesController {
   constructor(private readonly opportunities: OpportunitiesService) {}
 

@@ -122,12 +122,15 @@ test('server diagnostics use an explicit secret-free database select', async () 
           emailVerified: true,
           timezone: 'Africa/Nairobi',
           expoPushToken: 'ExponentPushToken[secret]',
-          subscription: {
-            status: 'ACTIVE',
-            paymentProvider: 'STRIPE',
-            currentPeriodEnd: new Date('2026-08-22T00:00:00.000Z'),
-            plan: { provider: 'HUBSPOT' },
-          },
+          activeCrmProvider: 'HUBSPOT',
+          subscriptions: [
+            {
+              status: 'ACTIVE',
+              paymentProvider: 'STRIPE',
+              currentPeriodEnd: new Date('2026-08-22T00:00:00.000Z'),
+              plan: { provider: 'HUBSPOT' },
+            },
+          ],
           integrations: [
             {
               provider: 'HUBSPOT',

@@ -18,6 +18,8 @@ import {
 } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { CreateHubspotTicketDto } from './dto/create-ticket.dto';
 import {
   BatchArchiveHubspotTicketsDto,
@@ -32,6 +34,7 @@ import { UpdateHubspotTicketDto } from './dto/update-ticket.dto';
 import { HubspotTicketsService } from './tickets.service';
 
 @Controller('integrations/hubspot/tickets')
+@RequireCrmPlan(CrmProvider.HUBSPOT)
 @UseGuards(JwtAuthGuard, ActiveSubscriptionGuard)
 export class HubspotTicketsController {
   constructor(private readonly tickets: HubspotTicketsService) {}

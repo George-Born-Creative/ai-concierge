@@ -2,10 +2,13 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Po
 import { AuthenticatedUser, CurrentUser } from '../../../common/current-user.decorator';
 import { ActiveSubscriptionGuard } from '../../../common/guards/active-subscription.guard';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { RequireCrmPlan } from '../../../common/guards/require-crm-plan.decorator';
+import { CrmProvider } from '@prisma/client';
 import { CreateGhlPipelineDto, DeleteGhlPipelineQueryDto, UpdateGhlPipelineDto } from '../dto/pipeline.dto';
 import { PipelinesService } from './pipelines.service';
 
 @Controller('integrations/ghl')
+@RequireCrmPlan(CrmProvider.GHL)
 export class PipelinesController {
   constructor(private readonly pipelines: PipelinesService) {}
 

@@ -2,6 +2,7 @@ import { apiRequest } from './client';
 import type {
   AuthResponse,
   CodeDeliveryResponse,
+  CrmProvider,
   GoogleAuthRequest,
   RequestPasswordResetRequest,
   ResetPasswordRequest,
@@ -96,5 +97,12 @@ export async function updateMe(data: UpdateProfileRequest): Promise<User> {
   return apiRequest<User>('/auth/me', {
     method: 'PATCH',
     body: data,
+  });
+}
+
+export async function setActiveProvider(provider: CrmProvider): Promise<User> {
+  return apiRequest<User>('/auth/me/active-provider', {
+    method: 'PATCH',
+    body: { provider },
   });
 }
