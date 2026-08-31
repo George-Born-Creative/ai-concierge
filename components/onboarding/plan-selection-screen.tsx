@@ -29,11 +29,10 @@ import {
   verifyAppleReceipt,
 } from '@/lib/api/payment';
 import { listPlans } from '@/lib/api/plans';
-import type { CrmProvider, PlanCode, PlanListItem } from '@/lib/api/types';
+import type { CrmProvider, PlanCode, PlanListItem, User } from '@/lib/api/types';
 import { setOAuthReturnFrom } from '@/lib/oauth';
 import {
   PLAN_CODE_FOR_PROVIDER,
-  hasAnyActivePlan,
   hasCrmEntitlement,
   providerForPlanCode,
   routeForUser,
@@ -117,6 +116,7 @@ export function PlanSelectionScreen() {
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [plans, setPlans] = useState<PlanListItem[] | null>(null);
+  const [account, setAccount] = useState<User | null>(() => getUser());
   // iOS payment-method picker state. `paymentBusy` marks which rail is
   // mid-checkout so the sheet shows a spinner on that row while keeping the
   // other one tappable as a fallback.
@@ -137,6 +137,13 @@ export function PlanSelectionScreen() {
         if (cancelled) return;
         show('Could not load plan prices. Please try again.', 'error');
       });
+    getMe()
+      .then((me) => {
+        if (cancelled) return;
+        setAccount(me);
+        return refreshUser(me);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -214,7 +221,11 @@ export function PlanSelectionScreen() {
   // individually), and on Android it goes straight to Stripe. We no longer
   // block the whole button on StoreKit readiness — Stripe stays available
   // even if Apple IAP can't load.
-  const canSubscribe = Boolean(active?.live);
+  const alreadyOwnsSelected = hasCrmEntitlement(
+    account,
+    providerForPlanCode(selectedPlan),
+  );
+  const canSubscribe = alreadyOwnsSelected || Boolean(active?.live);
 
   const continueAfterPlan = useCallback(
     async (user = getUser()) => {
@@ -243,6 +254,11 @@ export function PlanSelectionScreen() {
   // user can choose Apple or Stripe; Android goes straight to Stripe; web has
   // no native checkout.
   function openCheckout() {
+    if (alreadyOwnsSelected) {
+      show(`You already have an active ${active?.name ?? 'plan'}. Connect it next.`, 'info');
+      void continueAfterPlan(account ?? getUser());
+      return;
+    }
     if (!active || !active.live) {
       show('Plans are still loading. Please try again in a moment.', 'error');
       return;
@@ -277,17 +293,8 @@ export function PlanSelectionScreen() {
         // Fall back to cached profile if the network hiccups.
       }
 
-      if (fromCrm) {
-        if (user && hasCrmEntitlement(user, providerForPlanCode(active.id))) {
-          const planName = active.name;
-          show(`You already have an active subscription (${planName}).`, 'info');
-          setPaymentSheetVisible(false);
-          await continueAfterPlan(user);
-          return;
-        }
-      } else if (user && hasAnyActivePlan(user)) {
-        const planName = user.plan?.name ?? 'your plan';
-        show(`You already have an active subscription (${planName}).`, 'info');
+      if (user && hasCrmEntitlement(user, providerForPlanCode(active.id))) {
+        show(`You already have an active subscription (${active.name}).`, 'info');
         setPaymentSheetVisible(false);
         await continueAfterPlan(user);
         return;
@@ -489,8 +496,10 @@ export function PlanSelectionScreen() {
         <Text style={styles.title}>{fromCrm ? 'Add a CRM plan' : 'Choose your CRM plan'}</Text>
         <Text style={styles.subtitle}>
           {fromCrm
-            ? 'Adding this plan does not cancel your existing CRM subscription. After you pay, you will connect this CRM next.'
-            : 'One subscription = one CRM. Adding a second plan later does not cancel the first.'}
+            ? alreadyOwnsSelected
+              ? 'This CRM plan is already on your account. Continue to disconnect the other CRM and connect this one — you will not be charged again.'
+              : 'Adding this plan does not cancel your existing CRM subscription. After you pay, you will connect this CRM next.'
+            : 'You can pay for both GoHighLevel and HubSpot. Only one CRM can be connected at a time; switch from Settings without subscribing again.'}
         </Text>
 
         <View style={styles.planList}>
@@ -498,6 +507,10 @@ export function PlanSelectionScreen() {
             const isSelected = selectedPlan === card.id;
             const live = card.live;
             const lockedOut = Boolean(lockedPlan && card.id !== lockedPlan);
+            const alreadyOwned = hasCrmEntitlement(
+              account,
+              providerForPlanCode(card.id),
+            );
 
             return (
               <Pressable
@@ -521,6 +534,11 @@ export function PlanSelectionScreen() {
                       <Text style={styles.planName}>{card.name}</Text>
                       {card.description ? (
                         <Text style={styles.planDescription}>{card.description}</Text>
+                      ) : null}
+                      {alreadyOwned ? (
+                        <View style={styles.ownedBadge}>
+                          <Text style={styles.ownedBadgeText}>Already subscribed</Text>
+                        </View>
                       ) : null}
                     </View>
                   </View>
@@ -574,17 +592,29 @@ export function PlanSelectionScreen() {
             <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <>
-              <MaterialIcons name="lock" size={20} color={colors.onPrimary} />
+              <MaterialIcons
+                name={alreadyOwnsSelected ? 'arrow-forward' : 'lock'}
+                size={20}
+                color={colors.onPrimary}
+              />
               <Text style={styles.primaryButtonText}>
-                {IS_IOS ? 'Subscribe' : 'Subscribe with Stripe'}
+                {alreadyOwnsSelected
+                  ? fromCrm
+                    ? 'Continue to connect'
+                    : 'Continue'
+                  : IS_IOS
+                    ? 'Subscribe'
+                    : 'Subscribe with Stripe'}
               </Text>
             </>
           )}
         </Pressable>
         <Text style={styles.checkoutHint}>
-          {IS_IOS
-            ? 'Choose Apple or pay by card with Stripe. Card checkout is discounted — no Apple fee.'
-            : 'Card details are collected securely inside Stripe. No card data touches our servers.'}
+          {alreadyOwnsSelected
+            ? 'This plan is already on your account. Switching CRMs only disconnects the other connection — you will not be charged again.'
+            : IS_IOS
+              ? 'Choose Apple or pay by card with Stripe. Card checkout is discounted — no Apple fee.'
+              : 'Card details are collected securely inside Stripe. No card data touches our servers.'}
         </Text>
 
         {IS_IOS ? (
@@ -717,6 +747,19 @@ const styles = StyleSheet.create({
     fontSize: UiTypography.label.fontSize,
     lineHeight: 18,
     marginTop: UiSpacing.xxs,
+  },
+  ownedBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E6F4EA',
+    borderRadius: UiRadii.control,
+    marginTop: UiSpacing.sm,
+    paddingHorizontal: UiSpacing.sm,
+    paddingVertical: 2,
+  },
+  ownedBadgeText: {
+    color: '#137333',
+    fontSize: UiTypography.caption.fontSize,
+    fontWeight: '600',
   },
   pricePill: {
     alignItems: 'center',

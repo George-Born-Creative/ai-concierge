@@ -210,7 +210,7 @@ export function CrmProviderScreenContent() {
 
   function handleSwitch() {
     const nextStep = cards[other].entitled
-      ? `connect ${otherMeta.label}`
+      ? `connect ${otherMeta.label} (already subscribed — no new charge)`
       : `subscribe to ${otherMeta.label}`;
     const body = state.connected
       ? `This disconnects ${meta.label}. You'll ${nextStep} next.`
@@ -253,8 +253,9 @@ export function CrmProviderScreenContent() {
         }
         showsVerticalScrollIndicator={false}>
         <Text style={[styles.intro, { color: colors.textSecondary }]}>
-          Only one CRM can be connected at a time. Switch disconnects the current CRM, then
-          connects the other.
+          You can pay for both GoHighLevel and HubSpot. Only one CRM can be connected at a
+          time. If you already subscribe to the other CRM, switching disconnects this one
+          and connects the other — you will not be charged again.
         </Text>
 
         <View

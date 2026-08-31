@@ -34,6 +34,29 @@ type PaymentSheetParams = {
 
 type SubscriptionWithPlan = Subscription & { plan: Plan };
 
+// Stripe moved current_period_end off Subscription onto SubscriptionItem in
+// 2025 API versions (Basil+). Webhook payloads use the Dashboard endpoint's
+// API version, which may not match STRIPE_API_VERSION, so we read both.
+type StripePeriodFields = {
+  current_period_end?: number | null;
+  items?: { data?: Array<{ current_period_end?: number | null }> };
+};
+
+export function stripeCurrentPeriodEnd(sub: object): Date | null {
+  const rec = sub as StripePeriodFields;
+  const fromSub =
+    typeof rec.current_period_end === 'number' && rec.current_period_end > 0
+      ? rec.current_period_end
+      : null;
+  const fromItem =
+    typeof rec.items?.data?.[0]?.current_period_end === 'number' &&
+    rec.items.data[0].current_period_end > 0
+      ? rec.items.data[0].current_period_end
+      : null;
+  const unix = fromSub ?? fromItem;
+  return unix ? new Date(unix * 1000) : null;
+}
+
 // Surfaced to the mobile app when it tries to cancel an Apple sub. Apple
 // universal link — iOS routes it straight to the Manage Subscriptions sheet,
 // no Safari hop.
@@ -200,15 +223,17 @@ export class BillingService {
     }
 
     const status = mapStripeStatus(stripeSub.status);
+    const currentPeriodEnd = stripeCurrentPeriodEnd(stripeSub);
     await this.prisma.subscription.upsert({
       where: { userId_planId: { userId, planId: plan.id } },
       update: {
         stripeSubscriptionId: stripeSub.id,
         paymentProvider: PaymentProvider.STRIPE,
         status,
-        currentPeriodEnd: stripeSub.current_period_end
-          ? new Date(stripeSub.current_period_end * 1000)
-          : null,
+        // Leave the stored date alone when Stripe omits the field (newer API
+        // versions / incomplete payloads). Writing null here is why Profile
+        // showed "Not available".
+        ...(currentPeriodEnd ? { currentPeriodEnd } : {}),
       },
       create: {
         userId,
@@ -216,9 +241,7 @@ export class BillingService {
         stripeSubscriptionId: stripeSub.id,
         paymentProvider: PaymentProvider.STRIPE,
         status,
-        currentPeriodEnd: stripeSub.current_period_end
-          ? new Date(stripeSub.current_period_end * 1000)
-          : null,
+        currentPeriodEnd,
       },
     });
 
@@ -270,18 +293,55 @@ export class BillingService {
     await fallbackActiveCrmProvider(this.prisma, userId);
   }
 
+  // Existing paid rows often have currentPeriodEnd=null because checkout never
+  // stored it. Pull the date from Stripe once so GET /auth/me can return it.
+  async hydrateMissingPeriodEnds(userId: string): Promise<void> {
+    const rows = await this.prisma.subscription.findMany({
+      where: {
+        userId,
+        currentPeriodEnd: null,
+        stripeSubscriptionId: { not: null },
+        status: {
+          in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING],
+        },
+      },
+      select: { id: true, stripeSubscriptionId: true },
+    });
+    if (rows.length === 0) return;
+
+    for (const row of rows) {
+      try {
+        const stripeSub = await this.stripeProvider.client.subscriptions.retrieve(
+          row.stripeSubscriptionId!,
+        );
+        const currentPeriodEnd = stripeCurrentPeriodEnd(stripeSub);
+        if (!currentPeriodEnd) continue;
+        await this.prisma.subscription.update({
+          where: { id: row.id },
+          data: { currentPeriodEnd },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Could not hydrate period end for ${row.stripeSubscriptionId}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
   private async upsertSubscriptionRecord(
     userId: string,
     plan: Plan,
     stripeSub: Stripe.Subscription,
   ) {
     const status = mapStripeStatus(stripeSub.status);
+    const currentPeriodEnd = stripeCurrentPeriodEnd(stripeSub);
     await this.prisma.subscription.upsert({
       where: { userId_planId: { userId, planId: plan.id } },
       update: {
         stripeSubscriptionId: stripeSub.id,
         paymentProvider: PaymentProvider.STRIPE,
         status,
+        ...(currentPeriodEnd ? { currentPeriodEnd } : {}),
       },
       create: {
         userId,
@@ -289,6 +349,7 @@ export class BillingService {
         stripeSubscriptionId: stripeSub.id,
         paymentProvider: PaymentProvider.STRIPE,
         status,
+        currentPeriodEnd,
       },
     });
   }

@@ -65,6 +65,9 @@ export type UserPlan = {
   // 'com.daveget.aiconcierge.ghl_pro_monthly'); null when the plan isn't
   // sold via Apple IAP.
   appleProductId: string | null;
+  // ISO timestamp of the current billing period end. Null when the
+  // processor hasn't reported a renewal/expiry date yet.
+  expiresAt?: string | null;
 };
 
 export type User = {
@@ -83,6 +86,9 @@ export type User = {
   hasPushToken?: boolean;
   plan?: UserPlan | null;
   plans?: UserPlan[];
+  // Every CRM subscription on the account (GHL and HubSpot can both be paid).
+  // Same rows as `plans`. Prefer this when listing cards.
+  subscriptions?: UserPlan[];
   entitlements?: CrmEntitlements;
   integrations?: CrmEntitlements;
   // Currently selected CRM (User.activeCrmProvider). Distinct from whether
