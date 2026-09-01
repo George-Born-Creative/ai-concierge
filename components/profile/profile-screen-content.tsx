@@ -1,11 +1,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,10 +13,10 @@ import {
   View,
 } from 'react-native';
 
+import { humanizePlanStatus } from '@/components/profile/subscription-card';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  UiControlHeights,
   UiRadii,
   UiSpacing,
   UiTypography,
@@ -241,7 +240,7 @@ export function ProfileScreenContent() {
           <Text style={styles.sectionTitle}>Connections</Text>
 
           {loadingStatuses && openAIConnected == null ? (
-            <ConnectionsSkeleton />
+            <ConnectionRowSkeleton />
           ) : (
             <>
               <ConnectionRow
@@ -257,33 +256,6 @@ export function ProfileScreenContent() {
                 statusLabel="OpenAI"
                 tone={openAIConnected ? 'success' : 'muted'}
               />
-
-              <Text style={[styles.sectionTitle, styles.subsectionTitle]}>Subscriptions</Text>
-              {subscriptions.length === 0 ? (
-                <View style={styles.subscriptionEmpty}>
-                  <Text style={styles.capabilityTitle}>No subscription</Text>
-                  <Text style={styles.capabilityText}>
-                    Subscribe to a CRM plan to use GoHighLevel or HubSpot.
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView
-                  horizontal
-                  nestedScrollEnabled
-                  showsHorizontalScrollIndicator={false}
-                  decelerationRate="fast"
-                  snapToInterval={SUBSCRIPTION_CARD_WIDTH + UiSpacing.sm}
-                  snapToAlignment="start"
-                  contentContainerStyle={styles.subscriptionCarousel}>
-                  {subscriptions.map((plan) => (
-                    <SubscriptionCard
-                      key={`${plan.provider}-${plan.id}`}
-                      plan={plan}
-                      onUpgrade={() => show('Upgrade is coming soon.', 'info')}
-                    />
-                  ))}
-                </ScrollView>
-              )}
             </>
           )}
         </View>
@@ -324,6 +296,26 @@ export function ProfileScreenContent() {
 
         {/* ── Actions ───────────────────────────────────────────────────────── */}
         <View style={styles.actionsSection} pointerEvents={isLoggingOut ? 'box-none' : 'auto'}>
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => router.push('/subscriptions' as Href)}
+            disabled={isLoggingOut}>
+            <View style={styles.actionIcon}>
+              <MaterialIcons name="workspace-premium" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionTitle}>Subscriptions</Text>
+              <Text style={styles.actionDescription}>
+                {subscriptions.length === 0
+                  ? 'View and manage your CRM plans'
+                  : subscriptions.length === 1
+                    ? `${CRM_LABELS[subscriptions[0].provider]} · ${humanizePlanStatus(subscriptions[0].status)}`
+                    : `${subscriptions.length} plans · GoHighLevel and HubSpot`}
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
+          </Pressable>
+
           <Pressable
             style={styles.actionButton}
             onPress={() => router.push('/settings')}
@@ -377,146 +369,6 @@ export function ProfileScreenContent() {
 
 type Tone = 'success' | 'muted' | 'brand' | 'warning';
 
-const SUBSCRIPTION_CARD_WIDTH = Math.min(280, Dimensions.get('window').width - 72);
-
-function subscriptionPalette(
-  provider: CrmProvider,
-  active: boolean,
-  resolvedTheme: ResolvedTheme,
-): {
-  colors: [string, string];
-  text: string;
-  muted: string;
-  iconBg: string;
-  pillBg: string;
-  buttonBg: string;
-} {
-  if (!active) {
-    return resolvedTheme === 'dark'
-      ? {
-          colors: ['#1E293B', '#334155'],
-          text: '#F8FAFC',
-          muted: '#94A3B8',
-          iconBg: 'rgba(255,255,255,0.08)',
-          pillBg: 'rgba(255,255,255,0.12)',
-          buttonBg: 'rgba(255,255,255,0.1)',
-        }
-      : {
-          colors: ['#E8EAED', '#D3D6DB'],
-          text: '#202124',
-          muted: '#5F6368',
-          iconBg: 'rgba(0,0,0,0.06)',
-          pillBg: 'rgba(0,0,0,0.08)',
-          buttonBg: 'rgba(0,0,0,0.06)',
-        };
-  }
-  if (provider === 'hubspot') {
-    return {
-      colors:
-        resolvedTheme === 'dark'
-          ? (['#9A3412', '#C2410C'] as [string, string])
-          : (['#FF7A59', '#E85D3D'] as [string, string]),
-      text: '#FFFFFF',
-      muted: 'rgba(255,255,255,0.88)',
-      iconBg: 'rgba(255,255,255,0.18)',
-      pillBg: 'rgba(255,255,255,0.22)',
-      buttonBg: 'rgba(255,255,255,0.22)',
-    };
-  }
-  return {
-    colors:
-      resolvedTheme === 'dark'
-        ? (['#115E59', '#0F766E'] as [string, string])
-        : (['#0D9488', '#0F766E'] as [string, string]),
-    text: '#FFFFFF',
-    muted: 'rgba(255,255,255,0.88)',
-    iconBg: 'rgba(255,255,255,0.18)',
-    pillBg: 'rgba(255,255,255,0.22)',
-    buttonBg: 'rgba(255,255,255,0.22)',
-  };
-}
-
-function SubscriptionCard({
-  plan,
-  onUpgrade,
-}: {
-  plan: UserPlan;
-  onUpgrade: () => void;
-}) {
-  const { colors, resolvedTheme } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
-  const active = isActiveSubscription(plan);
-  const palette = subscriptionPalette(plan.provider, active, resolvedTheme);
-  const crmLabel = CRM_LABELS[plan.provider];
-
-  return (
-    <LinearGradient
-      colors={[palette.colors[0], palette.colors[1]]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.subscriptionCard}>
-      <View style={styles.subscriptionHeader}>
-        <View style={[styles.connectionIcon, { backgroundColor: palette.iconBg }]}>
-          <MaterialIcons name="workspace-premium" size={20} color={palette.text} />
-        </View>
-        <View style={styles.capabilityCopy}>
-          <Text style={[styles.capabilityTitle, { color: palette.text }]} numberOfLines={1}>
-            {crmLabel}
-          </Text>
-          <Text style={[styles.capabilityText, { color: palette.muted }]} numberOfLines={1}>
-            {plan.name}
-          </Text>
-        </View>
-        <View
-          style={[
-            styles.connectionStatus,
-            {
-              backgroundColor: palette.pillBg,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: UiSpacing.xxs,
-            },
-          ]}>
-          <MaterialIcons
-            name={active ? 'check-circle' : 'cancel'}
-            size={14}
-            color={palette.text}
-          />
-          <Text style={[styles.connectionStatusText, { color: palette.text }]} numberOfLines={1}>
-            {active ? 'Active' : humanizePlanStatus(plan.status)}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.subscriptionMeta}>
-        <Text style={[styles.capabilityText, { color: palette.muted }]}>CRM</Text>
-        <Text style={[styles.subscriptionMetaValue, { color: palette.text }]}>{crmLabel}</Text>
-      </View>
-      <View style={styles.subscriptionMeta}>
-        <Text style={[styles.capabilityText, { color: palette.muted }]}>Status</Text>
-        <Text style={[styles.subscriptionMetaValue, { color: palette.text }]}>
-          {active ? 'Active' : humanizePlanStatus(plan.status)}
-        </Text>
-      </View>
-      <View style={styles.subscriptionMeta}>
-        <Text style={[styles.capabilityText, { color: palette.muted }]}>Expires</Text>
-        <Text style={[styles.subscriptionMetaValue, { color: palette.text }]}>
-          {formatExpiresAt(plan.expiresAt)}
-        </Text>
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        style={[styles.upgradeButton, { backgroundColor: palette.buttonBg, borderColor: 'transparent' }]}
-        onPress={onUpgrade}>
-        <MaterialIcons name="upgrade" size={18} color={palette.text} />
-        <Text style={[styles.upgradeButtonText, { color: palette.text }]}>Upgrade</Text>
-        <Text style={[styles.upgradeSoon, { color: palette.muted }]}>Coming soon</Text>
-      </Pressable>
-    </LinearGradient>
-  );
-}
-
 function ConnectionRow({
   icon,
   title,
@@ -552,27 +404,6 @@ function ConnectionRow({
   );
 }
 
-function ConnectionsSkeleton() {
-  const { colors, resolvedTheme } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
-  return (
-    <>
-      <ConnectionRowSkeleton />
-      <Text style={[styles.sectionTitle, styles.subsectionTitle]}>Subscriptions</Text>
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
-        showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        snapToInterval={SUBSCRIPTION_CARD_WIDTH + UiSpacing.sm}
-        snapToAlignment="start"
-        contentContainerStyle={styles.subscriptionCarousel}>
-        <SubscriptionCardSkeleton />
-        <SubscriptionCardSkeleton />
-      </ScrollView>
-    </>
-  );
-}
 
 function ConnectionRowSkeleton() {
   const { colors, resolvedTheme } = useAppTheme();
@@ -587,44 +418,6 @@ function ConnectionRowSkeleton() {
         <Skeleton width="85%" height={11} radius={6} style={{ marginTop: 8 }} />
       </View>
       <Skeleton width={72} height={22} radius={999} />
-    </View>
-  );
-}
-
-function SubscriptionCardSkeleton() {
-  const { colors, resolvedTheme } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
-  return (
-    <View style={styles.subscriptionCardSkeleton}>
-      <View style={styles.subscriptionHeader}>
-        <View style={styles.connectionIcon}>
-          <Skeleton width={22} height={22} radius={6} />
-        </View>
-        <View style={styles.capabilityCopy}>
-          <Skeleton width="50%" height={14} radius={6} />
-          <Skeleton width="72%" height={11} radius={6} style={{ marginTop: 8 }} />
-        </View>
-        <Skeleton width={64} height={22} radius={999} />
-      </View>
-
-      <View style={styles.subscriptionMeta}>
-        <Skeleton width={36} height={11} radius={6} />
-        <Skeleton width={88} height={12} radius={6} />
-      </View>
-      <View style={styles.subscriptionMeta}>
-        <Skeleton width={48} height={11} radius={6} />
-        <Skeleton width={56} height={12} radius={6} />
-      </View>
-      <View style={styles.subscriptionMeta}>
-        <Skeleton width={52} height={11} radius={6} />
-        <Skeleton width={96} height={12} radius={6} />
-      </View>
-
-      <Skeleton
-        height={UiControlHeights.compactButton}
-        radius={UiRadii.control}
-        style={{ marginTop: UiSpacing.xs }}
-      />
     </View>
   );
 }
@@ -680,38 +473,8 @@ function getInitials(name?: string | null, email?: string | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function humanizePlanStatus(status: string): string {
-  switch (status) {
-    case 'active':
-      return 'Active';
-    case 'trialing':
-      return 'Trial';
-    case 'past_due':
-      return 'Past due';
-    case 'canceled':
-      return 'Canceled';
-    case 'unpaid':
-      return 'Unpaid';
-    case 'incomplete':
-      return 'Incomplete';
-    default:
-      return status.charAt(0).toUpperCase() + status.slice(1);
-  }
-}
-
 function formatPlanLabel(name: string, status: string): string {
   return `${name} · ${humanizePlanStatus(status)}`;
-}
-
-function formatExpiresAt(iso?: string | null): string {
-  if (!iso) return 'Not available';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'Not available';
-  return date.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -848,10 +611,6 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
   sectionTitleInRow: {
     marginBottom: 0,
   },
-  subsectionTitle: {
-    marginTop: UiSpacing.md,
-    marginBottom: UiSpacing.sm,
-  },
   soonBadge: {
     backgroundColor: resolvedTheme === 'dark' ? colors.infoSurface : colors.surfaceSelected,
     borderRadius: UiRadii.pill,
@@ -896,74 +655,6 @@ const makeStyles = (colors: ThemeColors, resolvedTheme: ResolvedTheme) =>
     fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
     lineHeight: UiTypography.label.lineHeight,
-  },
-  subscriptionCarousel: {
-    gap: UiSpacing.sm,
-    paddingBottom: UiSpacing.xxs,
-    paddingRight: UiSpacing.lg,
-  },
-  subscriptionEmpty: {
-    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
-    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
-    borderRadius: UiRadii.card,
-    borderWidth: 1,
-    padding: UiSpacing.md,
-  },
-  subscriptionCard: {
-    borderRadius: UiRadii.card,
-    gap: UiSpacing.sm,
-    padding: UiSpacing.md,
-    width: SUBSCRIPTION_CARD_WIDTH,
-  },
-  subscriptionCardSkeleton: {
-    backgroundColor: resolvedTheme === 'dark' ? colors.surfaceElevated : colors.surface,
-    borderColor: resolvedTheme === 'dark' ? colors.borderStrong : colors.border,
-    borderRadius: UiRadii.card,
-    borderWidth: 1,
-    gap: UiSpacing.sm,
-    padding: UiSpacing.md,
-    width: SUBSCRIPTION_CARD_WIDTH,
-  },
-  subscriptionHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: UiSpacing.md,
-  },
-  subscriptionMeta: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: UiSpacing.xxs,
-  },
-  subscriptionMetaValue: {
-    color: resolvedTheme === 'dark' ? '#FFFFFF' : colors.textPrimary,
-    fontSize: UiTypography.label.fontSize,
-    fontWeight: '600',
-    lineHeight: UiTypography.label.lineHeight,
-  },
-  upgradeButton: {
-    alignItems: 'center',
-    backgroundColor: colors.primaryMuted,
-    borderColor: colors.primary,
-    borderRadius: UiRadii.control,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: UiSpacing.xs,
-    height: UiControlHeights.compactButton,
-    justifyContent: 'center',
-    marginTop: UiSpacing.xs,
-  },
-  upgradeButtonText: {
-    color: colors.primary,
-    fontSize: UiTypography.button.fontSize,
-    fontWeight: '700',
-    lineHeight: UiTypography.button.lineHeight,
-  },
-  upgradeSoon: {
-    color: colors.textMuted,
-    fontSize: UiTypography.caption.fontSize,
-    fontWeight: '600',
-    lineHeight: UiTypography.caption.lineHeight,
   },
   // ── Capability rows ──
   capabilityRow: {
