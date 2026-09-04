@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { PageHeader } from '@/components/page-header';
+import { GhlCalendarView } from '@/components/ghl/ghl-calendar-view';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
@@ -68,7 +69,7 @@ type ObjectKey = (typeof OBJECT_KEYS)[number];
 const OBJECT_TITLES: Record<ObjectKey, string> = {
   contacts: 'Contacts',
   opportunities: 'Opportunities',
-  calendar: 'Calendar',
+  calendar: 'Calendars',
 };
 
 function isObjectKey(value: unknown): value is ObjectKey {
@@ -98,6 +99,7 @@ export function GhlDataScreenContent() {
     seedState(crmCacheKey('ghl', 'calendar')),
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [calendarRefreshSignal, setCalendarRefreshSignal] = useState(0);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
@@ -184,6 +186,7 @@ export function GhlDataScreenContent() {
           const data = res.calendars ?? [];
           setCrmCache(crmCacheKey('ghl', 'calendar'), data);
           setCalendars({ data, loading: false, error: null });
+          setCalendarRefreshSignal((value) => value + 1);
         }
       } catch {
         // Non-fatal: keep the current rows; reconciles on next focus/refresh.
@@ -209,6 +212,7 @@ export function GhlDataScreenContent() {
     setRefreshing(true);
     try {
       await loadAll('refresh');
+      setCalendarRefreshSignal((value) => value + 1);
     } finally {
       setRefreshing(false);
     }
@@ -308,19 +312,10 @@ export function GhlDataScreenContent() {
         )}
 
         {want('calendar') && (
-          <Section
-            icon="event"
-            title="Calendar"
-            state={calendars}
-            emptyText="No calendars in your GoHighLevel account yet."
-            renderRow={(row) => (
-              <RowCard
-                key={row.id}
-                title={row.name}
-                meta={row.isActive === false ? 'Inactive' : 'Active'}
-                onPress={() => handleCopy('Calendar id', row.id)}
-              />
-            )}
+          <GhlCalendarView
+            calendars={calendars}
+            variant={active === 'calendar' ? 'page' : 'preview'}
+            refreshSignal={calendarRefreshSignal}
           />
         )}
 
@@ -362,10 +357,11 @@ type SectionProps<T> = {
   title: string;
   state: LoadState<T>;
   emptyText: string;
+  skeletonLines?: number;
   renderRow: (row: T) => React.ReactNode;
 };
 
-function Section<T>({ icon, title, state, emptyText, renderRow }: SectionProps<T>) {
+function Section<T>({ icon, title, state, emptyText, skeletonLines = 2, renderRow }: SectionProps<T>) {
   const { colors } = useAppTheme();
   return (
     <View style={styles.section}>
@@ -383,7 +379,7 @@ function Section<T>({ icon, title, state, emptyText, renderRow }: SectionProps<T
 
       <View style={styles.sectionBody}>
         {state.loading ? (
-          <SectionSkeleton />
+          <SectionSkeleton lines={skeletonLines} />
         ) : state.error ? (
           <View style={styles.errorCard}>
             <MaterialIcons name="error-outline" size={18} color={colors.danger} />
@@ -401,13 +397,13 @@ function Section<T>({ icon, title, state, emptyText, renderRow }: SectionProps<T
   );
 }
 
-function SectionSkeleton() {
+function SectionSkeleton({ lines }: { lines: number }) {
   return (
     <View style={{ gap: 10 }}>
       {[0, 1, 2].map((i) => (
         <View key={i} style={styles.skeletonRow}>
           <Skeleton width="60%" height={14} radius={6} />
-          <SkeletonLines lines={2} lineHeight={10} gap={6} lastLineWidth="40%" />
+          <SkeletonLines lines={lines} lineHeight={10} gap={6} lastLineWidth="40%" />
         </View>
       ))}
     </View>
@@ -501,7 +497,7 @@ const styles = StyleSheet.create({
     lineHeight: UiTypography.label.lineHeight,
   },
   sectionBody: {
-    gap: 1,
+    gap: UiSpacing.sm,
     padding: UiSpacing.md,
   },
 
