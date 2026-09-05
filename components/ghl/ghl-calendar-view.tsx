@@ -11,6 +11,7 @@ import type { GhlAppointmentSummary, GhlCalendarSummary } from '@/lib/api/types'
 import { useAppTheme } from '@/lib/theme/theme-provider';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const VISIBLE_CALENDAR_COUNT = 2;
 
 const STATUS_LABELS: Record<string, string> = {
   confirmed: 'Confirmed',
@@ -114,6 +115,7 @@ export function GhlCalendarView({
   const [selectedDay, setSelectedDay] = useState(() => atMidnight(new Date()));
   const [activeCalendarId, setActiveCalendarId] = useState<string | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
+  const [showMoreCalendars, setShowMoreCalendars] = useState(false);
   const [appointments, setAppointments] = useState<LoadState<GhlAppointmentSummary>>({
     data: [],
     loading: true,
@@ -196,8 +198,19 @@ export function GhlCalendarView({
       .slice(0, 4);
   }, [visibleAppointments, today]);
 
+  const visibleCalendars = calendars.data.slice(0, VISIBLE_CALENDAR_COUNT);
+  const overflowCalendars = calendars.data.slice(VISIBLE_CALENDAR_COUNT);
+  const overflowSelected = overflowCalendars.some((calendar) => calendar.id === activeCalendarId);
   const detailsCalendar = calendars.data.find((calendar) => calendar.id === detailsId);
   const listedAppointments = variant === 'preview' ? previewAppointments : selectedAppointments;
+
+  function selectCalendar(calendarId: string | null) {
+    setActiveCalendarId(calendarId);
+    setDetailsId((current) => (calendarId && current === calendarId ? current : null));
+    if (calendarId === null || overflowCalendars.some((calendar) => calendar.id === calendarId)) {
+      setShowMoreCalendars(false);
+    }
+  }
 
   function shiftWeek(delta: number) {
     const nextStart = addDays(weekStart, delta * 7);
@@ -265,61 +278,116 @@ export function GhlCalendarView({
       </View>
 
       {calendars.data.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipRow}>
-          <Pressable
-            onPress={() => {
-              setActiveCalendarId(null);
-              setDetailsId(null);
-            }}
-            style={[
-              styles.chip,
-              {
-                backgroundColor: !activeCalendarId ? colors.primaryMuted : colors.surfaceMuted,
-                borderColor: !activeCalendarId ? colors.primary : colors.border,
-              },
-            ]}>
-            <Text
-              style={[
-                styles.chipText,
-                { color: !activeCalendarId ? colors.primary : colors.textSecondary },
-              ]}>
-              All
-            </Text>
-          </Pressable>
-          {calendars.data.map((calendar) => {
-            const selected = activeCalendarId === calendar.id;
-            const accent = calendar.eventColor?.trim() || colors.primary;
-            return (
+        <View style={styles.calendarPicker}>
+          <View style={styles.chipRow}>
+            {visibleCalendars.map((calendar) => {
+              const selected = activeCalendarId === calendar.id;
+              const accent = calendar.eventColor?.trim() || colors.primary;
+              return (
+                <Pressable
+                  key={calendar.id}
+                  onPress={() => selectCalendar(calendar.id)}
+                  onLongPress={() => setDetailsId(calendar.id)}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: selected ? colors.primaryMuted : colors.surfaceMuted,
+                      borderColor: selected ? accent : colors.border,
+                    },
+                  ]}>
+                  <View style={[styles.chipDot, { backgroundColor: accent }]} />
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.chipText,
+                      { color: selected ? colors.textPrimary : colors.textSecondary, flex: 1 },
+                    ]}>
+                    {calendar.name || 'None'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            {visibleCalendars.length === 1 ? <View style={styles.chipSpacer} /> : null}
+            {overflowCalendars.length > 0 ? (
               <Pressable
-                key={calendar.id}
-                onPress={() => {
-                  setActiveCalendarId(calendar.id);
-                  setDetailsId((current) => (current === calendar.id ? current : null));
-                }}
-                onLongPress={() => setDetailsId(calendar.id)}
+                accessibilityLabel="More calendars"
+                onPress={() => setShowMoreCalendars((open) => !open)}
                 style={[
-                  styles.chip,
+                  styles.moreButton,
                   {
-                    backgroundColor: selected ? colors.primaryMuted : colors.surfaceMuted,
-                    borderColor: selected ? accent : colors.border,
+                    backgroundColor: overflowSelected || showMoreCalendars
+                      ? colors.primaryMuted
+                      : colors.surfaceMuted,
+                    borderColor: overflowSelected || showMoreCalendars ? colors.primary : colors.border,
                   },
                 ]}>
-                <View style={[styles.chipDot, { backgroundColor: accent }]} />
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.chipText,
-                    { color: selected ? colors.textPrimary : colors.textSecondary },
-                  ]}>
-                  {calendar.name || 'None'}
-                </Text>
+                <MaterialIcons
+                  name={showMoreCalendars ? 'expand-less' : 'more-horiz'}
+                  size={20}
+                  color={overflowSelected || showMoreCalendars ? colors.primary : colors.textSecondary}
+                />
               </Pressable>
-            );
-          })}
-        </ScrollView>
+            ) : null}
+          </View>
+
+          {overflowCalendars.length > 0 && showMoreCalendars ? (
+            <View style={[styles.dropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                style={styles.dropdownList}>
+                <Pressable
+                  onPress={() => selectCalendar(null)}
+                  style={[
+                    styles.dropdownItem,
+                    !activeCalendarId && { backgroundColor: colors.primaryMuted },
+                  ]}>
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: !activeCalendarId ? colors.primary : colors.textPrimary },
+                    ]}>
+                    All calendars
+                  </Text>
+                </Pressable>
+                {overflowCalendars.map((calendar) => {
+                  const selected = activeCalendarId === calendar.id;
+                  const accent = calendar.eventColor?.trim() || colors.primary;
+                  return (
+                    <Pressable
+                      key={calendar.id}
+                      onPress={() => selectCalendar(calendar.id)}
+                      onLongPress={() => setDetailsId(calendar.id)}
+                      style={[
+                        styles.dropdownItem,
+                        selected && { backgroundColor: colors.primaryMuted },
+                      ]}>
+                      <View style={[styles.chipDot, { backgroundColor: accent }]} />
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.chipText,
+                          { color: selected ? colors.textPrimary : colors.textSecondary, flex: 1 },
+                        ]}>
+                        {calendar.name || 'None'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : overflowCalendars.length === 0 ? (
+            <Pressable onPress={() => selectCalendar(null)} style={styles.allLink}>
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: !activeCalendarId ? colors.primary : colors.textSecondary },
+                ]}>
+                All calendars
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : (
         <Text style={[styles.emptyCalendars, { color: colors.textSecondary }]}>
           No calendars in your GoHighLevel account yet.
@@ -508,19 +576,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: UiTypography.label.lineHeight,
   },
-  chipRow: {
+  calendarPicker: {
     gap: UiSpacing.sm,
-    paddingRight: UiSpacing.sm,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
   },
   chip: {
     alignItems: 'center',
     borderRadius: UiRadii.pill,
     borderWidth: 1,
+    flex: 1,
     flexDirection: 'row',
     gap: 6,
-    maxWidth: 180,
+    minWidth: 0,
     paddingHorizontal: UiSpacing.md,
     paddingVertical: 6,
+  },
+  chipSpacer: {
+    flex: 1,
   },
   chipDot: {
     borderRadius: 4,
@@ -528,9 +603,37 @@ const styles = StyleSheet.create({
     width: 8,
   },
   chipText: {
+    flexShrink: 1,
     fontSize: UiTypography.label.fontSize,
     fontWeight: '600',
     lineHeight: UiTypography.label.lineHeight,
+  },
+  moreButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    borderRadius: UiRadii.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+    width: 36,
+  },
+  dropdown: {
+    borderRadius: UiRadii.control,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownList: {
+    maxHeight: 240,
+  },
+  dropdownItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: UiSpacing.md,
+    paddingVertical: UiSpacing.sm,
+  },
+  allLink: {
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
   },
   emptyCalendars: {
     fontSize: UiTypography.label.fontSize,
