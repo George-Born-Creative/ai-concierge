@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import { humanizePlanStatus } from '@/components/profile/subscription-card';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -24,9 +25,12 @@ import {
 } from '@/constants/theme';
 import { openaiApi, remindersApi } from '@/lib/api';
 import { getMe, signOut } from '@/lib/api/auth';
-import type { CrmProvider, User } from '@/lib/api/types';
+import type { CrmProvider, User, UserPlan } from '@/lib/api/types';
 import { CRM_LABELS } from '@/lib/crm/labels';
-import { isActiveSubscription } from '@/lib/onboarding-route';
+import {
+  isActiveSubscription,
+  listUserSubscriptions,
+} from '@/lib/onboarding-route';
 import { clearPushTokenCache } from '@/lib/push/register-push-token';
 import { clearSession, getUser, refreshUser } from '@/lib/session';
 import { useAppTheme } from '@/lib/theme/theme-provider';
@@ -168,16 +172,14 @@ export function ProfileScreenContent() {
           : user?.provider && user.hasIntegration
             ? user.provider
             : null;
+  const subscriptions: UserPlan[] = listUserSubscriptions(user);
   const connectedPlan =
-    (user?.plans?.length ? user.plans : user?.plan ? [user.plan] : []).find(
+    subscriptions.find(
       (plan) =>
         connectedProvider != null &&
         plan.provider === connectedProvider &&
         isActiveSubscription(plan),
-    ) ??
-    (user?.plan?.provider === connectedProvider && isActiveSubscription(user.plan)
-      ? user.plan
-      : null);
+    ) ?? null;
   const crmBadgeLabel = connectedProvider
     ? connectedPlan
       ? formatPlanLabel(CRM_LABELS[connectedProvider], connectedPlan.status)
@@ -238,10 +240,7 @@ export function ProfileScreenContent() {
           <Text style={styles.sectionTitle}>Connections</Text>
 
           {loadingStatuses && openAIConnected == null ? (
-            <>
-              <ConnectionRowSkeleton />
-              <ConnectionRowSkeleton />
-            </>
+            <ConnectionRowSkeleton />
           ) : (
             <>
               <ConnectionRow
@@ -256,18 +255,6 @@ export function ProfileScreenContent() {
                 }
                 statusLabel="OpenAI"
                 tone={openAIConnected ? 'success' : 'muted'}
-              />
-
-              <ConnectionRow
-                icon="workspace-premium"
-                title="Subscription"
-                value={
-                  connectedPlan
-                    ? `${connectedPlan.name} plan is active`
-                    : 'No active plan for the connected CRM'
-                }
-                statusLabel={connectedPlan ? connectedPlan.name : 'No plan'}
-                tone={connectedPlan ? planTone(connectedPlan.status) : 'muted'}
               />
             </>
           )}
@@ -309,6 +296,26 @@ export function ProfileScreenContent() {
 
         {/* ── Actions ───────────────────────────────────────────────────────── */}
         <View style={styles.actionsSection} pointerEvents={isLoggingOut ? 'box-none' : 'auto'}>
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => router.push('/subscriptions' as Href)}
+            disabled={isLoggingOut}>
+            <View style={styles.actionIcon}>
+              <MaterialIcons name="workspace-premium" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionTitle}>Subscriptions</Text>
+              <Text style={styles.actionDescription}>
+                {subscriptions.length === 0
+                  ? 'View and manage your CRM plans'
+                  : subscriptions.length === 1
+                    ? `${CRM_LABELS[subscriptions[0].provider]} · ${humanizePlanStatus(subscriptions[0].status)}`
+                    : `${subscriptions.length} plans · GoHighLevel and HubSpot`}
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color={colors.iconMuted} />
+          </Pressable>
+
           <Pressable
             style={styles.actionButton}
             onPress={() => router.push('/settings')}
@@ -362,8 +369,6 @@ export function ProfileScreenContent() {
 
 type Tone = 'success' | 'muted' | 'brand' | 'warning';
 
-
-
 function ConnectionRow({
   icon,
   title,
@@ -399,6 +404,7 @@ function ConnectionRow({
   );
 }
 
+
 function ConnectionRowSkeleton() {
   const { colors, resolvedTheme } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors, resolvedTheme), [colors, resolvedTheme]);
@@ -411,7 +417,7 @@ function ConnectionRowSkeleton() {
         <Skeleton width="55%" height={14} radius={6} />
         <Skeleton width="85%" height={11} radius={6} style={{ marginTop: 8 }} />
       </View>
-      <Skeleton width={56} height={22} radius={999} />
+      <Skeleton width={72} height={22} radius={999} />
     </View>
   );
 }
@@ -465,31 +471,6 @@ function getInitials(name?: string | null, email?: string | null): string {
   if (parts.length === 0) return source.slice(0, 1).toUpperCase();
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function humanizePlanStatus(status: string): string {
-  switch (status) {
-    case 'active':
-      return 'Active';
-    case 'trialing':
-      return 'Trial';
-    case 'past_due':
-      return 'Past due';
-    case 'canceled':
-      return 'Canceled';
-    case 'unpaid':
-      return 'Unpaid';
-    case 'incomplete':
-      return 'Incomplete';
-    default:
-      return status.charAt(0).toUpperCase() + status.slice(1);
-  }
-}
-
-function planTone(status: string): Tone {
-  if (status === 'active' || status === 'trialing') return 'success';
-  if (status === 'past_due' || status === 'unpaid' || status === 'incomplete') return 'warning';
-  return 'muted';
 }
 
 function formatPlanLabel(name: string, status: string): string {

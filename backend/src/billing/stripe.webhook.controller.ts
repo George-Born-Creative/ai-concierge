@@ -57,7 +57,7 @@ export class StripeWebhookController {
       case 'invoice.payment_succeeded':
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+        const subId = stripeInvoiceSubscriptionId(invoice);
         if (subId) {
           const sub = await this.stripeProvider.client.subscriptions.retrieve(subId);
           await this.billing.handleSubscriptionEvent(sub);
@@ -70,4 +70,26 @@ export class StripeWebhookController {
 
     return { received: true };
   }
+}
+
+// Invoice.subscription was removed in Stripe's 2025 Basil API in favor of
+// parent.subscription_details.subscription. Support both so payment events
+// still persist current_period_end.
+function stripeInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  const direct = (invoice as Stripe.Invoice & { subscription?: string | { id?: string } | null })
+    .subscription;
+  if (typeof direct === 'string') return direct;
+  if (direct && typeof direct === 'object' && typeof direct.id === 'string') {
+    return direct.id;
+  }
+  const nested = (
+    invoice as Stripe.Invoice & {
+      parent?: { subscription_details?: { subscription?: string | { id?: string } | null } };
+    }
+  ).parent?.subscription_details?.subscription;
+  if (typeof nested === 'string') return nested;
+  if (nested && typeof nested === 'object' && typeof nested.id === 'string') {
+    return nested.id;
+  }
+  return null;
 }
