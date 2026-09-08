@@ -69,7 +69,7 @@ export async function clearSession(): Promise<void> {
   state.token = null;
   state.user = null;
   hydrated = true;
-  // Drop cached reminders/appointments and CRM lists so the next signed-in
+  // Drop cached reminders, calendar appointment alerts, and CRM lists so the next signed-in
   // user never sees the previous account's data.
   clearRemindersCache();
   clearCrmCache();

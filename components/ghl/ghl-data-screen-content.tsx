@@ -24,12 +24,18 @@ import {
   isCrmFresh,
   setCrmCache,
 } from '@/lib/api/crm-cache';
+import {
+  getCachedAppointments,
+  isAppointmentsFresh,
+  setCachedAppointments,
+} from '@/lib/api/reminders-cache';
 import { CRM_LABELS, getCrmLabel } from '@/lib/crm/labels';
 import type {
   GhlCalendarSummary,
   GhlContactSummary,
   GhlOpportunitySummary,
 } from '@/lib/api/types';
+import { syncAppointmentNotifications } from '@/lib/push/local-notifications';
 import { useRealtimeEvent } from '@/lib/realtime/socket';
 import { getUser } from '@/lib/session';
 import { useAppTheme } from '@/lib/theme/theme-provider';
@@ -158,12 +164,38 @@ export function GhlDataScreenContent() {
     [want, limit],
   );
 
+  // Appointment alerts live with the calendar, not the reminders list. Pull a
+  // forward window and schedule on-device notifications so meetings still ring
+  // even if the user never opens Reminders.
+  const syncAppointmentAlerts = useCallback(
+    async (force = false) => {
+      if (!want('calendar')) return;
+      const cached = getCachedAppointments();
+      if (cached) void syncAppointmentNotifications(cached);
+      if (!force && isAppointmentsFresh()) return;
+      try {
+        const now = Date.now();
+        const day = 86_400_000;
+        const res = await ghlApi.listCalendarEvents({
+          startTime: new Date(now).toISOString(),
+          endTime: new Date(now + 180 * day).toISOString(),
+        });
+        setCachedAppointments(res.appointments);
+        void syncAppointmentNotifications(res.appointments);
+      } catch {
+        // Best-effort; reconciles again on next calendar focus.
+      }
+    },
+    [want],
+  );
+
   useFocusEffect(
     useCallback(() => {
       // Settings / OAuth deep links may have refreshed tokens — fetch fresh
       // data every time the screen comes back into focus.
       void loadAll('initial');
-    }, [loadAll]),
+      void syncAppointmentAlerts();
+    }, [loadAll, syncAppointmentAlerts]),
   );
 
   // Refetch a single object without a skeleton flash — keep the current rows
@@ -213,6 +245,7 @@ export function GhlDataScreenContent() {
     try {
       await loadAll('refresh');
       setCalendarRefreshSignal((value) => value + 1);
+      void syncAppointmentAlerts(true);
     } finally {
       setRefreshing(false);
     }
