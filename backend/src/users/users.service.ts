@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { CrmProvider, Plan, Subscription } from '@prisma/client';
@@ -10,6 +11,7 @@ import * as argon2 from 'argon2';
 
 import { UpdateActiveProviderDto } from '../auth/dto/update-active-provider.dto';
 import { UpdateProfileDto } from '../auth/dto/update-profile.dto';
+import { BillingService } from '../billing/billing.service';
 import {
   crmKey,
   isActiveSubscriptionStatus,
@@ -50,14 +52,22 @@ function toPlanDto(sub: SubscriptionWithPlan) {
     // Settings, Stripe subs use the cancel endpoint.
     paymentProvider: sub.paymentProvider.toLowerCase(),
     appleProductId: sub.plan.appleProductId,
+    expiresAt: sub.currentPeriodEnd?.toISOString() ?? null,
   };
 }
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly billing?: BillingService,
+  ) {}
 
   async getProfile(userId: string) {
+    if (this.billing) {
+      await this.billing.hydrateMissingPeriodEnds(userId);
+    }
+
     const user = (await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -89,6 +99,7 @@ export class UsersService {
       user.subscriptions[0] ??
       null;
 
+    const plans = user.subscriptions.map(toPlanDto);
     return {
       id: user.id,
       name: user.name,
@@ -97,7 +108,8 @@ export class UsersService {
       timezone: user.timezone,
       hasPushToken: Boolean(user.expoPushToken),
       plan: activeSub ? toPlanDto(activeSub) : null,
-      plans: user.subscriptions.map(toPlanDto),
+      plans,
+      subscriptions: plans,
       entitlements,
       integrations,
       provider: activeProvider ? crmKey(activeProvider) : null,
@@ -105,6 +117,11 @@ export class UsersService {
       hasOpenAIKey: Boolean(user.openaiKey),
       openAIKeyLast4: user.openaiKey?.last4 ?? null,
     };
+  }
+
+  async listSubscriptions(userId: string) {
+    const profile = await this.getProfile(userId);
+    return { subscriptions: profile.subscriptions };
   }
 
   async setActiveProvider(userId: string, dto: UpdateActiveProviderDto) {

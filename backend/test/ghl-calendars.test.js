@@ -107,6 +107,45 @@ test('appointments expose get, update, block-slot, and note routes', async () =>
   assert.equal(api.calls[3][2], '/calendars/appointments/event-1/notes');
 });
 
+test('listCalendars maps calendar settings onto labeled summary fields', async () => {
+  const api = Object.create(GhlApiService.prototype);
+  api.requireLocationId = async () => 'location-1';
+  api.ghlRequest = async () => ({
+    calendars: [
+      {
+        id: 'cal-1',
+        name: '  Sales  ',
+        isActive: true,
+        calendarType: 'round_robin',
+        eventType: 'RoundRobin_OptimizeForAvailability',
+        timezone: 'America/New_York',
+        slotDuration: 30,
+        slotDurationUnit: 'mins',
+        appoinmentPerSlot: 1,
+        appoinmentPerDay: 0,
+        teamMembers: [{ userId: 'u1', isPrimary: true }, { userId: 'u2' }],
+        locationConfigurations: [{ kind: 'custom', location: 'Zoom' }],
+        description: '<p></p>',
+      },
+      { id: 'cal-2', description: '<p>Office hours</p>' },
+    ],
+  });
+
+  const result = await api.listCalendars('user-1');
+  assert.equal(result.calendars.length, 2);
+  assert.equal(result.calendars[0].name, 'Sales');
+  assert.equal(result.calendars[0].calendarType, 'round_robin');
+  assert.equal(result.calendars[0].appointmentsPerSlot, 1);
+  assert.equal(result.calendars[0].appointmentsPerDay, 0);
+  assert.equal(result.calendars[0].meetingLocation, 'Custom · Zoom');
+  assert.equal(result.calendars[0].teamSummary, '2 assigned · 1 primary');
+  assert.equal(result.calendars[0].description, undefined);
+  assert.equal(result.calendars[1].name, 'Unnamed calendar');
+  assert.equal(result.calendars[1].description, 'Office hours');
+  assert.equal(result.calendars[1].meetingLocation, undefined);
+  assert.equal(result.calendars[1].teamSummary, undefined);
+});
+
 test('appointment creation books the exact user-requested time', async () => {
   const api = Object.create(GhlApiService.prototype);
   const calls = [];

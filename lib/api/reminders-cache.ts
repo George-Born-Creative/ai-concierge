@@ -1,8 +1,7 @@
-// Lightweight in-memory cache for the Reminders screen so revisiting the tab,
-// switching between Upcoming/All, or reacting to a realtime event renders the
-// last-known data instantly instead of flashing a spinner. Follows a
-// stale-while-revalidate model: reads return cached data immediately; the
-// screen still revalidates in the background and overwrites the entry.
+// Lightweight in-memory cache for reminders (and calendar appointment alerts)
+// so revisiting those screens renders instantly instead of flashing a spinner.
+// Follows a stale-while-revalidate model: reads return cached data immediately;
+// the screen still revalidates in the background and overwrites the entry.
 //
 // Scope: process memory only. It survives component unmount/remount and
 // navigation within a session, and is cleared on sign-out. It intentionally

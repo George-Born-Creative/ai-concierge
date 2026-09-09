@@ -45,6 +45,93 @@ test('handleSubscriptionEvent upserts by userId+planId and does not disable the 
   assert.equal(integrationUpdates.length, 0);
 });
 
+test('handleSubscriptionEvent stores current_period_end from Stripe', async () => {
+  const upserts = [];
+  const prisma = {
+    plan: { findUnique: async () => ({ id: 'plan-hs', provider: 'HUBSPOT' }) },
+    subscription: {
+      upsert: async (args) => {
+        upserts.push(args);
+        return args;
+      },
+    },
+    user: { updateMany: async () => ({ count: 1 }) },
+  };
+  await new BillingService(prisma, {}, {}).handleSubscriptionEvent(stripeSub());
+  assert.equal(
+    upserts[0].update.currentPeriodEnd.toISOString(),
+    new Date(1_800_000_000 * 1000).toISOString(),
+  );
+});
+
+test('handleSubscriptionEvent reads period end from subscription items', async () => {
+  const upserts = [];
+  const prisma = {
+    plan: { findUnique: async () => ({ id: 'plan-hs', provider: 'HUBSPOT' }) },
+    subscription: {
+      upsert: async (args) => {
+        upserts.push(args);
+        return args;
+      },
+    },
+    user: { updateMany: async () => ({ count: 1 }) },
+  };
+  await new BillingService(prisma, {}, {}).handleSubscriptionEvent(
+    stripeSub({
+      current_period_end: undefined,
+      items: { data: [{ price: { id: 'price_hs' }, current_period_end: 1_800_000_000 }] },
+    }),
+  );
+  assert.equal(
+    upserts[0].update.currentPeriodEnd.toISOString(),
+    new Date(1_800_000_000 * 1000).toISOString(),
+  );
+});
+
+test('handleSubscriptionEvent does not wipe currentPeriodEnd when Stripe omits it', async () => {
+  const upserts = [];
+  const prisma = {
+    plan: { findUnique: async () => ({ id: 'plan-hs', provider: 'HUBSPOT' }) },
+    subscription: {
+      upsert: async (args) => {
+        upserts.push(args);
+        return args;
+      },
+    },
+    user: { updateMany: async () => ({ count: 1 }) },
+  };
+  await new BillingService(prisma, {}, {}).handleSubscriptionEvent(
+    stripeSub({ current_period_end: undefined }),
+  );
+  assert.equal(upserts[0].update.currentPeriodEnd, undefined);
+});
+
+test('hydrateMissingPeriodEnds writes the Stripe period end onto the local row', async () => {
+  const updates = [];
+  const prisma = {
+    subscription: {
+      findMany: async () => [{ id: 'row-1', stripeSubscriptionId: 'sub_ghl' }],
+      update: async (args) => {
+        updates.push(args);
+        return args;
+      },
+    },
+  };
+  const stripeProvider = {
+    client: {
+      subscriptions: {
+        retrieve: async () => stripeSub({ id: 'sub_ghl' }),
+      },
+    },
+  };
+  await new BillingService(prisma, {}, stripeProvider).hydrateMissingPeriodEnds('user-1');
+  assert.equal(updates[0].where.id, 'row-1');
+  assert.equal(
+    updates[0].data.currentPeriodEnd.toISOString(),
+    new Date(1_800_000_000 * 1000).toISOString(),
+  );
+});
+
 test('lapsing one CRM only disables that provider', async () => {
   const integrationUpdates = [];
   const prisma = {

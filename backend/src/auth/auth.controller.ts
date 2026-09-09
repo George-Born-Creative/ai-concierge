@@ -84,6 +84,12 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('me/subscriptions')
+  listSubscriptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.users.listSubscriptions(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch('me')
   updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateProfileDto) {
     return this.users.updateProfile(user.id, dto);

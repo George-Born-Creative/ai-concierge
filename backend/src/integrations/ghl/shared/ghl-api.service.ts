@@ -128,18 +128,93 @@ type GhlRawCalendar = {
   selectedTimezone?: string;
   description?: string;
   calendarType?: string;
+  eventType?: string;
   groupId?: string;
   slug?: string;
+  widgetSlug?: string;
+  widgetType?: string;
+  eventTitle?: string;
+  eventColor?: string;
   slotInterval?: number;
   slotIntervalUnit?: string;
+  slotBuffer?: number;
+  slotBufferUnit?: string;
+  preBuffer?: number;
+  preBufferUnit?: string;
+  appoinmentPerSlot?: number;
+  appoinmentPerDay?: number;
+  allowBookingAfter?: number;
+  allowBookingAfterUnit?: string;
+  allowBookingFor?: number;
+  allowBookingForUnit?: string;
   allowReschedule?: boolean;
   allowCancellation?: boolean;
+  autoConfirm?: boolean;
+  enableRecurring?: boolean;
+  teamMembers?: Array<{ userId?: string; isPrimary?: boolean }>;
+  locationConfigurations?: Array<{ kind?: string; location?: string }>;
   [key: string]: unknown;
 };
 
 type GhlRawCalendarsResponse = {
   calendars?: GhlRawCalendar[];
 };
+
+const LOCATION_KIND_LABELS: Record<string, string> = {
+  custom: 'Custom',
+  phone: 'Phone',
+  address: 'Address',
+  google: 'Google Meet',
+  google_meet: 'Google Meet',
+  zoom: 'Zoom',
+  ms_teams: 'Microsoft Teams',
+};
+
+function humanizeCalendarToken(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return trimmed
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function calendarMeetingLocation(calendar: GhlRawCalendar): string | undefined {
+  const parts = (calendar.locationConfigurations ?? [])
+    .map((config) => {
+      const kind = config.kind?.trim();
+      const kindLabel = kind ? LOCATION_KIND_LABELS[kind] ?? humanizeCalendarToken(kind) : undefined;
+      const location = config.location?.trim();
+      return [kindLabel, location].filter(Boolean).join(' · ');
+    })
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+function calendarPlainText(value?: string): string | undefined {
+  const text = value
+    ?.replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text || undefined;
+}
+
+function calendarTeamSummary(calendar: GhlRawCalendar): string | undefined {
+  const members = calendar.teamMembers ?? [];
+  if (members.length === 0) return undefined;
+  const primaryCount = members.filter((member) => member.isPrimary).length;
+  const assigned = `${members.length} assigned`;
+  if (primaryCount > 0) return `${assigned} · ${primaryCount} primary`;
+  return assigned;
+}
 
 type GhlRawEvent = {
   id: string;
@@ -1263,17 +1338,36 @@ export class GhlApiService {
       id: calendar.id,
       name: calendar.name?.trim() || 'Unnamed calendar',
       isActive: calendar.isActive,
-      description: calendar.description,
+      description: calendarPlainText(calendar.description),
       calendarType: calendar.calendarType,
+      eventType: calendar.eventType,
       groupId: calendar.groupId,
       slug: calendar.slug,
+      widgetSlug: calendar.widgetSlug,
+      widgetType: calendar.widgetType,
       timezone: calendar.timezone ?? calendar.selectedTimezone,
+      eventTitle: calendar.eventTitle,
+      eventColor: calendar.eventColor,
       slotDuration: calendar.slotDuration,
       slotDurationUnit: calendar.slotDurationUnit,
       slotInterval: calendar.slotInterval,
       slotIntervalUnit: calendar.slotIntervalUnit,
+      slotBuffer: calendar.slotBuffer,
+      slotBufferUnit: calendar.slotBufferUnit,
+      preBuffer: calendar.preBuffer,
+      preBufferUnit: calendar.preBufferUnit,
+      appointmentsPerSlot: calendar.appoinmentPerSlot,
+      appointmentsPerDay: calendar.appoinmentPerDay,
+      allowBookingAfter: calendar.allowBookingAfter,
+      allowBookingAfterUnit: calendar.allowBookingAfterUnit,
+      allowBookingFor: calendar.allowBookingFor,
+      allowBookingForUnit: calendar.allowBookingForUnit,
       allowReschedule: calendar.allowReschedule,
       allowCancellation: calendar.allowCancellation,
+      autoConfirm: calendar.autoConfirm,
+      enableRecurring: calendar.enableRecurring,
+      meetingLocation: calendarMeetingLocation(calendar),
+      teamSummary: calendarTeamSummary(calendar),
     };
   }
 

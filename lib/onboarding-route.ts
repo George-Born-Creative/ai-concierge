@@ -20,21 +20,26 @@ export function providerForPlanCode(code: PlanCode): CrmProvider {
   return code === 'hubspot-pro' ? 'hubspot' : 'ghl';
 }
 
+export function listUserSubscriptions(user: User | null | undefined): UserPlan[] {
+  if (user?.subscriptions?.length) return user.subscriptions;
+  if (user?.plans?.length) return user.plans;
+  if (user?.plan) return [user.plan];
+  return [];
+}
+
 export function hasCrmEntitlement(
   user: User | null | undefined,
   provider: CrmProvider,
 ): boolean {
   if (user?.entitlements?.[provider]) return true;
-  if (user?.plans?.some((plan) => plan.provider === provider && isActiveSubscription(plan))) {
-    return true;
-  }
-  return user?.plan?.provider === provider && isActiveSubscription(user.plan);
+  return listUserSubscriptions(user).some(
+    (plan) => plan.provider === provider && isActiveSubscription(plan),
+  );
 }
 
 export function hasAnyActivePlan(user: User | null | undefined): boolean {
   if (user?.entitlements?.ghl || user?.entitlements?.hubspot) return true;
-  if (user?.plans?.some((plan) => isActiveSubscription(plan))) return true;
-  return isActiveSubscription(user?.plan);
+  return listUserSubscriptions(user).some((plan) => isActiveSubscription(plan));
 }
 
 // Centralized "where should this user go next?" logic. Used by:

@@ -9,6 +9,7 @@ import type {
   SignInRequest,
   SignUpRequest,
   User,
+  UserPlan,
 } from './types';
 
 export async function signUp(data: SignUpRequest): Promise<AuthResponse> {
@@ -84,6 +85,10 @@ export async function signOut(): Promise<void> {
 
 export async function getMe(): Promise<User> {
   return apiRequest<User>('/auth/me');
+}
+
+export async function listMySubscriptions(): Promise<{ subscriptions: UserPlan[] }> {
+  return apiRequest<{ subscriptions: UserPlan[] }>('/auth/me/subscriptions');
 }
 
 export type UpdateProfileRequest = {
