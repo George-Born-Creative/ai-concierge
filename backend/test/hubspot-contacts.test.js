@@ -100,8 +100,19 @@ test('recent contacts use CRM search sorted by creation date descending', async 
           'lastname',
           'email',
           'phone',
+          'mobilephone',
+          'fax',
           'company',
+          'jobtitle',
+          'website',
+          'address',
+          'city',
+          'state',
+          'zip',
+          'country',
           'lifecyclestage',
+          'hs_lead_status',
+          'hubspot_owner_id',
         ],
         sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
       },
@@ -131,13 +142,40 @@ test('contact list and free-text search pass through pagination cursors', async 
   assert.deepEqual(api.calls[0][3].query, {
     limit: 50,
     after: 'list-cursor',
-    properties: 'firstname,lastname,email,phone,company,lifecyclestage',
+    properties:
+      'firstname,lastname,email,phone,mobilephone,fax,company,jobtitle,website,address,city,state,zip,country,lifecyclestage,hs_lead_status,hubspot_owner_id',
   });
   assert.equal(api.calls[1][3].body.query, 'Ada');
   assert.equal(api.calls[1][3].body.limit, 20);
   assert.equal(api.calls[1][3].body.after, 'search-cursor');
   assert.equal(listed.after, 'next-cursor');
   assert.equal(searched.after, 'next-cursor');
+});
+
+test('getById maps website, address, and owner from HubSpot properties', async () => {
+  const api = createApi(() => ({
+    id: 'contact-map',
+    createdAt: '2026-01-02T03:04:05.000Z',
+    updatedAt: '2026-02-03T04:05:06.000Z',
+    properties: {
+      firstname: 'Ada',
+      lastname: 'Lovelace',
+      website: 'https://example.com',
+      jobtitle: 'Analyst',
+      city: 'London',
+      hs_lead_status: 'NEW',
+      hubspot_owner_id: 'owner-9',
+    },
+  }));
+  const service = new HubspotContactsService(api);
+
+  const contact = await service.getById('user-1', 'contact-map');
+
+  assert.equal(contact.website, 'https://example.com');
+  assert.equal(contact.jobTitle, 'Analyst');
+  assert.equal(contact.city, 'London');
+  assert.equal(contact.leadStatus, 'NEW');
+  assert.equal(contact.ownerId, 'owner-9');
 });
 
 test('contact retrieval supports record ID and email identifiers', async () => {
@@ -153,7 +191,8 @@ test('contact retrieval supports record ID and email identifiers', async () => {
   assert.equal(api.calls[0][2], '/crm/v3/objects/contacts/contact%2F3');
   assert.deepEqual(api.calls[0][3].query, {
     idProperty: undefined,
-    properties: 'firstname,lastname,email,phone,company,lifecyclestage',
+    properties:
+      'firstname,lastname,email,phone,mobilephone,fax,company,jobtitle,website,address,city,state,zip,country,lifecyclestage,hs_lead_status,hubspot_owner_id',
   });
   assert.equal(
     api.calls[1][2],

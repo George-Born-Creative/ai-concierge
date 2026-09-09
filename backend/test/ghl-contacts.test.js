@@ -150,6 +150,41 @@ test('GHL contact requests use the documented contacts API version header', asyn
   assert.equal(request.init.headers.Version, '2021-07-28');
 });
 
+test('getContact maps website, timezone, and customFields from GHL', async () => {
+  const api = createApi({
+    ghlRequest: async (...args) => {
+      api.calls.push(args);
+      return {
+        contact: {
+          id: 'contact-map',
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          website: 'https://example.com',
+          timezone: 'America/New_York',
+          type: 'lead',
+          dnd: false,
+          locationId: 'location-1',
+          customFields: [
+            { id: 'cf-1', key: 'referral', field_value: 'partner' },
+          ],
+        },
+      };
+    },
+  });
+  const service = new ContactsService(api);
+
+  const contact = await service.getContact('user-1', 'contact-map');
+
+  assert.equal(contact.website, 'https://example.com');
+  assert.equal(contact.timezone, 'America/New_York');
+  assert.equal(contact.type, 'lead');
+  assert.equal(contact.dnd, false);
+  assert.equal(contact.locationId, 'location-1');
+  assert.deepEqual(contact.customFields, [
+    { id: 'cf-1', key: 'referral', field_value: 'partner' },
+  ]);
+});
+
 test('get, create, and delete use the documented contact routes', async () => {
   const api = createApi({
     ghlRequest: async (...args) => {
