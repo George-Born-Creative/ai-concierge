@@ -8,6 +8,12 @@ import type {
   GhlContactSummary,
 } from './contacts.type';
 
+type GhlRawCustomField = {
+  id?: string;
+  key?: string;
+  field_value?: string | number | boolean | string[] | null;
+};
+
 type GhlRawContact = {
   id?: string;
   firstName?: string;
@@ -16,6 +22,7 @@ type GhlRawContact = {
   email?: string;
   phone?: string;
   companyName?: string;
+  website?: string;
   address1?: string;
   city?: string;
   state?: string;
@@ -23,9 +30,14 @@ type GhlRawContact = {
   country?: string;
   source?: string;
   assignedTo?: string;
+  timezone?: string;
+  type?: string;
   tags?: string[];
   dateAdded?: string;
   dateUpdated?: string;
+  dnd?: boolean;
+  locationId?: string;
+  customFields?: GhlRawCustomField[];
 };
 
 type GhlSearchContactsResponse = {
@@ -283,6 +295,7 @@ export class ContactsService {
       phone: contact.phone,
       email: contact.email,
       companyName: contact.companyName,
+      website: contact.website,
       address1: contact.address1,
       city: contact.city,
       state: contact.state,
@@ -290,9 +303,25 @@ export class ContactsService {
       country: contact.country,
       source: contact.source,
       assignedTo: contact.assignedTo,
+      timezone: contact.timezone,
+      type: contact.type,
       tags: contact.tags,
       dateAdded: contact.dateAdded,
       dateUpdated: contact.dateUpdated,
+      dnd: contact.dnd,
+      locationId: contact.locationId,
+      customFields: this.toCustomFields(contact.customFields),
     };
+  }
+
+  private toCustomFields(
+    fields?: GhlRawCustomField[],
+  ): GhlContactSummary['customFields'] {
+    if (!fields?.length) return undefined;
+    return fields.map((field) => ({
+      id: field.id,
+      key: field.key,
+      field_value: field.field_value ?? null,
+    }));
   }
 }

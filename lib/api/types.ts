@@ -185,6 +185,7 @@ export type GhlContactSummary = {
   phone?: string;
   email?: string;
   companyName?: string;
+  website?: string;
   address1?: string;
   city?: string;
   state?: string;
@@ -192,9 +193,14 @@ export type GhlContactSummary = {
   country?: string;
   source?: string;
   assignedTo?: string;
+  timezone?: string;
+  type?: string;
   tags?: string[];
   dateAdded?: string;
   dateUpdated?: string;
+  dnd?: boolean;
+  locationId?: string;
+  customFields?: GhlContactCustomField[];
 };
 
 export type GhlContactsListResponse = {
@@ -526,8 +532,19 @@ export type HubspotContactSummary = {
   name: string;
   email?: string;
   phone?: string;
+  mobilePhone?: string;
+  fax?: string;
   company?: string;
+  jobTitle?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
   lifecycleStage?: string;
+  leadStatus?: string;
+  ownerId?: string;
   createdAt?: string;
   updatedAt?: string;
 };

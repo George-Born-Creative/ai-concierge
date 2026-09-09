@@ -3,6 +3,8 @@ import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,8 +15,9 @@ import {
 
 import { PageHeader } from '@/components/page-header';
 import { ScreenShell } from '@/components/screen';
+import { HubspotContactCard } from '@/components/hubspot/hubspot-contact-card';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
-import { UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
+import { UiControlHeights, UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
 import { hubspotApi } from '@/lib/api';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -127,6 +130,9 @@ export function HubspotDataScreenContent() {
   const [loadingMoreCompanies, setLoadingMoreCompanies] = useState(false);
   const [loadingMoreTickets, setLoadingMoreTickets] = useState(false);
   const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<HubspotContactSummary | null>(null);
+  const [contactDetailLoading, setContactDetailLoading] = useState(false);
+  const [contactDetailError, setContactDetailError] = useState<string | null>(null);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
@@ -303,6 +309,35 @@ export function HubspotDataScreenContent() {
     );
   }
 
+  function closeContact() {
+    setSelectedContact(null);
+    setContactDetailLoading(false);
+    setContactDetailError(null);
+  }
+
+  function openContact(row: HubspotContactSummary) {
+    setSelectedContact(row);
+    setContactDetailError(null);
+    setContactDetailLoading(true);
+    void hubspotApi
+      .getContact(row.id)
+      .then((detail) => {
+        setSelectedContact((current) => (current?.id === row.id ? detail : current));
+      })
+      .catch((reason) => {
+        setContactDetailError(
+          reason instanceof ApiError
+            ? reason.message
+            : reason instanceof Error
+              ? reason.message
+              : 'Could not load contact details.',
+        );
+      })
+      .finally(() => {
+        setContactDetailLoading(false);
+      });
+  }
+
   // Gate to HubSpot users. We don't want a non-HubSpot account opening
   // /hubspot from a stale deep link and seeing an empty browse screen.
   const provider = getUser()?.provider;
@@ -358,7 +393,8 @@ export function HubspotDataScreenContent() {
                 title={row.name}
                 subtitle={[row.email, row.phone].filter(Boolean).join(' · ') || undefined}
                 meta={row.company}
-                onPress={() => handleCopy('Contact id', row.id)}
+                trailingIcon="chevron-right"
+                onPress={() => openContact(row)}
               />
             )}
           />
@@ -516,6 +552,51 @@ export function HubspotDataScreenContent() {
           create, update, archive, or add a product to a deal as a line item.
         </Text>
       </ScrollView>
+
+      <Modal
+        visible={!!selectedContact}
+        transparent
+        animationType="slide"
+        onRequestClose={closeContact}>
+        <Pressable style={styles.sheetOverlay} onPress={closeContact}>
+          <Pressable
+            style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={(event) => event.stopPropagation()}>
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                {selectedContact?.name || 'Contact'}
+              </Text>
+              <Pressable
+                accessibilityLabel="Close contact"
+                hitSlop={8}
+                onPress={closeContact}
+                style={styles.sheetClose}>
+                <MaterialIcons name="close" size={20} color={colors.icon} />
+              </Pressable>
+            </View>
+            {contactDetailLoading ? (
+              <View style={styles.sheetLoading}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[styles.sheetHint, { color: colors.textSecondary }]}>
+                  Loading contact details…
+                </Text>
+              </View>
+            ) : null}
+            {contactDetailError ? (
+              <Text style={[styles.sheetError, { color: colors.danger }]}>
+                {contactDetailError}
+              </Text>
+            ) : null}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetScrollContent}>
+              {selectedContact ? <HubspotContactCard contact={selectedContact} /> : null}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScreenShell>
   );
 }
@@ -660,10 +741,17 @@ type RowCardProps = {
   title: string;
   subtitle?: string;
   meta?: string;
+  trailingIcon?: keyof typeof MaterialIcons.glyphMap;
   onPress?: () => void;
 };
 
-function RowCard({ title, subtitle, meta, onPress }: RowCardProps) {
+function RowCard({
+  title,
+  subtitle,
+  meta,
+  trailingIcon = 'content-copy',
+  onPress,
+}: RowCardProps) {
   const { colors } = useAppTheme();
   return (
     <Pressable
@@ -684,7 +772,7 @@ function RowCard({ title, subtitle, meta, onPress }: RowCardProps) {
           </Text>
         ) : null}
       </View>
-      <MaterialIcons name="content-copy" size={16} color={colors.icon} />
+      <MaterialIcons name={trailingIcon} size={16} color={colors.icon} />
     </Pressable>
   );
 }
@@ -985,4 +1073,64 @@ const styles = StyleSheet.create({
     paddingHorizontal: UiSpacing.xxs,
     textAlign: 'center',
   },
+
+  sheetOverlay: {
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    alignSelf: 'center',
+    borderTopLeftRadius: UiRadii.modal,
+    borderTopRightRadius: UiRadii.modal,
+    borderTopWidth: 1,
+    maxHeight: '88%',
+    maxWidth: 720,
+    paddingBottom: UiSpacing.xxl,
+    paddingHorizontal: UiSpacing.lg,
+    paddingTop: 8,
+    width: '100%',
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    borderRadius: 2,
+    height: 4,
+    marginBottom: UiSpacing.md,
+    width: 40,
+  },
+  sheetHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
+    marginBottom: UiSpacing.sm,
+  },
+  sheetTitle: {
+    flex: 1,
+    fontSize: UiTypography.sectionHeading.fontSize,
+    fontWeight: '700',
+    lineHeight: UiTypography.sectionHeading.lineHeight,
+  },
+  sheetClose: {
+    alignItems: 'center',
+    height: UiControlHeights.iconButton,
+    justifyContent: 'center',
+    width: UiControlHeights.iconButton,
+  },
+  sheetLoading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: UiSpacing.sm,
+    marginBottom: UiSpacing.sm,
+  },
+  sheetHint: {
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+  },
+  sheetError: {
+    fontSize: UiTypography.label.fontSize,
+    lineHeight: UiTypography.label.lineHeight,
+    marginBottom: UiSpacing.sm,
+  },
+  sheetScroll: { maxHeight: '100%' },
+  sheetScrollContent: { paddingBottom: UiSpacing.lg },
 });

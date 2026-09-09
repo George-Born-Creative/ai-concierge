@@ -12,6 +12,7 @@ export type GhlContactSummary = {
   phone?: string;
   email?: string;
   companyName?: string;
+  website?: string;
   address1?: string;
   city?: string;
   state?: string;
@@ -19,9 +20,14 @@ export type GhlContactSummary = {
   country?: string;
   source?: string;
   assignedTo?: string;
+  timezone?: string;
+  type?: string;
   tags?: string[];
   dateAdded?: string;
   dateUpdated?: string;
+  dnd?: boolean;
+  locationId?: string;
+  customFields?: GhlContactCustomField[];
 };
 
 export type GhlContactsListResult = {
