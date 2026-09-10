@@ -7,12 +7,16 @@ export type GhlOpportunitySummary = {
   monetaryValue?: number;
   status: GhlOpportunityStatus;
   pipelineId: string;
+  pipelineName?: string;
   pipelineStageId?: string;
   pipelineStageName?: string;
   contactId?: string;
   contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
   assignedTo?: string;
   source?: string;
+  locationId?: string;
   createdAt?: string;
   updatedAt?: string;
   lastStatusChangeAt?: string;
@@ -27,6 +31,7 @@ export type GhlOpportunitySummary = {
   effectiveProbability?: number;
   lostReasonId?: string;
   followers?: string[];
+  notes?: string[];
   customFields?: { id?: string; key?: string; fieldValue?: unknown }[];
   externalObjectId?: string;
 };
