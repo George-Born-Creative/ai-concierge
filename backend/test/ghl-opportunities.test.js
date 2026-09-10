@@ -119,3 +119,40 @@ test('pipeline writes validate stages and inject the connected location', async 
     /unique/i,
   );
 });
+
+test('getOpportunity maps nested contact, notes, and follower details', async () => {
+  const { api, calls } = createApi(() => ({
+    opportunity: {
+      id: 'opp-9',
+      name: 'Website rebuild',
+      monetaryValue: '2500',
+      status: 'open',
+      pipelineId: 'pipe-1',
+      pipelineName: 'Sales',
+      pipelineStageId: 'stage-2',
+      pipelineStageName: 'Proposal',
+      locationId: 'loc-1',
+      assignedTo: 'user-2',
+      source: 'Referral',
+      contact: {
+        id: 'ct-1',
+        name: 'Ada Lovelace',
+        email: 'ada@example.com',
+        phone: '+15551212',
+      },
+      followers: [{ name: 'Grace Hopper' }, 'user-3'],
+      notes: [{ body: 'Send contract' }, 'Follow up Friday'],
+      customFields: [{ key: 'deal_type', fieldValue: 'new' }],
+    },
+  }));
+  const opportunity = await api.getOpportunity('user-1', 'opp-9');
+  assert.equal(calls[0][2], '/opportunities/opp-9');
+  assert.equal(opportunity.contactName, 'Ada Lovelace');
+  assert.equal(opportunity.contactEmail, 'ada@example.com');
+  assert.equal(opportunity.contactPhone, '+15551212');
+  assert.equal(opportunity.pipelineName, 'Sales');
+  assert.equal(opportunity.monetaryValue, 2500);
+  assert.deepEqual(opportunity.followers, ['Grace Hopper', 'user-3']);
+  assert.deepEqual(opportunity.notes, ['Send contract', 'Follow up Friday']);
+  assert.equal(opportunity.customFields[0].fieldValue, 'new');
+});

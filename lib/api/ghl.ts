@@ -13,6 +13,7 @@ import type {
   GhlContactSummary,
   GhlContactsListResponse,
   GhlOpportunitiesListResponse,
+  GhlOpportunitySummary,
   GhlStatusResponse,
   ListGhlCalendarEventsParams,
   ListGhlOpportunitiesParams,
@@ -148,6 +149,12 @@ export async function searchOpportunities(
     method: 'POST',
     body,
   });
+}
+
+export async function getOpportunity(opportunityId: string): Promise<GhlOpportunitySummary> {
+  return apiRequest<GhlOpportunitySummary>(
+    `/integrations/ghl/opportunities/${encodeURIComponent(opportunityId)}`,
+  );
 }
 
 export async function listCalendars(): Promise<GhlCalendarsListResponse> {

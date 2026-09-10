@@ -275,12 +275,14 @@ type GhlRawOpportunity = {
   monetaryValue?: number | string;
   status?: string;
   pipelineId?: string;
+  pipelineName?: string;
   pipelineStageId?: string;
   pipelineStageName?: string;
   contactId?: string;
   contact?: GhlRawOpportunityContact;
   assignedTo?: string;
   source?: string;
+  locationId?: string;
   createdAt?: string;
   updatedAt?: string;
   dateAdded?: string;
@@ -296,7 +298,8 @@ type GhlRawOpportunity = {
   forecastProbability?: number;
   effectiveProbability?: number;
   lostReasonId?: string;
-  followers?: string[];
+  followers?: Array<string | { userId?: string; id?: string; email?: string; name?: string }>;
+  notes?: unknown;
   customFields?: { id?: string; key?: string; fieldValue?: unknown }[];
   externalObjectId?: string;
 };
@@ -1423,12 +1426,16 @@ export class GhlApiService {
         typeof monetaryValue === 'number' && !Number.isNaN(monetaryValue) ? monetaryValue : undefined,
       status: this.normalizeOpportunityStatus(opportunity.status),
       pipelineId: opportunity.pipelineId ?? '',
+      pipelineName: opportunity.pipelineName?.trim() || undefined,
       pipelineStageId: opportunity.pipelineStageId,
       pipelineStageName: opportunity.pipelineStageName?.trim() || undefined,
       contactId: opportunity.contactId ?? opportunity.contact?.id,
       contactName,
+      contactEmail: opportunity.contact?.email?.trim() || undefined,
+      contactPhone: opportunity.contact?.phone?.trim() || undefined,
       assignedTo: opportunity.assignedTo,
       source: opportunity.source,
+      locationId: opportunity.locationId?.trim() || undefined,
       createdAt: opportunity.createdAt ?? opportunity.dateAdded,
       updatedAt: opportunity.updatedAt ?? opportunity.dateUpdated,
       lastStatusChangeAt: opportunity.lastStatusChangeAt,
@@ -1442,10 +1449,48 @@ export class GhlApiService {
       forecastProbability: opportunity.forecastProbability,
       effectiveProbability: opportunity.effectiveProbability,
       lostReasonId: opportunity.lostReasonId,
-      followers: opportunity.followers,
+      followers: this.toFollowerNames(opportunity.followers),
+      notes: this.toReadableStrings(opportunity.notes),
       customFields: opportunity.customFields,
       externalObjectId: opportunity.externalObjectId,
     };
+  }
+
+  private toFollowerNames(
+    followers?: Array<string | { userId?: string; id?: string; email?: string; name?: string }>,
+  ): string[] | undefined {
+    if (!followers?.length) return undefined;
+    const names = followers
+      .map((follower) => {
+        if (typeof follower === 'string') return follower.trim();
+        return (
+          follower.name?.trim() ||
+          follower.email?.trim() ||
+          follower.userId?.trim() ||
+          follower.id?.trim() ||
+          ''
+        );
+      })
+      .filter(Boolean);
+    return names.length ? names : undefined;
+  }
+
+  private toReadableStrings(value: unknown): string[] | undefined {
+    if (!Array.isArray(value) || value.length === 0) return undefined;
+    const items: string[] = [];
+    for (const entry of value) {
+      if (typeof entry === 'string' && entry.trim()) {
+        items.push(entry.trim());
+        continue;
+      }
+      if (!entry || typeof entry !== 'object') continue;
+      const record = entry as { body?: unknown; text?: unknown; note?: unknown };
+      const text = [record.body, record.text, record.note]
+        .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0)
+        ?.trim();
+      if (text) items.push(text);
+    }
+    return items.length ? items : undefined;
   }
 
   private normalizeOpportunitiesResult(

@@ -1,7 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -16,6 +15,7 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { GhlCalendarView } from '@/components/ghl/ghl-calendar-view';
 import { GhlContactCard } from '@/components/ghl/ghl-contact-card';
+import { GhlOpportunityCard } from '@/components/ghl/ghl-opportunity-card';
 import { ScreenShell } from '@/components/screen';
 import { Skeleton, SkeletonLines } from '@/components/ui/skeleton';
 import { UiControlHeights, UiRadii, UiSpacing, UiTypography } from '@/constants/theme';
@@ -42,7 +42,6 @@ import { syncAppointmentNotifications } from '@/lib/push/local-notifications';
 import { useRealtimeEvent } from '@/lib/realtime/socket';
 import { getUser } from '@/lib/session';
 import { useAppTheme } from '@/lib/theme/theme-provider';
-import { useToast } from '@/lib/toast';
 
 type LoadState<T> = {
   data: T[];
@@ -88,7 +87,6 @@ function isObjectKey(value: unknown): value is ObjectKey {
 export function GhlDataScreenContent() {
   const { colors } = useAppTheme();
   const router = useRouter();
-  const { show } = useToast();
 
   const params = useLocalSearchParams<{ object?: string }>();
   // When a single object is requested, render ONLY that list; otherwise show
@@ -112,6 +110,9 @@ export function GhlDataScreenContent() {
   const [selectedContact, setSelectedContact] = useState<GhlContactSummary | null>(null);
   const [contactDetailLoading, setContactDetailLoading] = useState(false);
   const [contactDetailError, setContactDetailError] = useState<string | null>(null);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<GhlOpportunitySummary | null>(null);
+  const [opportunityDetailLoading, setOpportunityDetailLoading] = useState(false);
+  const [opportunityDetailError, setOpportunityDetailError] = useState<string | null>(null);
 
   const loadAll = useCallback(
     async (mode: 'initial' | 'refresh') => {
@@ -257,20 +258,20 @@ export function GhlDataScreenContent() {
     }
   }
 
-  function handleCopy(label: string, value?: string) {
-    if (!value) return;
-    void Clipboard.setStringAsync(value).then(() =>
-      show(`${label} copied to clipboard.`, 'success'),
-    );
-  }
-
   function closeContact() {
     setSelectedContact(null);
     setContactDetailLoading(false);
     setContactDetailError(null);
   }
 
+  function closeOpportunity() {
+    setSelectedOpportunity(null);
+    setOpportunityDetailLoading(false);
+    setOpportunityDetailError(null);
+  }
+
   function openContact(row: GhlContactSummary) {
+    closeOpportunity();
     setSelectedContact(row);
     setContactDetailError(null);
     setContactDetailLoading(true);
@@ -290,6 +291,30 @@ export function GhlDataScreenContent() {
       })
       .finally(() => {
         setContactDetailLoading(false);
+      });
+  }
+
+  function openOpportunity(row: GhlOpportunitySummary) {
+    closeContact();
+    setSelectedOpportunity(row);
+    setOpportunityDetailError(null);
+    setOpportunityDetailLoading(true);
+    void ghlApi
+      .getOpportunity(row.id)
+      .then((detail) => {
+        setSelectedOpportunity((current) => (current?.id === row.id ? detail : current));
+      })
+      .catch((reason) => {
+        setOpportunityDetailError(
+          reason instanceof ApiError
+            ? reason.message
+            : reason instanceof Error
+              ? reason.message
+              : 'Could not load opportunity details.',
+        );
+      })
+      .finally(() => {
+        setOpportunityDetailLoading(false);
       });
   }
 
@@ -365,16 +390,25 @@ export function GhlDataScreenContent() {
                 key={row.id}
                 title={row.name}
                 subtitle={
-                  typeof row.monetaryValue === 'number'
-                    ? `$${row.monetaryValue.toLocaleString()}`
-                    : undefined
-                }
-                meta={
-                  [row.status, row.pipelineStageName, row.contactName]
+                  [
+                    typeof row.monetaryValue === 'number'
+                      ? `$${row.monetaryValue.toLocaleString()}`
+                      : undefined,
+                    row.contactName,
+                  ]
                     .filter(Boolean)
                     .join(' · ') || undefined
                 }
-                onPress={() => handleCopy('Opportunity id', row.id)}
+                meta={
+                  [
+                    formatOpportunityStatus(row.status),
+                    row.pipelineStageName || row.pipelineName,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || undefined
+                }
+                trailingIcon="chevron-right"
+                onPress={() => openOpportunity(row)}
               />
             )}
           />
@@ -394,50 +428,27 @@ export function GhlDataScreenContent() {
         </Text>
       </ScrollView>
 
-      <Modal
+      <DetailSheet
         visible={!!selectedContact}
-        transparent
-        animationType="slide"
-        onRequestClose={closeContact}>
-        <Pressable style={styles.sheetOverlay} onPress={closeContact}>
-          <Pressable
-            style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={(event) => event.stopPropagation()}>
-            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
-            <View style={styles.sheetHeader}>
-              <Text style={[styles.sheetTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-                {selectedContact?.name || 'Contact'}
-              </Text>
-              <Pressable
-                accessibilityLabel="Close contact"
-                hitSlop={8}
-                onPress={closeContact}
-                style={styles.sheetClose}>
-                <MaterialIcons name="close" size={20} color={colors.icon} />
-              </Pressable>
-            </View>
-            {contactDetailLoading ? (
-              <View style={styles.sheetLoading}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={[styles.sheetHint, { color: colors.textSecondary }]}>
-                  Loading contact details…
-                </Text>
-              </View>
-            ) : null}
-            {contactDetailError ? (
-              <Text style={[styles.sheetError, { color: colors.danger }]}>
-                {contactDetailError}
-              </Text>
-            ) : null}
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              style={styles.sheetScroll}
-              contentContainerStyle={styles.sheetScrollContent}>
-              {selectedContact ? <GhlContactCard contact={selectedContact} /> : null}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        title={selectedContact?.name || 'Contact'}
+        closeLabel="Close contact"
+        loading={contactDetailLoading}
+        loadingText="Loading contact details…"
+        error={contactDetailError}
+        onClose={closeContact}>
+        {selectedContact ? <GhlContactCard contact={selectedContact} /> : null}
+      </DetailSheet>
+
+      <DetailSheet
+        visible={!!selectedOpportunity}
+        title={selectedOpportunity?.name || 'Opportunity'}
+        closeLabel="Close opportunity"
+        loading={opportunityDetailLoading}
+        loadingText="Loading opportunity details…"
+        error={opportunityDetailError}
+        onClose={closeOpportunity}>
+        {selectedOpportunity ? <GhlOpportunityCard opportunity={selectedOpportunity} /> : null}
+      </DetailSheet>
     </ScreenShell>
   );
 }
@@ -472,7 +483,7 @@ type SectionProps<T> = {
   state: LoadState<T>;
   emptyText: string;
   skeletonLines?: number;
-  renderRow: (row: T) => React.ReactNode;
+  renderRow: (row: T) => ReactNode;
 };
 
 function Section<T>({ icon, title, state, emptyText, skeletonLines = 2, renderRow }: SectionProps<T>) {
@@ -521,6 +532,74 @@ function SectionSkeleton({ lines }: { lines: number }) {
         </View>
       ))}
     </View>
+  );
+}
+
+function formatOpportunityStatus(status?: string): string | undefined {
+  const trimmed = status?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+type DetailSheetProps = {
+  visible: boolean;
+  title: string;
+  closeLabel: string;
+  loading: boolean;
+  loadingText: string;
+  error: string | null;
+  onClose: () => void;
+  children: ReactNode;
+};
+
+function DetailSheet({
+  visible,
+  title,
+  closeLabel,
+  loading,
+  loadingText,
+  error,
+  onClose,
+  children,
+}: DetailSheetProps) {
+  const { colors } = useAppTheme();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.sheetOverlay} onPress={onClose}>
+        <Pressable
+          style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={(event) => event.stopPropagation()}>
+          <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+          <View style={styles.sheetHeader}>
+            <Text style={[styles.sheetTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+              {title}
+            </Text>
+            <Pressable
+              accessibilityLabel={closeLabel}
+              hitSlop={8}
+              onPress={onClose}
+              style={styles.sheetClose}>
+              <MaterialIcons name="close" size={20} color={colors.icon} />
+            </Pressable>
+          </View>
+          {loading ? (
+            <View style={styles.sheetLoading}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={[styles.sheetHint, { color: colors.textSecondary }]}>{loadingText}</Text>
+            </View>
+          ) : null}
+          {error ? (
+            <Text style={[styles.sheetError, { color: colors.danger }]}>{error}</Text>
+          ) : null}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={styles.sheetScroll}
+            contentContainerStyle={styles.sheetScrollContent}>
+            {children}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
