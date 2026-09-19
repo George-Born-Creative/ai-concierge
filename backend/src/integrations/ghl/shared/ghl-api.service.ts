@@ -151,8 +151,8 @@ type GhlRawCalendar = {
   allowCancellation?: boolean;
   autoConfirm?: boolean;
   enableRecurring?: boolean;
-  teamMembers?: Array<{ userId?: string; isPrimary?: boolean }>;
-  locationConfigurations?: Array<{ kind?: string; location?: string }>;
+  teamMembers?: { userId?: string; isPrimary?: boolean }[];
+  locationConfigurations?: { kind?: string; location?: string }[];
   [key: string]: unknown;
 };
 
@@ -298,7 +298,7 @@ type GhlRawOpportunity = {
   forecastProbability?: number;
   effectiveProbability?: number;
   lostReasonId?: string;
-  followers?: Array<string | { userId?: string; id?: string; email?: string; name?: string }>;
+  followers?: (string | { userId?: string; id?: string; email?: string; name?: string })[];
   notes?: unknown;
   customFields?: { id?: string; key?: string; fieldValue?: unknown }[];
   externalObjectId?: string;
@@ -1457,7 +1457,7 @@ export class GhlApiService {
   }
 
   private toFollowerNames(
-    followers?: Array<string | { userId?: string; id?: string; email?: string; name?: string }>,
+    followers?: (string | { userId?: string; id?: string; email?: string; name?: string })[],
   ): string[] | undefined {
     if (!followers?.length) return undefined;
     const names = followers

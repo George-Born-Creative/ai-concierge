@@ -35,14 +35,14 @@ export type PrismaLike = {
 
 type UserCrmFallback = {
   activeCrmProvider: CrmProvider | null;
-  subscriptions: Array<{
+  subscriptions: {
     status: SubscriptionStatus;
     plan: { provider: CrmProvider };
-  }>;
-  integrations: Array<{
+  }[];
+  integrations: {
     provider: CrmProvider;
     enabled: boolean;
-  }>;
+  }[];
 };
 
 export function isActiveSubscriptionStatus(
