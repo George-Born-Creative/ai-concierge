@@ -1987,11 +1987,24 @@ export class GhlApiService {
   private hasConversationScopes(scopes: string[] | undefined): boolean {
     if (!scopes?.length) return false;
     return this.normalizeScopes(scopes).some(
-      (scope) =>
-        scope === 'conversations.readonly' ||
-        scope === 'conversations.write' ||
-        scope.startsWith('conversations/message.'),
+      (scope) => scope.startsWith('conversations.') || scope.startsWith('conversations/'),
     );
+  }
+
+  /**
+   * Merge configured/default scopes into the stored list and persist when stale.
+   * GHL often omits granted scopes from the token `scope` field, so conversation
+   * (and opportunity) gates must heal the same way getStatus does.
+   */
+  private async resolveAndPersistScopes(userId: string, previous: string[]): Promise<string[]> {
+    const scopes = this.resolveStoredScopes(undefined, previous);
+    if (scopes.length !== previous.length || scopes.some((scope, i) => scope !== previous[i])) {
+      await this.prisma.integrationConnection.update({
+        where: { userId_provider: { userId, provider: CrmProvider.GHL } },
+        data: { scopes },
+      });
+    }
+    return scopes;
   }
 
   private calendarReconnectMessage(): string {
@@ -2025,7 +2038,8 @@ export class GhlApiService {
     if (!row || !row.enabled) {
       throw new ForbiddenException('GHL is not connected');
     }
-    if (!this.hasOpportunityScopes(row.scopes)) {
+    const scopes = await this.resolveAndPersistScopes(userId, row.scopes);
+    if (!this.hasOpportunityScopes(scopes)) {
       throw new BadRequestException(this.opportunityReconnectMessage());
     }
   }
@@ -2037,7 +2051,8 @@ export class GhlApiService {
     if (!row || !row.enabled) {
       throw new ForbiddenException('GHL is not connected');
     }
-    if (!this.hasConversationScopes(row.scopes)) {
+    const scopes = await this.resolveAndPersistScopes(userId, row.scopes);
+    if (!this.hasConversationScopes(scopes)) {
       throw new BadRequestException(this.conversationsReconnectMessage());
     }
   }
