@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { CrmProvider } from '@prisma/client';
 
-import { CRM_LABELS, crmLabel, crmLabelList } from '../common/crm-labels';
+import { CRM_LABELS, crmLabelList } from '../common/crm-labels';
 import { resolveActiveCrmProvider } from '../common/crm-account';
 import type { GhlAppointmentSummary } from '../integrations/ghl/appointments/appointments.type';
 import type { GhlOpportunitySummary } from '../integrations/ghl/opportunities/opportunities.type';
@@ -399,7 +399,7 @@ export class AssistantCommandService {
         response: `Found ${result.conversations.length} conversation(s):\n${bulletList}`,
         status: 'success',
       };
-    } catch (error) {
+    } catch {
       return { response: 'Failed to list your conversations.', status: 'error' };
     }
   }
@@ -424,7 +424,7 @@ export class AssistantCommandService {
         response: `Found a conversation with ${match.contactName}. The last message was sent ${new Date(match.lastMessageAt || '').toLocaleDateString()}.`,
         status: 'success',
       };
-    } catch (error) {
+    } catch {
       return { response: `Failed to search for ${details.query}.`, status: 'error' };
     }
   }
@@ -454,7 +454,7 @@ export class AssistantCommandService {
         response: `The last message says: "${lastMsg.body}"`,
         status: 'success',
       };
-    } catch (error) {
+    } catch {
       return { response: 'Failed to read the conversation.', status: 'error' };
     }
   }

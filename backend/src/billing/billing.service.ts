@@ -39,7 +39,7 @@ type SubscriptionWithPlan = Subscription & { plan: Plan };
 // API version, which may not match STRIPE_API_VERSION, so we read both.
 type StripePeriodFields = {
   current_period_end?: number | null;
-  items?: { data?: Array<{ current_period_end?: number | null }> };
+  items?: { data?: { current_period_end?: number | null }[] };
 };
 
 export function stripeCurrentPeriodEnd(sub: object): Date | null {

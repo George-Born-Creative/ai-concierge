@@ -17,17 +17,17 @@ type DiagnosticsUser = {
   timezone: string | null;
   expoPushToken: string | null;
   activeCrmProvider: CrmProvider | null;
-  subscriptions: Array<{
+  subscriptions: {
     status: SubscriptionStatus;
     paymentProvider: PaymentProvider;
     currentPeriodEnd: Date | null;
     plan: { provider: CrmProvider };
-  }>;
-  integrations: Array<{
+  }[];
+  integrations: {
     provider: CrmProvider;
     enabled: boolean;
     scopes: string[];
-  }>;
+  }[];
   openaiKey: { id: string } | null;
 };
 

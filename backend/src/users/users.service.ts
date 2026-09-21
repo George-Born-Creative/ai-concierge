@@ -33,11 +33,11 @@ type ProfileUser = {
   expoPushToken: string | null;
   activeCrmProvider: CrmProvider | null;
   subscriptions: SubscriptionWithPlan[];
-  integrations: Array<{
+  integrations: {
     provider: CrmProvider;
     enabled: boolean;
     createdAt: Date;
-  }>;
+  }[];
   openaiKey: { last4: string; createdAt: Date } | null;
 };
 
